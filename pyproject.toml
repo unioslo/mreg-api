@@ -52,9 +52,6 @@ dynamic = ["version"]
 [project.urls]
 Repository = 'https://github.com/unioslo/mreg-cli/'
 
-[project.scripts]
-mreg-cli = "mreg_cli.main:main"
-
 [dependency-groups]
 dev = [
     "pytest",

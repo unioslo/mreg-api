@@ -8,7 +8,6 @@ from enum import Enum
 from typing import Any
 from typing import Self
 
-from mreg_api.outputmanager import OutputManager
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
@@ -120,18 +119,6 @@ class HistoryItem(BaseModel):
             raise InternalError(f"Unhandled history entry: {action}")
 
         return msg
-
-    def output(self, basename: str) -> None:
-        """Output the history item."""
-        ts = self.clean_timestamp()
-        msg = self.msg(basename)
-        OutputManager().add_line(f"{ts} [{self.user}]: {self.model} {self.action}: {msg}")
-
-    @classmethod
-    def output_multiple(cls, basename: str, items: list[HistoryItem]) -> None:
-        """Output multiple history items."""
-        for item in sorted(items, key=lambda i: i.timestamp):
-            item.output(basename)
 
     @classmethod
     def get(cls, name: str, resource: HistoryResource) -> list[Self]:

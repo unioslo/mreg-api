@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import MregValidationError as PydanticValidationError
+from pydantic import ValidationError as PydanticValidationError
 from requests import Response
 
 logger = logging.getLogger(__name__)
@@ -87,8 +87,8 @@ class MregValidationError(MregApiBaseError):
         :param e: The Pydantic MregValidationError.
         :returns: The created MregValidationError.
         """
-        from mreg_api.utilities.api import last_request_method
-        from mreg_api.utilities.api import last_request_url
+        from mreg_api.client import last_request_method
+        from mreg_api.client import last_request_url
 
         # Display a title containing the HTTP method and URL if available
         method = last_request_method.get()

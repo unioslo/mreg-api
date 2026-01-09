@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 
 from pydantic import BaseModel
-from pydantic import MregValidationError
+from pydantic import ValidationError
 from requests import Response
 
 logger = logging.getLogger(__name__)
@@ -87,6 +87,6 @@ def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     """
     try:
         return MREGErrorResponse.model_validate_json(resp.text)
-    except MregValidationError:
+    except ValidationError:
         logger.error("Failed to parse response text '%s' from %s", resp.text, resp.url)
     return None

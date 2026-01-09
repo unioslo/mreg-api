@@ -18,9 +18,6 @@ from typing import ClassVar
 from typing import Self
 from typing import TypedDict
 
-from mreg_api.dirs import DEFAULT_CONFIG_PATH
-from mreg_api.dirs import HISTORY_FILE_DEFAULT
-from mreg_api.dirs import LOG_FILE_DEFAULT
 from pydantic import AfterValidator
 from pydantic import AliasChoices
 from pydantic import Field
@@ -35,6 +32,9 @@ from pydantic_settings.sources import ConfigFileSourceMixin
 from pydantic_settings.sources.types import PathType
 from typing_extensions import override
 
+from mreg_api.dirs import DEFAULT_CONFIG_PATH
+from mreg_api.dirs import HISTORY_FILE_DEFAULT
+from mreg_api.dirs import LOG_FILE_DEFAULT
 from mreg_api.types import LogLevel
 from mreg_api.utilities.fs import get_writable_file_or_tempfile
 from mreg_api.utilities.fs import to_path

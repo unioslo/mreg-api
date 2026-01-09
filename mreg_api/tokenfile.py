@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 from typing import ClassVar
 from typing import Self
 
@@ -45,7 +44,7 @@ class TokenFile(BaseModel):
         try:
             os.chmod(self.tokens_path, mode)
         except PermissionError:
-            print(f"Failed to set permissions on {self.tokens_path}", file=sys.stderr)
+            logger.warning("Failed to set permissions on %s", self.tokens_path)
         except FileNotFoundError:
             pass
 
@@ -69,7 +68,7 @@ class TokenFile(BaseModel):
             elif isinstance(e, ValidationError):
                 msg = f"Failed to validate tokens from token file {cls.tokens_path}: {e}"
             if msg:
-                print(msg, file=sys.stderr)
+                logger.error(msg)
             logger.error("Failed to load token file %r: %r", cls.tokens_path, e)
         return cls()
 

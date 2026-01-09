@@ -10,7 +10,6 @@ from typing import Callable
 from typing import Self
 from typing import cast
 
-from mreg_api.outputmanager import OutputManager
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -137,12 +136,6 @@ class FrozenModelWithTimestamps(FrozenModel):
 
     created_at: datetime
     updated_at: datetime
-
-    def output_timestamps(self, padding: int = 14) -> None:
-        """Output the created and updated timestamps to the console."""
-        output_manager = OutputManager()
-        output_manager.add_line(f"{'Created:':<{padding}}{self.created_at:%c}")
-        output_manager.add_line(f"{'Updated:':<{padding}}{self.updated_at:%c}")
 
 
 class APIMixin(ABC):

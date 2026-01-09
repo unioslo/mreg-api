@@ -1,334 +1,116 @@
-"""Utility functions for mreg_cli.
+"""Utility functions for mreg_api.
 
-Due to circular dependencies, this module is not allowed to import anything from mreg_api.
-And this rule is promptly broken by importing from mreg_api.outputmanager...
+Provides backward-compatible HTTP functions that delegate to MregApiClient.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-import re
-import sys
-from contextvars import ContextVar
 from functools import wraps
 from typing import Any
 from typing import Callable
 from typing import Literal
-from typing import NoReturn
 from typing import ParamSpec
 from typing import TypeVar
 from typing import get_origin
 from typing import overload
-from urllib.parse import urljoin
-from uuid import uuid4
 
-import requests
-from mreg_api.__about__ import __version__
-from mreg_api.outputmanager import OutputManager
-from prompt_toolkit import prompt
 from pydantic import BaseModel
 from pydantic import TypeAdapter
 from pydantic import field_validator
 from requests import Response
 
-from mreg_api.api.errors import parse_mreg_error
 from mreg_api.cache import get_cache
-from mreg_api.config import MregCliConfig
-from mreg_api.exceptions import APIError
-from mreg_api.exceptions import LoginFailedError
-from mreg_api.exceptions import MregApiBaseError
+from mreg_api.client import get_client
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import TooManyResults
-from mreg_api.tokenfile import TokenFile
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 from mreg_api.types import get_type_adapter
 
-session = requests.Session()
-session.headers.update({"User-Agent": f"mreg-cli-{__version__}"})
-
 logger = logging.getLogger(__name__)
 
 
 T = TypeVar("T")
+P = ParamSpec("P")
 
 JsonMappingValidator = TypeAdapter(JsonMapping)
 
-# Thread-local context variables for storing the last request URL and method.
-last_request_url: ContextVar[str | None] = ContextVar("last_request_url", default=None)
-last_request_method: ContextVar[str | None] = ContextVar("last_request_method", default=None)
-
-
-def error(msg: str | Exception, code: int = os.EX_UNAVAILABLE) -> NoReturn:
-    """Print an error message and exits with the given code."""
-    print(f"ERROR: {msg}", file=sys.stderr)
-    sys.exit(code)
-
 
 def create_and_set_corrolation_id(suffix: str) -> str:
-    """Set currently active corrolation id.
+    """Set currently active correlation id.
 
-    This will take a suffix and append it to a generated UUIDv4 and set it as the corrolation id.
+    This will take a suffix and append it to a generated UUIDv4 and set it as the correlation id.
 
-    :param suffix: The suffix to use for the corrolation id.
+    :param suffix: The suffix to use for the correlation id.
 
-    :returns: The generated corrolation id.
+    :returns: The generated correlation id.
     """
-    suffix = re.sub(r"\s+", "_", suffix)
-    correlation_id = f"{uuid4()}-{suffix}"
-
-    session.headers.update({"X-Correlation-ID": correlation_id})
-    return correlation_id
+    return get_client().set_correlation_id(suffix)
 
 
 def get_correlation_id() -> str:
-    """Get the currently active corrolation id.
+    """Get the currently active correlation id.
 
-    :returns: The currently active corrolation id.
+    :returns: The currently active correlation id.
     """
-    return str(session.headers.get("X-Correlation-ID"))
+    return get_client().get_correlation_id()
 
 
 def set_session_token(token: str) -> None:
     """Update session headers with an authorization token.
 
-    :param username: The username to use.
-    :param url: The URL to use.
+    :param token: The token to use.
     """
-    session.headers.update({"Authorization": f"Token {token}"})
+    get_client().set_token(token)
 
 
 def get_session_token() -> str | None:
     """Get the authorization token from an active session if it exists.
 
-    :param username: The username to use.
-    :param url: The URL to use.
-
     :returns: The token if it exists, otherwise None.
     """
-    auth = str(session.headers.get("Authorization"))
-    return auth.partition(" ")[2] or None
+    return get_client().get_token()
 
 
-def try_token_or_login(user: str, url: str, fail_without_token: bool = False) -> None:
-    """Check for a valid token or interactively log in to MREG.
+def login(username: str, password: str, save_token: bool = True) -> None:
+    """Authenticate with MREG API.
 
-    Exits on connection failure.
+    :param username: MREG username
+    :param password: MREG password
+    :param save_token: Whether to save token to token file
 
-    :param user: Username to login with.
-    :param url: URL to MREG.
-
-    :raises LoginFailedError: If login fails.
-
-    :returns: Nothing.
+    :raises LoginFailedError: If authentication fails
     """
-    token = TokenFile.get_entry(user, url)
-    if token:
-        set_session_token(token.token)
-
-    try:
-        ret = session.get(
-            urljoin(url, "/api/v1/hosts/"),
-            params={"page_size": 1},
-            timeout=5,
-        )
-    except requests.exceptions.ConnectionError as e:
-        error(f"Could not connect to {url}: {e}")
-
-    if ret.status_code == 401:
-        if fail_without_token:
-            raise SystemExit("Token only login failed.")
-        prompt_for_password_and_login(user, url, catch_exception=False)
-
-
-def prompt_for_password_and_login(user: str, url: str, catch_exception: bool = True) -> None:
-    """Login to MREG.
-
-    :param user: Username to login with.
-    :param url: URL to MREG.
-    :param catch_exception: If True, login errors are caught, otherwise they are passed on.
-
-    :raises LoginFailedError: If login fails and catch_exception is False.
-
-    :returns: Nothing.
-    """
-    print(f"Connecting to {url}")
-    password = prompt(f"Password for {user}: ", is_password=True)
-    try:
-        auth_and_update_token(user, password)
-    except MregApiBaseError as e:
-        if catch_exception:
-            e.print_and_log()
-        if isinstance(e, LoginFailedError):
-            raise e
-        else:
-            raise LoginFailedError("Updating token failed.") from e
+    get_client().login(username, password, save_token)
 
 
 def logout() -> None:
     """Logout from MREG."""
-    path = urljoin(MregCliConfig().url, "/api/token-logout/")
-    # Try to logout, and ignore errors
-    try:
-        session.post(path)
-    except requests.exceptions.ConnectionError as e:
-        logger.warning("Failed to log out: %s", e)
-        pass
+    get_client().logout()
 
 
-def prompt_for_password_and_try_update_token() -> None:
-    """Prompt for a password and try to update the token."""
-    password = prompt("You need to re-authenticate\nEnter password: ", is_password=True)
-    try:
-        user = MregCliConfig().user
-        if not user:
-            raise LoginFailedError("Unable to determine username.")
-        auth_and_update_token(user, password)
-    except MregApiBaseError as e:
-        e.print_and_log()
+def _do_get(path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
+    """Perform a GET request.
 
+    Separated out from get(), so that we can patch this function with a memoized version
+    without affecting other modules that do `from mreg_api.utilities.api import get`, as
+    they would then operate on the unpatched version instead of the modified one,
+    since their `get` symbol differs from the `get` symbol in this module
+    in a scenario where `get` itself is patched _after_ it is imported elsewhere.
 
-def auth_and_update_token(username: str, password: str) -> None:
-    """Perform the actual token update."""
-    base_url = MregCliConfig().url
-    tokenurl = urljoin(base_url, "/api/token-auth/")
-    logger.info("Updating token for %s @ %s", username, tokenurl)
-    try:
-        result = requests.post(tokenurl, {"username": username, "password": password})
-    except requests.exceptions.SSLError as e:
-        error(e)
-    except requests.exceptions.ConnectionError as e:
-        error(e)
-    if not result.ok:
-        err = parse_mreg_error(result)
-        if err:
-            msg = err.as_str()
-        else:
-            msg = result.text
-        raise LoginFailedError(msg)
+    The caching module can modify this function instead of `get`,
+    allowing other modules to be oblivious of the caching behavior, and freely
+    import `get` into their namespaces.
 
-    token = result.json()["token"]
-    logger.info("Token updated for %s @ %s", username, tokenurl)
-    set_session_token(token)
-    TokenFile.set_entry(username, base_url, token)
-
-
-def result_check(result: Response, operation_type: str, url: str) -> None:
-    """Check the result of a request."""
-    if not result.ok:
-        if err := parse_mreg_error(result):
-            res_text = err.as_json_str()  # NOTE: do we want to use as_str() instead?
-        elif result.status_code == 404:
-            endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
-            res_text = (
-                f"Endpoint not found: '{endpoint}'\n"
-                f"This may be because your CLI version ({__version__}) is:\n"
-                f"  - Too old: The endpoint has been removed from the server\n"
-                f"  - Too new: You're using a beta feature not yet available on the server\n"
-                f"Try updating or downgrading your mreg-cli."
-            )
-        else:
-            res_text = result.text
-        message = f'{operation_type} "{url}": {result.status_code}: {result.reason}\n{res_text}'
-        raise APIError(message, result)
-
-
-def _strip_none(data: dict[str, Any]) -> dict[str, Any]:
-    """Recursively strip None values from a dictionary."""
-    new: dict[str, Any] = {}
-    for key, value in data.items():
-        if value is not None:
-            if isinstance(value, dict):
-                v = _strip_none(value)  # pyright: ignore[reportUnknownArgumentType]
-                if v:
-                    new[key] = v
-            else:
-                new[key] = value
-    return new
-
-
-def _request_wrapper(
-    operation_type: Literal["get", "post", "patch", "delete"],
-    path: str,
-    params: QueryParams | None = None,
-    ok404: bool = False,
-    first: bool = True,
-    **data: Any,
-) -> Response | None:
-    """Wrap request calls to MREG for logging and token management."""
+    Yes... Patching sucks when you have other modules that import scoped symbols
+    into their own namespace.
+    """
     if params is None:
         params = {}
-    url = urljoin(MregCliConfig().url, path)
-
-    logurl = url
-    if operation_type.upper() == "GET" and params:
-        logurl = logurl + "?" + "&".join(f"{k}={v}" for k, v in params.items())
-
-    logger.info("Request: %s %s [%s]", operation_type.upper(), logurl, get_correlation_id())
-
-    if operation_type.upper() != "GET" and params:
-        logger.debug("Params: %s", params)
-
-    if data:
-        logger.debug("Data: %s", data)
-
-    # Strip None values from data
-    if data and operation_type != "patch":
-        data = _strip_none(data)
-
-    if operation_type == "get":
-        func = session.get
-    elif operation_type == "post":
-        func = session.post
-    elif operation_type == "patch":
-        func = session.patch
-    elif operation_type == "delete":
-        func = session.delete
-    else:
-        raise ValueError(f"Unknown operation type: {operation_type}")
-
-    result = func(
-        url,
-        params=params,
-        json=data or None,
-        timeout=MregCliConfig().http_timeout,
-    )
-
-    last_request_url.set(logurl)
-    last_request_method.set(operation_type)
-
-    request_id = result.headers.get("X-Request-Id", "?")
-    correlation_id = result.headers.get("X-Correlation-ID", "?")
-    id_str = f"[R:{request_id} C:{correlation_id}]"
-    log_message = f"Response: {operation_type.upper()} {logurl} {result.status_code} {id_str}"
-
-    if result.status_code >= 300:
-        logger.warning(log_message)
-    else:
-        logger.info(log_message)
-
-    # This is a workaround for old server versions that can't handle JSON data in requests
-    if (
-        result.status_code == 500
-        and (operation_type == "post" or operation_type == "patch")
-        and params == {}
-        and data
-    ):
-        result = func(url, params={}, timeout=MregCliConfig().http_timeout, data=data)
-
-    OutputManager().recording_request(operation_type, url, params, data, result)
-
-    if first and result.status_code == 401:
-        prompt_for_password_and_try_update_token()
-        return _request_wrapper(operation_type, path, params=params, first=False, **data)
-    elif result.status_code == 404 and ok404:
-        return None
-
-    result_check(result, operation_type.upper(), url)
-    return result
+    return get_client().request("get", path, params=params, ok404=ok404)
 
 
 @overload
@@ -350,27 +132,6 @@ def get(path: str, params: QueryParams | None = ...) -> Response: ...
 def get(path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
     """Make a standard get request."""
     return _do_get(path, params, ok404)
-
-
-def _do_get(path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
-    """Perform a GET request.
-
-    Separated out from get(), so that we can patch this function with a memoized version
-    without affecting other modules that do `from mreg_api.utilities.api import get`, as
-    they would then operate on the unpatched version instead of the modified one,
-    since their `get` symbol differs from the `get` symbol in this module
-    in a scenario where `get` itself is patched _after_ it is imported elsewhere.
-
-    The caching module can modify this function instead of `get`,
-    allowing other modules to be oblivious of the caching behavior, and freely
-    import `get` into their namespaces.
-
-    Yes... Patching sucks when you have other modules that import scoped symbols
-    into their own namespace.
-    """
-    if params is None:
-        params = {}
-    return _request_wrapper("get", path, params=params, ok404=ok404)
 
 
 def get_list(
@@ -624,9 +385,6 @@ def get_typed(
         return adapter.validate_json(resp.text)
 
 
-P = ParamSpec("P")
-
-
 def clear_cache(f: Callable[P, T]) -> Callable[P, T]:
     """Clear the API cache after running the function."""
 
@@ -648,7 +406,7 @@ def post(path: str, params: QueryParams | None = None, **kwargs: Any) -> Respons
     """Use requests to make a post request. Assumes that all kwargs are data fields."""
     if params is None:
         params = {}
-    return _request_wrapper("post", path, params=params, **kwargs)
+    return get_client().request("post", path, params=params, **kwargs)
 
 
 @clear_cache
@@ -656,7 +414,7 @@ def patch(path: str, params: QueryParams | None = None, **kwargs: Any) -> Respon
     """Use requests to make a patch request. Assumes that all kwargs are data fields."""
     if params is None:
         params = {}
-    return _request_wrapper("patch", path, params=params, **kwargs)
+    return get_client().request("patch", path, params=params, **kwargs)
 
 
 @clear_cache
@@ -664,4 +422,4 @@ def delete(path: str, params: QueryParams | None = None, **kwargs: Any) -> Respo
     """Use requests to make a delete request."""
     if params is None:
         params = {}
-    return _request_wrapper("delete", path, params=params, **kwargs)
+    return get_client().request("delete", path, params=params, **kwargs)

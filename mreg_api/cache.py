@@ -212,7 +212,7 @@ class StoredFunction:
 
 
 TO_MEMOIZE = [
-    MemoizedFunction(func="mreg_cli.utilities.api._do_get", tag="api"),
+    MemoizedFunction(func="mreg_api.utilities.api._do_get", tag="api"),
 ]
 """List functions to memoize with a caching decorator (if enabled)."""
 
