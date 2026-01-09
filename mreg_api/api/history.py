@@ -9,7 +9,6 @@ from typing import Any
 from typing import Self
 
 from mreg_api.outputmanager import OutputManager
-from mreg_api.types import QueryParams
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
@@ -17,6 +16,7 @@ from pydantic import field_validator
 from mreg_api.api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import InternalError
+from mreg_api.types import QueryParams
 from mreg_api.utilities.api import get_typed
 
 

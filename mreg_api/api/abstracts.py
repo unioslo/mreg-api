@@ -11,20 +11,20 @@ from typing import Self
 from typing import cast
 
 from mreg_api.outputmanager import OutputManager
-from mreg_api.types import JsonMapping
-from mreg_api.types import QueryParams
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic.fields import FieldInfo
 
 from mreg_api.api.endpoints import Endpoint
-from mreg_api.exceptions import PostError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import PatchError
+from mreg_api.exceptions import PostError
+from mreg_api.types import JsonMapping
+from mreg_api.types import QueryParams
 from mreg_api.utilities.api import delete
 from mreg_api.utilities.api import get
 from mreg_api.utilities.api import get_item_by_key_value

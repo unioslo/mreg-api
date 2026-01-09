@@ -21,11 +21,6 @@ from typing import overload
 
 from mreg_api.choices import CommunitySortOrder
 from mreg_api.outputmanager import OutputManager
-from mreg_api.types import IP_AddressT
-from mreg_api.types import IP_NetworkT
-from mreg_api.types import IP_Version
-from mreg_api.types import QueryParams
-from mreg_api.types import get_type_adapter
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
@@ -45,7 +40,6 @@ from mreg_api.api.fields import NameList
 from mreg_api.api.history import HistoryItem
 from mreg_api.api.history import HistoryResource
 from mreg_api.exceptions import APIError
-from mreg_api.exceptions import PostError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
@@ -58,10 +52,16 @@ from mreg_api.exceptions import InvalidIPv4Address
 from mreg_api.exceptions import InvalidIPv6Address
 from mreg_api.exceptions import InvalidNetwork
 from mreg_api.exceptions import IPNetworkWarning
+from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
+from mreg_api.exceptions import PostError
 from mreg_api.exceptions import UnexpectedDataError
-from mreg_api.exceptions import MregValidationError
+from mreg_api.types import IP_AddressT
+from mreg_api.types import IP_NetworkT
+from mreg_api.types import IP_Version
+from mreg_api.types import QueryParams
+from mreg_api.types import get_type_adapter
 from mreg_api.utilities.api import delete
 from mreg_api.utilities.api import get
 from mreg_api.utilities.api import get_item_by_key_value

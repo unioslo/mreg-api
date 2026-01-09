@@ -17,7 +17,6 @@ import re
 from typing import Annotated
 from typing import Any
 
-from mreg_api.types import get_type_adapter
 from pydantic import AfterValidator
 from pydantic import BeforeValidator
 from pydantic import GetCoreSchemaHandler
@@ -26,6 +25,7 @@ from pydantic_extra_types.mac_address import MacAddress as PydanticMacAddress
 
 from mreg_api.config import MregCliConfig
 from mreg_api.exceptions import InputFailure
+from mreg_api.types import get_type_adapter
 
 logger = logging.getLogger(__name__)
 

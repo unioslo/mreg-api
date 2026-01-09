@@ -26,11 +26,6 @@ from uuid import uuid4
 import requests
 from mreg_api.__about__ import __version__
 from mreg_api.outputmanager import OutputManager
-from mreg_api.tokenfile import TokenFile
-from mreg_api.types import Json
-from mreg_api.types import JsonMapping
-from mreg_api.types import QueryParams
-from mreg_api.types import get_type_adapter
 from prompt_toolkit import prompt
 from pydantic import BaseModel
 from pydantic import TypeAdapter
@@ -41,11 +36,16 @@ from mreg_api.api.errors import parse_mreg_error
 from mreg_api.cache import get_cache
 from mreg_api.config import MregCliConfig
 from mreg_api.exceptions import APIError
-from mreg_api.exceptions import MregApiBaseError
 from mreg_api.exceptions import LoginFailedError
+from mreg_api.exceptions import MregApiBaseError
+from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import TooManyResults
-from mreg_api.exceptions import MregValidationError
+from mreg_api.tokenfile import TokenFile
+from mreg_api.types import Json
+from mreg_api.types import JsonMapping
+from mreg_api.types import QueryParams
+from mreg_api.types import get_type_adapter
 
 session = requests.Session()
 session.headers.update({"User-Agent": f"mreg-cli-{__version__}"})
@@ -611,7 +611,7 @@ def get_typed(
     :param params: The parameters to pass to the API endpoint.
     :param limit: The maximum number of hits to allow for paginated responses.
 
-    :raises pydantic.MregValidationError: If the response cannot be deserialized into the given type.
+    :raises pydantic.ValidationError: If the response cannot be deserialized into the given type.
 
     :returns: An instance of `type_` populated with data from the response.
     """
