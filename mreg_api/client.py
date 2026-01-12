@@ -425,7 +425,7 @@ class MregApiClient:
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        limit: int | None = 500,
+        limit: int | None = None,
     ) -> list[Json]:
         """Make a get request that produces a list.
 
@@ -535,7 +535,7 @@ class MregApiClient:
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        limit: int | None = 500,
+        limit: int | None = None,
         expect_one_result: bool | None = False,
     ) -> Json | list[Json]:
         """Make a get request that produces a list.
@@ -593,7 +593,7 @@ class MregApiClient:
         path: str,
         type_: type[T],
         params: QueryParams | None = None,
-        limit: int | None = 500,
+        limit: int | None = None,
     ) -> T:
         """Fetch and deserialize JSON from an endpoint into a specific type.
 
