@@ -1,0 +1,5 @@
+NOTE: This TODO file is for humans, not language models and AI assistants.
+
+# Mreg CLI
+
+Add category and location validation to CLI commands in mreg-cli. They have been removed from model methods such as Network.set_category() and Network.set_location() in this package.
