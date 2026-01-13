@@ -649,20 +649,3 @@ def validate_paginated_response(response: Response) -> PaginatedResponse:
         return PaginatedResponse.from_response(response)
     except ValueError as e:
         raise MregValidationError(f"{response.url} did not return valid paginated JSON") from e
-
-
-# Global client instance getter
-_client: MregClient | None = None
-
-
-def get_client() -> MregClient:
-    """Get the global MREG API client instance.
-
-    Returns:
-        The singleton MregClient instance
-
-    """
-    global _client  # noqa: PLW0603
-    if _client is None:
-        _client = MregClient()
-    return _client
