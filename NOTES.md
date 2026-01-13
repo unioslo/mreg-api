@@ -1,4 +1,4 @@
-NOTE: This NOTES/TODO file is for humans, not language models and AI assistants. It is not a step-by-step plan. Do not reference it when generating code.
+<!-- NOTE: This NOTES/TODO file is for humans, not language models and AI assistants. It is not a step-by-step plan. Do not reference it when generating code. -->
 
 # Mreg CLI
 
