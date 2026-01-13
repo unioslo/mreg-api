@@ -1,6 +1,6 @@
-"""Utility functions for mreg_api.
+"""Utility functions for interacting with the MREG API.
 
-Provides backward-compatible HTTP functions that delegate to MregApiClient.
+NOTE: Slated for deletion. mreg_api.client.MregApiCliens implements these functions now.
 """
 
 from __future__ import annotations
