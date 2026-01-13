@@ -23,7 +23,6 @@ from requests import Response
 
 from mreg_api.__about__ import __version__
 from mreg_api.api.errors import parse_mreg_error
-from mreg_api.config import MregCliConfig
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
@@ -89,6 +88,7 @@ class MregApiClient:
         self,
         url: str = "https://mreg.uio.no",
         domain: str = "uio.no",
+        user: str | None = None,
         timeout: int = 20,
         cache: bool = True,
         cache_ttl: int = 300,
@@ -99,10 +99,16 @@ class MregApiClient:
 
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": f"mreg-api-{__version__}"})
-        self._config = MregCliConfig()
-        self._initialized = True
+
+        self.url = url
+        self.domain = domain
+        self.timeout = timeout
+        self.user = user
+
         self.cache = cache
         self.cache_ttl = cache_ttl
+
+        self._initialized = True
 
     @classmethod
     def reset_instance(cls) -> None:
@@ -139,17 +145,17 @@ class MregApiClient:
             True if token was loaded, False otherwise
 
         """
-        if not self._config.user or not self._config.url:
+        if not self.user or not self.url:
             logger.warning("Cannot load token: user or URL not configured")
             return False
 
-        token_entry = TokenFile.get_entry(self._config.user, self._config.url)
+        token_entry = TokenFile.get_entry(self.user, self.url)
         if token_entry:
             self.set_token(token_entry.token)
-            logger.info("Loaded token from file for %s @ %s", self._config.user, self._config.url)
+            logger.info("Loaded token from file for %s @ %s", self.user, self.url)
             return True
 
-        logger.debug("No token found in file for %s @ %s", self._config.user, self._config.url)
+        logger.debug("No token found in file for %s @ %s", self.user, self.url)
         return False
 
     def set_correlation_id(self, suffix: str) -> str:
@@ -188,14 +194,14 @@ class MregApiClient:
             LoginFailedError: If authentication fails
 
         """
-        token_url = urljoin(self._config.url, "/api/token-auth/")
+        token_url = urljoin(self.url, "/api/token-auth/")
         logger.info("Authenticating %s @ %s", username, token_url)
 
         try:
             result = requests.post(
                 token_url,
                 {"username": username, "password": password},
-                timeout=self._config.http_timeout,
+                timeout=self.timeout,
             )
         except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
             raise LoginFailedError(f"Connection failed: {e}") from e
@@ -209,15 +215,15 @@ class MregApiClient:
         self.set_token(token)
 
         if save_token:
-            TokenFile.set_entry(username, self._config.url, token)
+            TokenFile.set_entry(username, self.url, token)
 
         logger.info("Authentication successful for %s", username)
 
     def logout(self) -> None:
         """Logout from MREG (invalidate token on server)."""
-        path = urljoin(self._config.url, "/api/token-logout/")
+        path = urljoin(self.url, "/api/token-logout/")
         try:
-            self.session.post(path, timeout=self._config.http_timeout)
+            self.session.post(path, timeout=self.timeout)
         except requests.exceptions.ConnectionError as e:
             logger.warning("Failed to log out: %s", e)
 
@@ -230,7 +236,7 @@ class MregApiClient:
         """
         try:
             ret = self.session.get(
-                urljoin(self._config.url, "/api/v1/hosts/"),
+                urljoin(self.url, "/api/v1/hosts/"),
                 params={"page_size": 1},
                 timeout=5,
             )
@@ -266,9 +272,7 @@ class MregApiClient:
                 )
             else:
                 res_text = result.text
-            message = (
-                f'{operation_type} "{url}": {result.status_code}: {result.reason}\n{res_text}'
-            )
+            message = f'{operation_type} "{url}": {result.status_code}: {result.reason}\n{res_text}'
             raise APIError(message, result)
 
     def request(
@@ -298,7 +302,7 @@ class MregApiClient:
         if params is None:
             params = {}
 
-        url = urljoin(self._config.url, path)
+        url = urljoin(self.url, path)
 
         # Build log URL
         logurl = url
@@ -324,7 +328,7 @@ class MregApiClient:
             url,
             params=params,
             json=data or None,
-            timeout=self._config.http_timeout,
+            timeout=self.timeout,
         )
 
         # Update context variables for error reporting
@@ -350,24 +354,18 @@ class MregApiClient:
         return result
 
     @overload
-    def get(
-        self, path: str, params: QueryParams | None, ok404: Literal[True]
-    ) -> Response | None: ...
+    def get(self, path: str, params: QueryParams | None, ok404: Literal[True]) -> Response | None: ...
 
     @overload
     def get(self, path: str, params: QueryParams | None, ok404: Literal[False]) -> Response: ...
 
     @overload
-    def get(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool
-    ) -> Response | None: ...
+    def get(self, path: str, params: QueryParams | None = ..., *, ok404: bool) -> Response | None: ...
 
     @overload
     def get(self, path: str, params: QueryParams | None = ...) -> Response: ...
 
-    def get(
-        self, path: str, params: QueryParams | None = None, ok404: bool = False
-    ) -> Response | None:
+    def get(self, path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
         """Make a standard get request."""
         return self._do_get(path, params, ok404)
 
@@ -566,9 +564,7 @@ class MregApiClient:
         resp = validate_paginated_response(response)
 
         if limit and resp.count > abs(limit):
-            raise TooManyResults(
-                f"Too many hits ({resp.count}), please refine your search criteria."
-            )
+            raise TooManyResults(f"Too many hits ({resp.count}), please refine your search criteria.")
 
         # Iterate over all pages and collect the results
         ret: list[Json] = resp.results
