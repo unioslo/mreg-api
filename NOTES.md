@@ -26,6 +26,12 @@ Commands can retrieve notes from model instances using a new `get_notes()` metho
 
 Token needs to be retrieved from the client (`MregApiClient.get_token()`) and saved by the CLI. Token file management is not a part of the API client.
 
+## HostName validation
+
+HostName validation has been decoupled from MregCliConfig. Currently, a new class variable `HostName.domain` is used to provide a default domain when parsing hostnames. This can be set by the CLI after reading configuration.
+
+It is not a very elegant solution, so we should consider other approaches.
+
 # Mreg API
 
 ## Docstrings
