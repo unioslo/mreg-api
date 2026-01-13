@@ -21,12 +21,12 @@ from pydantic import field_validator
 from requests import Response
 
 from mreg_api.__about__ import __version__
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import TooManyResults
-from mreg_api.models.endpoints import Endpoint
 from mreg_api.models.errors import parse_mreg_error
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping

@@ -16,13 +16,13 @@ from pydantic import ConfigDict
 from pydantic import PrivateAttr
 from pydantic.fields import FieldInfo
 
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
-from mreg_api.models.endpoints import Endpoint
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 

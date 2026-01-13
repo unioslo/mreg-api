@@ -12,9 +12,9 @@ from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
 
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import InternalError
-from mreg_api.models.endpoints import Endpoint
 from mreg_api.types import QueryParams
 
 

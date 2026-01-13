@@ -28,6 +28,7 @@ from pydantic import computed_field
 from pydantic import field_validator
 from typing_extensions import Unpack
 
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
@@ -48,7 +49,6 @@ from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.abstracts import FrozenModel
 from mreg_api.models.abstracts import FrozenModelWithTimestamps
-from mreg_api.models.endpoints import Endpoint
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
