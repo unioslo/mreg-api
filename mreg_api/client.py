@@ -27,7 +27,7 @@ from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import TooManyResults
-from mreg_api.models.errors import parse_mreg_error
+from mreg_api.exceptions import parse_mreg_error
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
