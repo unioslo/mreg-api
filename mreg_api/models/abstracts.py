@@ -16,13 +16,13 @@ from pydantic import ConfigDict
 from pydantic import PrivateAttr
 from pydantic.fields import FieldInfo
 
-from mreg_api.api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
+from mreg_api.models.endpoints import Endpoint
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 from mreg_api.utilities.api import delete
@@ -157,9 +157,7 @@ class APIMixin(ABC):
         """Ensure that the subclass inherits from BaseModel."""
         super().__init_subclass__(**kwargs)
         if BaseModel not in cls.__mro__:
-            raise TypeError(
-                f"{cls.__name__} must be applied on classes inheriting from BaseModel."
-            )
+            raise TypeError(f"{cls.__name__} must be applied on classes inheriting from BaseModel.")
 
     def id_for_endpoint(self) -> int | str:
         """Return the appropriate id for the object for its endpoint.

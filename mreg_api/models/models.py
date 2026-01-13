@@ -1,4 +1,4 @@
-"""Pydantic models for the mreg_cli package."""
+"""Pydantic models for API resources."""
 
 from __future__ import annotations
 
@@ -28,15 +28,6 @@ from pydantic import computed_field
 from pydantic import field_validator
 from typing_extensions import Unpack
 
-from mreg_api.api.abstracts import APIMixin
-from mreg_api.api.abstracts import FrozenModel
-from mreg_api.api.abstracts import FrozenModelWithTimestamps
-from mreg_api.api.endpoints import Endpoint
-from mreg_api.api.fields import HostName
-from mreg_api.api.fields import MacAddress
-from mreg_api.api.fields import NameList
-from mreg_api.api.history import HistoryItem
-from mreg_api.api.history import HistoryResource
 from mreg_api.client import MregApiClient
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
@@ -55,6 +46,15 @@ from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import UnexpectedDataError
+from mreg_api.models.abstracts import APIMixin
+from mreg_api.models.abstracts import FrozenModel
+from mreg_api.models.abstracts import FrozenModelWithTimestamps
+from mreg_api.models.endpoints import Endpoint
+from mreg_api.models.fields import HostName
+from mreg_api.models.fields import MacAddress
+from mreg_api.models.fields import NameList
+from mreg_api.models.history import HistoryItem
+from mreg_api.models.history import HistoryResource
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
 from mreg_api.types import QueryParams
@@ -125,9 +125,7 @@ class NetworkOrIP(BaseModel):
     def parse_or_raise(cls, value: Any, mode: Literal["networkv6"]) -> ipaddress.IPv6Network: ...
 
     @classmethod
-    def parse_or_raise(
-        cls, value: Any, mode: IPNetMode | None = None
-    ) -> IP_AddressT | IP_NetworkT:
+    def parse_or_raise(cls, value: Any, mode: IPNetMode | None = None) -> IP_AddressT | IP_NetworkT:
         """Parse a value as an IP address or network.
 
         Optionally specify the mode to validate the input as.
@@ -771,9 +769,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             if not delegated_zone:
                 raise InputFailure(f"Zone {delegation!r} does not exist. Must force.")
             if delegated_zone.is_reverse() != self.is_reverse():
-                raise InputFailure(
-                    f"Delegation '{delegation}' is not a {self.__class__.__name__} zone"
-                )
+                raise InputFailure(f"Delegation '{delegation}' is not a {self.__class__.__name__} zone")
 
         self.get_delegation_and_raise(delegation)
 
@@ -826,9 +822,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         """
         delegation = self.get_delegation(name)
         if delegation:
-            raise EntityAlreadyExists(
-                f"Zone {self.name!r} already has a delegation named {name!r}"
-            )
+            raise EntityAlreadyExists(f"Zone {self.name!r} already has a delegation named {name!r}")
 
     def get_delegations(self) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """Get all delegations for a zone.
@@ -881,9 +875,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         path = self.endpoint_nameservers().with_params(self.name)
         resp = patch(path, primary_ns=nameservers)
         if not resp or not resp.ok:
-            raise PatchError(
-                f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}"
-            )
+            raise PatchError(f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}")
 
 
 class ForwardZone(Zone, WithName, APIMixin):
@@ -1185,9 +1177,7 @@ class Role(HostPolicy, WithHistory):
         """
         label = Label.get_by_name_or_raise(label_name)
         if label.id in self.labels:
-            raise EntityAlreadyExists(
-                f"The role {self.name!r} already has the label {label_name!r}"
-            )
+            raise EntityAlreadyExists(f"The role {self.name!r} already has the label {label_name!r}")
 
         label_ids = self.labels.copy()
         label_ids.append(label.id)
@@ -1334,9 +1324,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         try:
             return NetworkOrIP.parse_or_raise(self.network, mode="network")
         except IPNetworkWarning as e:
-            logger.error(
-                "Invalid network address %s for network with ID %s", self.network, self.id
-            )
+            logger.error("Invalid network address %s for network with ID %s", self.network, self.id)
             raise e
 
     @property
@@ -1528,9 +1516,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
     def get_reserved_ips(self) -> list[IP_AddressT]:
         """Return the reserved IP addresses of the network."""
-        return get_typed(
-            Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT]
-        )
+        return get_typed(Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT])
 
     def get_used_count(self) -> int:
         """Return the number of used IP addresses in the network."""
@@ -1550,15 +1536,11 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
     def get_used_host_list(self) -> dict[str, list[str]]:
         """Return a dict of used IP addresses and their associated hosts."""
-        return get_typed(
-            Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]]
-        )
+        return get_typed(Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]])
 
     def get_ptroverride_host_list(self) -> dict[str, str]:
         """Return a dict of PTR override IP addresses and their associated hosts."""
-        return get_typed(
-            Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str]
-        )
+        return get_typed(Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str])
 
     def is_reserved_ip(self, ip: IP_AddressT) -> bool:
         """Return True if the IP address is in the reserved list.
@@ -2824,9 +2806,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """Return a list of IPv6 addresses."""
         return [ip for ip in self.ipaddresses if ip.is_ipv6()]
 
-    def associate_mac_to_ip(
-        self, mac: MacAddress, ip: IP_AddressT | str, force: bool = False
-    ) -> Host:
+    def associate_mac_to_ip(self, mac: MacAddress, ip: IP_AddressT | str, force: bool = False) -> Host:
         """Associate a MAC address to an IP address.
 
         :param mac: The MAC address to associate.
@@ -2982,9 +2962,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         if data_as_dict["zone"]:
             zone = ForwardZone.model_validate(data_as_dict["zone"])
             if validate_zone_resolution and zone.id != self.zone:
-                raise MregValidationError(
-                    f"Expected zone ID {self.zone} but resolved as {zone.id}."
-                )
+                raise MregValidationError(f"Expected zone ID {self.zone} but resolved as {zone.id}.")
             return zone
 
         if data_as_dict["delegation"]:
@@ -3074,9 +3052,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 class HostList2(list[T]):
     """List of hosts that may be CNAMEs or PTRs."""
 
-    def __init__(
-        self, iterable: Iterable[T], is_cname: bool = False, is_ptr: bool = False
-    ) -> None:
+    def __init__(self, iterable: Iterable[T], is_cname: bool = False, is_ptr: bool = False) -> None:
         """Initialize a list of hosts.
 
         Args:

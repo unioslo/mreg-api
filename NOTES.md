@@ -16,11 +16,15 @@ Adjust limit for list GET requests when using MregApiClient to be 500 (if desire
 
 ## OutputManager Removal in models
 
-OutputManager.add_line() calls have been removed from mreg_api.api.models and replaced with an internal note system using `FrozenModel.add_note()`. This allows tracking informational messages without direct CLI output.
+OutputManager.add_line() calls have been removed from mreg_api.models.models and replaced with an internal note system using `FrozenModel.add_note()`. This allows tracking informational messages without direct CLI output.
 
 For now, this is implemented as a `list[str]` private attribute `_notes` in `FrozenModel`, with an `add_note()` method to append notes. However, if richer functionality is needed later, a `Note` class could be created.
 
 Commands can retrieve notes from model instances using a new `get_notes()` method.
+
+## Token
+
+Token needs to be retrieved from the client (`MregApiClient.get_token()`) and saved by the CLI. Token file management is not a part of the API client.
 
 # Mreg API
 

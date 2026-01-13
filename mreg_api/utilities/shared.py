@@ -15,9 +15,7 @@ def string_to_int(value: Any, error_tag: str) -> int:
         raise InputFailure("%s: Not a valid integer" % error_tag) from e
 
 
-def convert_wildcard_to_regex(
-    param: str, arg: str, autoWildcards: bool = False
-) -> tuple[str, str]:
+def convert_wildcard_to_regex(param: str, arg: str, autoWildcards: bool = False) -> tuple[str, str]:
     """Convert wildcard filter "foo*bar*" to something DRF will understand.
 
     E.g. "foo*bar*" -> "?name__regex=$foo.*bar.*"

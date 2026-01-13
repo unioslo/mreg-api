@@ -22,13 +22,13 @@ from pydantic import field_validator
 from requests import Response
 
 from mreg_api.__about__ import __version__
-from mreg_api.api.errors import parse_mreg_error
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import TooManyResults
-from mreg_api.tokenfile import TokenFile
+from mreg_api.models.endpoints import Endpoint
+from mreg_api.models.errors import parse_mreg_error
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
@@ -61,18 +61,14 @@ class MregApiClient:
     Example:
         >>> client = MregApiClient()
         >>> client.login("username", "password")
-        >>> response = client.get("/api/v1/hosts/")
+        >>> from mreg_api.models import Host
+        >>> Host.get_by_any_means("example.uio.no")
 
         Or with token:
         >>> client = MregApiClient()
         >>> client.set_token("your-token-here")
-        >>> response = client.get("/api/v1/hosts/")
-
-        Or from token file:
-        >>> client = MregApiClient()
-        >>> client.load_token_from_file()
-        >>> response = client.get("/api/v1/hosts/")
-
+        >>> from mreg_api.models import Host
+        >>> Host.get_by_any_means("example.uio.no")
     """
 
     _instance: ClassVar[Self | None] = None
@@ -108,6 +104,9 @@ class MregApiClient:
         self.cache = cache
         self.cache_ttl = cache_ttl
 
+        # State
+        self._token: str | None = None
+
         self._initialized = True
 
     @classmethod
@@ -123,6 +122,7 @@ class MregApiClient:
 
         """
         self.session.headers.update({"Authorization": f"Token {token}"})
+        self._token = token
 
     def get_token(self) -> str | None:
         """Get the current authorization token if set.
@@ -131,32 +131,7 @@ class MregApiClient:
             Token string or None if not authenticated
 
         """
-        auth = self.session.headers.get("Authorization", "")
-        if auth:
-            if isinstance(auth, bytes):
-                auth = auth.decode("utf-8")
-            return auth.partition(" ")[2] or None
-        return None
-
-    def load_token_from_file(self) -> bool:
-        """Load token from token file if available.
-
-        Returns:
-            True if token was loaded, False otherwise
-
-        """
-        if not self.user or not self.url:
-            logger.warning("Cannot load token: user or URL not configured")
-            return False
-
-        token_entry = TokenFile.get_entry(self.user, self.url)
-        if token_entry:
-            self.set_token(token_entry.token)
-            logger.info("Loaded token from file for %s @ %s", self.user, self.url)
-            return True
-
-        logger.debug("No token found in file for %s @ %s", self.user, self.url)
-        return False
+        return self._token
 
     def set_correlation_id(self, suffix: str) -> str:
         """Set correlation ID for request tracking.
@@ -182,19 +157,21 @@ class MregApiClient:
         """
         return str(self.session.headers.get("X-Correlation-ID", ""))
 
-    def login(self, username: str, password: str, save_token: bool = True) -> None:
+    def login(self, username: str, password: str) -> str:
         """Authenticate with username and password.
 
         Args:
             username: MREG username
             password: MREG password
-            save_token: Whether to save token to token file
 
         Raises:
             LoginFailedError: If authentication fails
 
+        Returns:
+            The authentication token
+
         """
-        token_url = urljoin(self.url, "/api/token-auth/")
+        token_url = urljoin(self.url, Endpoint.TokenAuth)
         logger.info("Authenticating %s @ %s", username, token_url)
 
         try:
@@ -211,17 +188,19 @@ class MregApiClient:
             msg = err.as_str() if err else result.text
             raise LoginFailedError(msg)
 
-        token = result.json()["token"]
+        token = result.json().get("token")
+        if not token:
+            raise LoginFailedError("No token received from server")
+        token = str(token)
         self.set_token(token)
-
-        if save_token:
-            TokenFile.set_entry(username, self.url, token)
 
         logger.info("Authentication successful for %s", username)
 
+        return token
+
     def logout(self) -> None:
         """Logout from MREG (invalidate token on server)."""
-        path = urljoin(self.url, "/api/token-logout/")
+        path = urljoin(self.url, Endpoint.TokenLogout)
         try:
             self.session.post(path, timeout=self.timeout)
         except requests.exceptions.ConnectionError as e:
@@ -236,7 +215,7 @@ class MregApiClient:
         """
         try:
             ret = self.session.get(
-                urljoin(self.url, "/api/v1/hosts/"),
+                urljoin(self.url, Endpoint.Hosts),
                 params={"page_size": 1},
                 timeout=5,
             )

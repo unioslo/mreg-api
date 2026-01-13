@@ -89,6 +89,8 @@ class Endpoint(str, Enum):
     ForwardZoneForHost = f"{ForwardZones}hostname/"
 
     TokenIsValid = "/api/token-is-valid/"
+    TokenAuth = "/api/token-auth/"
+    TokenLogout = "/api/token-logout/"
 
     MetaUser = "/api/meta/user"
     MetaVersion = "/api/meta/version"
