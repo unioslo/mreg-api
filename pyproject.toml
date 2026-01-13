@@ -78,7 +78,7 @@ profile = "black"
 line_length = 99
 
 [tool.ruff]
-line-length = 99
+line-length = 105
 # Assume Python 3.11.
 target-version = "py311"
 
