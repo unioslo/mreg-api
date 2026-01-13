@@ -4,15 +4,15 @@
 
 ## Category and Location Validation
 
-Add category and location validation to CLI commands in mreg-cli. They have been removed from model methods such as Network.set_category() and Network.set_location() in this package.
+Add category and location validation to CLI commands in mreg-cli. They have been removed from model methods such as `Network.set_category()` and `Network.set_location()` in this package.
 
 ## List GET Request Limits
 
 Adjust limit for list GET requests when using MregApiClient to be 500 (if desired). New default is None (no limit). This affects the following methods:
 
-- MregApiClient.get_list()
-- MregApiClient.get_list_generic()
-- MregApiClient.get_typed()
+- `MregApiClient.get_list()`
+- `MregApiClient.get_list_generic()`
+- `MregApiClient.get_typed()`
 
 ## OutputManager Removal in models
 
