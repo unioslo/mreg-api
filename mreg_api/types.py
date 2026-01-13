@@ -88,10 +88,7 @@ def json_custom_error_validator(
 
 Json = TypeAliasType(
     "Json",
-    Annotated[
-        Union[Mapping[str, "Json"], Sequence["Json"], str, int, float, bool, None],
-        WrapValidator(json_custom_error_validator),
-    ],
+    "dict[str, Json] | list[Json] | str | int | float | bool | None",
 )
 JsonMapping = Mapping[str, Json]
 QueryParams = MutableMapping[str, str | int | None]
