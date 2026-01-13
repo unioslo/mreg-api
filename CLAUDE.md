@@ -133,7 +133,7 @@ Transform this CLI codebase into a clean, standalone API client library for prog
 
 - Remove CLI-specific logic and output methods from models
 - Preserve current CRUD semantics (`fetch*`, `create`, `update`, `delete` methods)
-- Create `mreg_api/client.py` with `MregApiClient` class for session management
+- Create `mreg_api/client.py` with `MregClient` class for session management
   - Handles authentication, base URL, session state
   - Replace global session state with client instance (singleton pattern recommended)
   - Migrate `get`/`post`/`patch`/`delete` from `utilities/api.py` to client methods

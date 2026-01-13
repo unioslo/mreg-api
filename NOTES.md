@@ -8,11 +8,11 @@ Add category and location validation to CLI commands in mreg-cli. They have been
 
 ## List GET Request Limits
 
-Adjust limit for list GET requests when using MregApiClient to be 500 (if desired). New default is None (no limit). This affects the following methods:
+Adjust limit for list GET requests when using MregClient to be 500 (if desired). New default is None (no limit). This affects the following methods:
 
-- `MregApiClient.get_list()`
-- `MregApiClient.get_list_generic()`
-- `MregApiClient.get_typed()`
+- `MregClient.get_list()`
+- `MregClient.get_list_generic()`
+- `MregClient.get_typed()`
 
 ## OutputManager Removal in models
 
@@ -24,7 +24,7 @@ Commands can retrieve notes from model instances using a new `get_notes()` metho
 
 ## Token
 
-Token needs to be retrieved from the client (`MregApiClient.get_token()`) and saved by the CLI. Token file management is not a part of the API client.
+Token needs to be retrieved from the client (`MregClient.get_token()`) and saved by the CLI. Token file management is not a part of the API client.
 
 ## HostName validation
 

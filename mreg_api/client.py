@@ -46,7 +46,7 @@ T = TypeVar("T")
 JsonMappingValidator = TypeAdapter(JsonMapping)
 
 
-class MregApiClient:
+class MregClient:
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
@@ -58,13 +58,13 @@ class MregApiClient:
     2. Username/password: Call login() with credentials
 
     Example:
-        >>> client = MregApiClient()
+        >>> client = MregClient()
         >>> client.login("username", "password")
         >>> from mreg_api.models import Host
         >>> Host.get_by_any_means("example.uio.no")
 
         Or with token:
-        >>> client = MregApiClient()
+        >>> client = MregClient()
         >>> client.set_token("your-token-here")
         >>> from mreg_api.models import Host
         >>> Host.get_by_any_means("example.uio.no")
@@ -649,17 +649,17 @@ def validate_paginated_response(response: Response) -> PaginatedResponse:
 
 
 # Global client instance getter
-_client: MregApiClient | None = None
+_client: MregClient | None = None
 
 
-def get_client() -> MregApiClient:
+def get_client() -> MregClient:
     """Get the global MREG API client instance.
 
     Returns:
-        The singleton MregApiClient instance
+        The singleton MregClient instance
 
     """
     global _client  # noqa: PLW0603
     if _client is None:
-        _client = MregApiClient()
+        _client = MregClient()
     return _client

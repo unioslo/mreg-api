@@ -28,7 +28,7 @@ from pydantic import computed_field
 from pydantic import field_validator
 from typing_extensions import Unpack
 
-from mreg_api.client import MregApiClient
+from mreg_api.client import MregClient
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
@@ -900,7 +900,7 @@ class ForwardZone(Zone, WithName, APIMixin):
         :param hostname: The hostname to search for.
         :returns: The zone if found, None otherwise.
         """
-        resp = MregApiClient().get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
+        resp = MregClient().get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
         if not resp:
             return None
 
