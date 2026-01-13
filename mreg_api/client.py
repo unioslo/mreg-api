@@ -51,12 +51,11 @@ class MregApiClient:
 
     This client manages HTTP sessions, authentication, and provides
     methods for making API requests. It is designed to be used as
-    a singleton, similar to MregCliConfig.
+    a singleton.
 
     Authentication modes:
     1. Token: Provide token directly via set_token()
-    2. Token file: Load from file via load_token_from_file()
-    3. Username/password: Call login() with credentials
+    2. Username/password: Call login() with credentials
 
     Example:
         >>> client = MregApiClient()
