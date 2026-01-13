@@ -49,3 +49,7 @@ References to "force" in error messages should be removed. The CLI should be the
 We need to store requests in some internal client data structure that Mreg-CLI can read to generate its recording file.
 
 IMPORTANT: mreg-cli needs to remember to clear this recording data structure between commands and store it in its OutputManager.
+
+## Singleton instantation in models
+
+We could change the API of MregClient to require an `init` or `setup()` method to configure the singleton instance, which would let us call `client = MregClient()` at the top-level of `mreg_api.models` instead of requiring inline imports with client instantation in every method.
