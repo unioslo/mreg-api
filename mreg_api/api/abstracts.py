@@ -13,6 +13,7 @@ from typing import cast
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import PrivateAttr
 from pydantic.fields import FieldInfo
 
 from mreg_api.api.endpoints import Endpoint
@@ -116,6 +117,17 @@ def _validate_default(new: Any, old: Any) -> bool:
 
 class FrozenModel(BaseModel):
     """Model for an immutable object."""
+
+    _notes: list[str] = PrivateAttr(default_factory=list)
+    """Internal notes for the object."""
+
+    def add_note(self, note: str) -> None:
+        """Add a note regarding the object."""
+        self._notes.append(note)
+
+    def get_notes(self) -> list[str]:
+        """Get all notes regarding the object."""
+        return self._notes
 
     def __setattr__(self, name: str, value: Any):
         """Raise an exception when trying to set an attribute."""
@@ -445,7 +457,7 @@ class APIMixin(ABC):
     def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:
         """Patch the object with the given values.
 
-        Notes
+        Notes:
         -----
           1. Depending on the endpoint, the server may not return the patched object.
           2. Patching with None may not clear the field if it isn't nullable (which few fields

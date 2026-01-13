@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+from collections.abc import Iterable
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -44,7 +45,6 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import InputFailure
-from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
 from mreg_api.exceptions import InvalidIPv6Address
@@ -57,12 +57,10 @@ from mreg_api.exceptions import PostError
 from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
-from mreg_api.types import IP_Version
 from mreg_api.types import QueryParams
 from mreg_api.utilities.api import delete
 from mreg_api.utilities.api import get
 from mreg_api.utilities.api import get_item_by_key_value
-from mreg_api.utilities.api import get_list_in
 from mreg_api.utilities.api import get_list_unique
 from mreg_api.utilities.api import get_typed
 from mreg_api.utilities.api import patch
@@ -289,7 +287,7 @@ class WithHost(BaseModel):
     def resolve_host(self) -> Host | None:
         """Resolve the host ID to a Host object.
 
-        Notes
+        Notes:
         -----
             - This method will call the API to resolve the host ID to a Host object.
             - This assumes that there is a host attribute in the object.
@@ -311,7 +309,7 @@ class WithZone(BaseModel, APIMixin):
     def resolve_zone(self) -> ForwardZone | None:
         """Resolve the zone ID to a (Forward)Zone object.
 
-        Notes
+        Notes:
         -----
             - This method will call the API to resolve the zone ID to a Zone object.
             - This assumes that there is a zone attribute in the object.
@@ -1982,12 +1980,12 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
 
         if len(ips) == 1:
             raise EntityAlreadyExists(
-                f"MAC address {mac} is already associated with IP address {ips[0].ipaddress}, must force."
+                f"MAC address {mac} is already associated with IP address {ips[0].ipaddress}, must force."  # noqa: E501
             )
         else:
             ips_str = ", ".join([str(ip.ipaddress) for ip in ips])
             raise MultipleEntitiesFound(
-                f"MAC address {mac} is already associated with multiple IP addresses: {ips_str}, must force."
+                f"MAC address {mac} is already associated with multiple IP addresses: {ips_str}, must force."  # noqa: E501
             )
 
     @classmethod
@@ -2382,7 +2380,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             hosts = cls.get_list_by_field("ptr_overrides__ipaddress", str(ip))
             if hosts and inform_as_ptr:
                 for host in hosts:
-                    OutputManager().add_line(f"{ip} is a PTR override for {host.name}")
+                    host.add_note(f"{ip} is a PTR override for {host.name}")
         return hosts
 
     @classmethod
@@ -2411,7 +2409,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             if not host:
                 host = cls.get_by_field("ptr_overrides__ipaddress", str(ip))
                 if host and inform_as_ptr:
-                    OutputManager().add_line(f"{ip} is a PTR override for {host.name}")
+                    host.add_note(f"{ip} is a PTR override for {host.name}")
             return host
         except MultipleEntitiesFound as e:
             raise MultipleEntitiesFound(f"Multiple hosts found with IP address {ip}.") from e
@@ -2554,7 +2552,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             host = Host.get_by_id(cname.host)
 
             if host and inform_as_cname:
-                OutputManager().add_line(f"{identifier} is a CNAME for {host.name}")
+                host.add_note(f"{identifier} is a CNAME for {host.name}")
 
         return host
 
@@ -2638,7 +2636,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         if cname := CNAME.get_by_field("name", identifier):
             host = cls.get_by_id(cname.host)
             if host and inform_as_cname:
-                OutputManager().add_line(f"{identifier} is a CNAME for {host.name}")
+                host.add_note(f"{identifier} is a CNAME for {host.name}")
                 return [host]
 
         return []
@@ -2851,7 +2849,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         if len(ipadresses) and not force:
             raise EntityOwnershipMismatch(
-                f"mac {mac} already in use by: {', '.join(str(ip.ipaddress) for ip in ipadresses)}. Use force to add {ip} -> {mac} as well."
+                f"mac {mac} already in use by: {', '.join(str(ip.ipaddress) for ip in ipadresses)}. Use force to add {ip} -> {mac} as well."  # noqa: E501
             )
 
         ip_found_in_host = False
@@ -3073,6 +3071,24 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hash((self.id, self.name))
 
 
+class HostList2(list[T]):
+    """List of hosts that may be CNAMEs or PTRs."""
+
+    def __init__(
+        self, iterable: Iterable[T], is_cname: bool = False, is_ptr: bool = False
+    ) -> None:
+        """Initialize a list of hosts.
+
+        Args:
+            iterable (Iterable[T]): The iterable to initialize with.
+            is_cname (bool, optional): Hosts are cnames. Defaults to False.
+            is_ptr (bool, optional): Hosts are ptrs. Defaults to False.
+        """
+        super().__init__(iterable)
+        self.is_ptr = is_ptr
+        self.is_cname = is_cname
+
+
 class HostList(FrozenModel):
     """Model for a list of hosts.
 
@@ -3080,6 +3096,8 @@ class HostList(FrozenModel):
     """
 
     results: list[Host]
+    is_ptr: bool = False
+    is_cname: bool = False
 
     @classmethod
     def endpoint(cls) -> Endpoint:

@@ -1,8 +1,12 @@
-NOTE: This NOTES/TODO file is for humans, not language models and AI assistants.
+NOTE: This NOTES/TODO file is for humans, not language models and AI assistants. It is not a step-by-step plan. Do not reference it when generating code.
 
-## Mreg CLI
+# Mreg CLI
+
+## Category and Location Validation
 
 Add category and location validation to CLI commands in mreg-cli. They have been removed from model methods such as Network.set_category() and Network.set_location() in this package.
+
+## List GET Request Limits
 
 Adjust limit for list GET requests when using MregApiClient to be 500 (if desired). New default is None (no limit). This affects the following methods:
 
@@ -10,10 +14,22 @@ Adjust limit for list GET requests when using MregApiClient to be 500 (if desire
 - MregApiClient.get_list_generic()
 - MregApiClient.get_typed()
 
-## Mreg API
+## OutputManager Removal in models
 
-### Docstrings
+OutputManager.add_line() calls have been removed from mreg_api.api.models and replaced with an internal note system using `FrozenModel.add_note()`. This allows tracking informational messages without direct CLI output.
+
+For now, this is implemented as a `list[str]` private attribute `_notes` in `FrozenModel`, with an `add_note()` method to append notes. However, if richer functionality is needed later, a `Note` class could be created.
+
+Commands can retrieve notes from model instances using a new `get_notes()` method.
+
+# Mreg API
+
+## Docstrings
 
 Ruff's pydocstyle ruleset does not support sphinx style docstrings. Docstrings should be converted to google style.
 
 https://docs.astral.sh/ruff/settings/#lint_pydocstyle_convention
+
+## Force
+
+References to "force" in error messages should be removed. The CLI should be the only place where "force" is relevant.
