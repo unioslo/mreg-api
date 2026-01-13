@@ -33,3 +33,9 @@ https://docs.astral.sh/ruff/settings/#lint_pydocstyle_convention
 ## Force
 
 References to "force" in error messages should be removed. The CLI should be the only place where "force" is relevant.
+
+## Recording
+
+We need to store requests in some internal client data structure that Mreg-CLI can read to generate its recording file.
+
+IMPORTANT: mreg-cli needs to remember to clear this recording data structure between commands and store it in its OutputManager.
