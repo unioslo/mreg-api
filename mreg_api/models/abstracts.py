@@ -25,13 +25,6 @@ from mreg_api.exceptions import PostError
 from mreg_api.models.endpoints import Endpoint
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
-from mreg_api.utilities.api import delete
-from mreg_api.utilities.api import get
-from mreg_api.utilities.api import get_item_by_key_value
-from mreg_api.utilities.api import get_list_unique
-from mreg_api.utilities.api import get_typed
-from mreg_api.utilities.api import patch
-from mreg_api.utilities.api import post
 
 
 def get_field_aliases(field_info: FieldInfo) -> set[str]:
@@ -192,11 +185,13 @@ class APIMixin(ABC):
         :param _id: The ID of the object.
         :returns: A list of objects if found, an empty list otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         endpoint = cls.endpoint()
         if endpoint.requires_search_for_id():
             return cls.get_list_by_field("id", _id)
 
-        data = get(endpoint.with_id(_id), ok404=True)
+        data = MregClient().get(endpoint.with_id(_id), ok404=True)
         if not data:
             return []
 
@@ -211,14 +206,18 @@ class APIMixin(ABC):
         :param _id: The ID of the object.
         :returns: The object if found, None otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+
         endpoint = cls.endpoint()
 
         # Some endpoints do not use the ID field as the endpoint identifier,
         # and in these cases we need to search for the ID... Lovely.
         if endpoint.requires_search_for_id():
-            data = get_item_by_key_value(cls.endpoint(), "id", str(_id))
+            data = client.get_item_by_key_value(cls.endpoint(), "id", str(_id))
         else:
-            data = get(cls.endpoint().with_id(_id), ok404=True)
+            data = client.get(cls.endpoint().with_id(_id), ok404=True)
             if not data:
                 return None
             data = data.json()
@@ -248,15 +247,18 @@ class APIMixin(ABC):
 
         :returns: The object if found, None otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
         endpoint = cls.endpoint()
 
         if endpoint.requires_search_for_id() and field == endpoint.external_id_field():
-            data = get(endpoint.with_id(value), ok404=True)
+            data = client.get(endpoint.with_id(value), ok404=True)
             if not data:
                 return None
             data = data.json()
         else:
-            data = get_item_by_key_value(cls.endpoint(), field, value, ok404=True)
+            data = client.get_item_by_key_value(cls.endpoint(), field, value, ok404=True)
 
         if not data:
             return None
@@ -326,7 +328,9 @@ class APIMixin(ABC):
 
         :returns: A list of objects if found, an empty list otherwise.
         """
-        return get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
 
     @classmethod
     def get_by_query(
@@ -415,7 +419,9 @@ class APIMixin(ABC):
         :param data: The data to search for.
         :returns: The object if found, None otherwise.
         """
-        obj_dict = get_list_unique(cls.endpoint(), params=data)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        obj_dict = MregClient().get_list_unique(cls.endpoint(), params=data)
         if not obj_dict:
             return None
         return cls(**obj_dict)
@@ -466,7 +472,9 @@ class APIMixin(ABC):
         :returns: The object refetched from the server.
 
         """
-        patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
         new_object = self.refetch()
 
         if validate:
@@ -481,7 +489,9 @@ class APIMixin(ABC):
 
         :returns: True if the object was deleted, False otherwise.
         """
-        response = delete(self.endpoint().with_id(self.id_for_endpoint()))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        response = MregClient().delete(self.endpoint().with_id(self.id_for_endpoint()))
 
         if response and response.ok:
             return True
@@ -501,12 +511,16 @@ class APIMixin(ABC):
         :raises GetError: If the object could not be fetched after creation.
         :returns: The object if created and its fetchable, None otherwise.
         """
-        response = post(cls.endpoint(), params=None, **params)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+
+        response = client.post(cls.endpoint(), params=None, **params)
 
         if response and response.ok:
             location = response.headers.get("Location")
             if location and fetch_after_create:
-                return get_typed(location, cls)
+                return client.get_typed(location, cls)
             # else:
             # Lots of endpoints don't give locations on creation,
             # so we can't fetch the object, but it's not an error...

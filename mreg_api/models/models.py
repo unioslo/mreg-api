@@ -28,7 +28,6 @@ from pydantic import computed_field
 from pydantic import field_validator
 from typing_extensions import Unpack
 
-from mreg_api.client import MregClient
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
@@ -58,13 +57,6 @@ from mreg_api.models.history import HistoryResource
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
 from mreg_api.types import QueryParams
-from mreg_api.utilities.api import delete
-from mreg_api.utilities.api import get
-from mreg_api.utilities.api import get_item_by_key_value
-from mreg_api.utilities.api import get_list_unique
-from mreg_api.utilities.api import get_typed
-from mreg_api.utilities.api import patch
-from mreg_api.utilities.api import post
 from mreg_api.utilities.shared import convert_wildcard_to_regex
 
 logger = logging.getLogger(__name__)
@@ -291,7 +283,9 @@ class WithHost(BaseModel):
             - This assumes that there is a host attribute in the object.
 
         """
-        data = get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
 
         if not data:
             return None
@@ -313,7 +307,9 @@ class WithZone(BaseModel, APIMixin):
             - This assumes that there is a zone attribute in the object.
 
         """
-        data = get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
 
         if not data:
             return None
@@ -431,8 +427,10 @@ class WithName(BaseModel, APIMixin):
         :param name: The regex pattern for names to search for.
         :returns: A list of resource objects.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         param, value = convert_wildcard_to_regex(cls.__name_field__, cls._case_name(name), True)
-        return get_typed(cls.endpoint(), list[cls], params={param: value})
+        return MregClient().get_typed(cls.endpoint(), list[cls], params={param: value})
 
     def rename(self, new_name: str) -> Self:
         """Rename the resource.
@@ -760,6 +758,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Force creation if ns/zone doesn't exist.
         :returns: The created delegation object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         self.ensure_delegation_in_zone(delegation)
         self.verify_nameservers(nameservers, force=force)
 
@@ -774,7 +774,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         self.get_delegation_and_raise(delegation)
 
         cls = Delegation.type_by_zone(self)
-        resp = post(
+        resp = MregClient().post(
             cls.endpoint().with_params(self.name),
             name=delegation,
             nameservers=nameservers,
@@ -793,9 +793,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param name: The name of the delegation to get.
         :returns: The delegation object if found.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         self.ensure_delegation_in_zone(name)
         cls = Delegation.type_by_zone(self)
-        resp = get(cls.endpoint_with_id(self, name), ok404=True)
+        resp = MregClient().get(cls.endpoint_with_id(self, name), ok404=True)
         if not resp:
             return None
         return cls.model_validate_json(resp.text)
@@ -831,8 +833,10 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param name: The name of the delegation to get.
         :returns: The delegation object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         cls = Delegation.type_by_zone(self)
-        return get_typed(cls.endpoint().with_params(self.name), list[cls])
+        return MregClient().get_typed(cls.endpoint().with_params(self.name), list[cls])
 
     def delete_delegation(self, name: str) -> bool:
         """Delete a delegation from the zone.
@@ -840,10 +844,12 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param delegation: The name of the delegation.
         :returns: True if the deletion was successful.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # Check if delegation exists
         self.ensure_delegation_in_zone(name)  # check name
         delegation = self.get_delegation_or_raise(name)
-        resp = delete(delegation.endpoint_with_id(self, name))
+        resp = MregClient().delete(delegation.endpoint_with_id(self, name))
         return resp.ok if resp else False
 
     def set_delegation_comment(self, name: str, comment: str) -> None:
@@ -852,8 +858,10 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param name: The name of the delegation.
         :param comment: The comment to set.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         delegation = self.get_delegation_or_raise(name)
-        resp = patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
+        resp = MregClient().patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
         if not resp or not resp.ok:
             raise PatchError(f"Failed to update comment for delegation {delegation.name!r}")
 
@@ -871,9 +879,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Whether to force the update.
         :returns: True if the update was successful.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         self.verify_nameservers(nameservers, force=force)
         path = self.endpoint_nameservers().with_params(self.name)
-        resp = patch(path, primary_ns=nameservers)
+        resp = MregClient().patch(path, primary_ns=nameservers)
         if not resp or not resp.ok:
             raise PatchError(f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}")
 
@@ -900,6 +910,8 @@ class ForwardZone(Zone, WithName, APIMixin):
         :param hostname: The hostname to search for.
         :returns: The zone if found, None otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         resp = MregClient().get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
         if not resp:
             return None
@@ -1131,20 +1143,24 @@ class Role(HostPolicy, WithHistory):
         :param atom: Name of the atom to search for.
         :returns: A list of Role objects.
         """
-        return get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
 
     def add_atom(self, atom_name: str) -> bool:
         """Add an atom to the role.
 
         :param atom_name: The name of the atom to add.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # Ensure the atom exists
         Atom.get_by_name_or_raise(atom_name)
         for atom in self.atoms:
             if atom_name == atom:
                 raise EntityAlreadyExists(f"Atom {atom!r} already a member of role {self.name!r}")
 
-        resp = post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
+        resp = MregClient().post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
         return resp.ok if resp else False
 
     def remove_atom(self, atom_name: str) -> bool:
@@ -1152,13 +1168,15 @@ class Role(HostPolicy, WithHistory):
 
         :param atom_name: The name of the atom to remove.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         for atom in self.atoms:
             if atom_name == atom:
                 break
         else:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {self.name!r}")
 
-        resp = delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
+        resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
         return resp.ok if resp else False
 
     def get_labels(self) -> list[Label]:
@@ -1205,7 +1223,9 @@ class Role(HostPolicy, WithHistory):
 
         :param name: The name of the host to add.
         """
-        resp = post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
         return resp.ok if resp else False
 
     def remove_host(self, name: str) -> bool:
@@ -1213,7 +1233,9 @@ class Role(HostPolicy, WithHistory):
 
         :param name: The name of the host to remove.
         """
-        resp = delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
         return resp.ok if resp else False
 
     def delete(self) -> bool:
@@ -1264,7 +1286,9 @@ class Label(FrozenModelWithTimestamps, WithName):
 
         :returns: A list of Label objects.
         """
-        return get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
 
     @classmethod
     def get_by_id_or_raise(cls, _id: int) -> Self:
@@ -1425,7 +1449,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         :returns: The network if found, None otherwise.
         :raises EntityNotFound: If the network is not found.
         """
-        resp = get(Endpoint.NetworksByIP.with_id(str(ip)), ok404=True)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().get(Endpoint.NetworksByIP.with_id(str(ip)), ok404=True)
         if not resp:
             return None
         return cls.model_validate_json(resp.text)
@@ -1490,7 +1516,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
     def create_community(self, name: str, description: str) -> bool:
         """Create a community for the network."""
-        resp = post(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(
             Endpoint.NetworkCommunities.with_params(self.network),
             name=name,
             description=description,
@@ -1510,37 +1538,63 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
     def get_first_available_ip(self) -> IP_AddressT:
         """Return the first available IPv4 address of the network."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         return ipaddress.ip_address(
-            get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
+            MregClient().get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
         )
 
     def get_reserved_ips(self) -> list[IP_AddressT]:
         """Return the reserved IP addresses of the network."""
-        return get_typed(Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT]
+        )
 
     def get_used_count(self) -> int:
         """Return the number of used IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
 
     def get_used_list(self) -> list[IP_AddressT]:
         """Return the list of used IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUsedList.with_params(self.network), list[IP_AddressT])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksUsedList.with_params(self.network), list[IP_AddressT]
+        )
 
     def get_unused_count(self) -> int:
         """Return the number of unused IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
 
     def get_unused_list(self) -> list[IP_AddressT]:
         """Return the list of unused IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUnusedList.with_params(self.network), list[IP_AddressT])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksUnusedList.with_params(self.network), list[IP_AddressT]
+        )
 
     def get_used_host_list(self) -> dict[str, list[str]]:
         """Return a dict of used IP addresses and their associated hosts."""
-        return get_typed(Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]]
+        )
 
     def get_ptroverride_host_list(self) -> dict[str, str]:
         """Return a dict of PTR override IP addresses and their associated hosts."""
-        return get_typed(Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str]
+        )
 
     def is_reserved_ip(self, ip: IP_AddressT) -> bool:
         """Return True if the IP address is in the reserved list.
@@ -1558,12 +1612,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
         :returns: The new ExcludedRange object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
         end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
         if start_ip.version != end_ip.version:
             raise InputFailure("Start and end IP addresses must be of the same version")
 
-        resp = post(
+        resp = MregClient().post(
             Endpoint.NetworksAddExcludedRanges.with_params(self.network),
             network=self.id,
             start_ip=str(start_ip),
@@ -1578,6 +1634,8 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         :param start: The start of the excluded range.
         :param end: The end of the excluded range.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # No need to validate IPs - if we find a match it's valid
         exrange: ExcludedRange | None = None
         for excluded_range in self.excluded_ranges:
@@ -1586,7 +1644,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
                 break
         else:
             raise EntityNotFound(f"Excluded range {start} - {end} not found")
-        resp = delete(Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id))
+        resp = MregClient().delete(
+            Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id)
+        )
         if not resp or not resp.ok:
             raise DeleteError(f"Failed to delete excluded range {start} - {end}")
 
@@ -1730,7 +1790,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
     def refetch(self) -> Self:
         """Refetch the community object."""
-        return get_typed(self.endpoint_with_id(), self.__class__)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(self.endpoint_with_id(), self.__class__)
 
     def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
         """Patch the community.
@@ -1739,7 +1801,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param validate: Whether to validate the response. (Not implemented)
         :returns: The updated Community object.
         """
-        resp = patch(self.endpoint_with_id(), **fields)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().patch(self.endpoint_with_id(), **fields)
         if not resp or not resp.ok:
             raise PatchError(f"Failed to patch community {self.name!r}")
         new_object = self.refetch()
@@ -1747,7 +1811,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
     def delete(self) -> bool:
         """Delete the community."""
-        resp = delete(self.endpoint_with_id())
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(self.endpoint_with_id())
         return resp.ok if resp else False
 
     def get_hosts(self) -> list[Host]:
@@ -1755,7 +1821,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
         :returns: A list of Host objects.
         """
-        return get_typed(self.hosts_endpoint, list[Host])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(self.hosts_endpoint, list[Host])
 
     def add_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
         """Add a host to the community.
@@ -1763,10 +1831,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param host: The host to add.
         :returns: True if the host was added, False otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         kwargs: QueryParams = {"id": host.id}
         if ipaddress:
             kwargs["ipaddress"] = str(ipaddress)
-        resp = post(self.hosts_endpoint, params=None, **kwargs)
+        resp = MregClient().post(self.hosts_endpoint, params=None, **kwargs)
         return resp.ok if resp else False
 
     def remove_host(self, host: Host, ipaddress: IP_AddressT | None) -> bool:
@@ -1775,10 +1845,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param host: The host to remove.
         :returns: True if the host was removed, False otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         params: QueryParams = {}
         if ipaddress:
             params["ipaddress"] = str(ipaddress)
-        resp = delete(
+        resp = MregClient().delete(
             Endpoint.NetworkCommunityHost.with_params(
                 self.network_address,
                 self.id,
@@ -1900,13 +1972,17 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
         :param description: The description of the community.
         :returns: The new Community object.
         """
-        resp = post(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+
+        resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.id),
             name=name,
             description=description,
         )
         if resp and (location := resp.headers.get("Location")):
-            return get_typed(location, Community)
+            return client.get_typed(location, Community)
         return None
 
 
@@ -2010,8 +2086,10 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
 
     def network(self) -> Network | None:
         """Return the network of the IP address."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            return get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
+            return MregClient().get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
         except APIError:
             return None
 
@@ -2085,7 +2163,9 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         :param name: The name to search for.
         :returns: The CNAME record if found, None otherwise.
         """
-        data = get_item_by_key_value(Endpoint.Cnames, "name", name)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_item_by_key_value(Endpoint.Cnames, "name", name)
         if not data:
             raise EntityNotFound(f"CNAME record for {name} not found.")
         return CNAME.model_validate(data)
@@ -2156,7 +2236,9 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         :param priority: The priority.
         :returns: The MX record if found, None otherwise.
         """
-        data = get_list_unique(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_list_unique(
             Endpoint.Mxs, params={"host": str(host), "mx": mx, "priority": str(priority)}
         )
         if not data:
@@ -2274,8 +2356,10 @@ class BacnetID(FrozenModel, WithHost, APIMixin):
         :param end: The end of the range.
         :returns: List of BacnetID objects in the range.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         params: QueryParams = {"id__range": f"{start},{end}"}
-        return get_typed(Endpoint.BacnetID, list[cls], params=params)
+        return MregClient().get_typed(Endpoint.BacnetID, list[cls], params=params)
 
 
 class Location(FrozenModelWithTimestamps, WithHost, APIMixin):
@@ -2630,9 +2714,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: True if the host was deleted successfully, False otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # Note, we can't use .id as the identifier here, as the host name is used
         # in the endpoint URL...
-        op = delete(Endpoint.Hosts.with_id(str(self.name)))
+        op = MregClient().delete(Endpoint.Hosts.with_id(str(self.name)))
         if not op:
             raise DeleteError(f"Failed to delete host {self.name}, operation failed.")
 
@@ -2814,6 +2900,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A new Host object fetched from the API after updating the IP address.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         if isinstance(ip, str):
             ip = NetworkOrIP.parse_or_raise(ip, mode="ip")
 
@@ -2822,7 +2910,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             "ordering": "ipaddress",
         }
 
-        ipadresses = get_typed(Endpoint.Ipaddresses, list[IPAddress], params=params)
+        ipadresses = MregClient().get_typed(Endpoint.Ipaddresses, list[IPAddress], params=params)
 
         if ip in [ip.ipaddress for ip in ipadresses]:
             raise EntityAlreadyExists(f"IP address {ip} already has MAC address {mac} associated.")
@@ -2953,10 +3041,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :param validate_zone_resolution: If True, validate that the resolved zone matches the
                 expected zone ID. Fail with ValidationFailure if it does not.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         if not self.zone:
             return None
 
-        data = get(Endpoint.ForwardZoneForHost.with_id(str(self.name)))
+        data = MregClient().get(Endpoint.ForwardZoneForHost.with_id(str(self.name)))
         data_as_dict = data.json()
 
         if data_as_dict["zone"]:
@@ -3088,13 +3178,15 @@ class HostList(FrozenModel):
 
         :returns: A HostList object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         if params is None:
             params = {}
 
         if "ordering" not in params:
             params["ordering"] = "name"
 
-        hosts = get_typed(cls.endpoint(), list[Host], params=params)
+        hosts = MregClient().get_typed(cls.endpoint(), list[Host], params=params)
         return cls(results=hosts)
 
     @classmethod
@@ -3175,7 +3267,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        resp = post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -3188,7 +3282,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        resp = delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -3210,7 +3306,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        resp = post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -3223,7 +3321,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        resp = delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -3245,7 +3345,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        resp = post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -3258,7 +3360,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        resp = delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -3359,8 +3463,10 @@ class ServerVersion(BaseModel):
         :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerVersion with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            response = get(cls.endpoint())
+            response = MregClient().get(cls.endpoint())
             return cls.model_validate(response.json())
         except Exception as e:
             if ignore_errors:
@@ -3394,8 +3500,10 @@ class ServerLibraries(BaseModel):
         :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerLibraries with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            response = get(cls.endpoint())
+            response = MregClient().get(cls.endpoint())
             libraries: list[Library] = []
 
             for name, version in response.json().items():
@@ -3445,12 +3553,14 @@ class UserInfo(BaseModel):
         :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of UserInfo with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
             endpoint = cls.endpoint()
             if user:
                 endpoint = f"{endpoint}?username={user}"
 
-            response = get(endpoint)
+            response = MregClient().get(endpoint)
             return cls.model_validate(response.json())
         except Exception as e:
             if ignore_errors:
@@ -3491,8 +3601,10 @@ class LDAPHealth(BaseModel, APIMixin):
         :raises requests.APIError: If the response code is not 200 or 503.
         :returns: An instance of LDAPStatus.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            get(cls.endpoint())
+            MregClient().get(cls.endpoint())
             return cls(status="OK")
         except APIError as e:
             if ignore_errors:
@@ -3527,8 +3639,10 @@ class HeartbeatHealth(BaseModel, APIMixin):
         :param ignore_errors: Ignore HTTP errors and return dummy object with negative uptime.
         :returns: An instance of HeartbeatHealth with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            result = get(cls.endpoint())
+            result = MregClient().get(cls.endpoint())
             return cls.model_validate_json(result.text)
         except Exception as e:
             if ignore_errors:

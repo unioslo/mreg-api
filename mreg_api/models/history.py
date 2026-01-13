@@ -16,7 +16,6 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import InternalError
 from mreg_api.models.endpoints import Endpoint
 from mreg_api.types import QueryParams
-from mreg_api.utilities.api import get_typed
 
 
 class HistoryResource(str, Enum):
@@ -123,8 +122,11 @@ class HistoryItem(BaseModel):
     @classmethod
     def get(cls, name: str, resource: HistoryResource) -> list[Self]:
         """Get history items for a resource."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
         params: QueryParams = {"resource": resource.resource(), "name": name}
-        ret = get_typed(Endpoint.History, list[cls], params=params)
+        ret = client.get_typed(Endpoint.History, list[cls], params=params)
         if len(ret) == 0:
             raise EntityNotFound(f"No history found for {name}")
 
@@ -133,12 +135,12 @@ class HistoryItem(BaseModel):
             "resource": resource.resource(),
             "model_id__in": model_ids,
         }
-        ret = get_typed(Endpoint.History, list[cls], params=params)
+        ret = client.get_typed(Endpoint.History, list[cls], params=params)
 
         params = {
             "data__relation": resource.relation(),
             "data__id__in": model_ids,
         }
-        ret.extend(get_typed(Endpoint.History, list[cls], params=params))
+        ret.extend(client.get_typed(Endpoint.History, list[cls], params=params))
 
         return ret

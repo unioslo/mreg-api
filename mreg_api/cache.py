@@ -216,7 +216,7 @@ class StoredFunction:
 
 
 TO_MEMOIZE = [
-    MemoizedFunction(func="mreg_api.utilities.api._do_get", tag="api"),
+    # MemoizedFunction(func="mreg_api.utilities.api._do_get", tag="api"),
 ]
 """List functions to memoize with a caching decorator (if enabled)."""
 
@@ -270,9 +270,7 @@ class MregApiCache:
         self.cache.clear()
         self.cache.stats(reset=True)
 
-    def load_module_and_function(
-        self, func: MemoizedFunction
-    ) -> tuple[ModuleType, Callable[..., Any]]:
+    def load_module_and_function(self, func: MemoizedFunction) -> tuple[ModuleType, Callable[..., Any]]:
         """Load the module and function from a MemoizedFunction."""
         try:
             module, func_name = func.func.rsplit(".", 1)
@@ -327,9 +325,7 @@ class MregApiCache:
         # Store a copy of the original function before patching
         self.save_original_function(mod_path, mod, func)
 
-        self.patch_function(
-            mod, self.cache.memoize(expire=config.cache_ttl, tag=memfunc.tag)(func)
-        )
+        self.patch_function(mod, self.cache.memoize(expire=config.cache_ttl, tag=memfunc.tag)(func))
 
 
 def disable_cache(func: Callable[P, T]) -> Callable[P, T]:

@@ -5,10 +5,9 @@ from __future__ import annotations
 import logging
 import re
 from contextvars import ContextVar
+from enum import StrEnum
 from typing import Any
-from typing import ClassVar
 from typing import Literal
-from typing import Self
 from typing import TypeVar
 from typing import get_origin
 from typing import overload
@@ -46,7 +45,30 @@ T = TypeVar("T")
 JsonMappingValidator = TypeAdapter(JsonMapping)
 
 
-class MregClient:
+class Header(StrEnum):
+    """HTTP headers used by the MREG API."""
+
+    AUTH = "Authorization"
+    CORRELATION_ID = "X-Correlation-ID"
+
+
+class SingletonMeta(type):
+    """A metaclass for singleton classes."""
+
+    _instances: dict[type, object] = {}
+
+    def __call__(cls: type[Any], *args: Any, **kwargs: Any):
+        """Get the singleton instance of the class."""
+        if cls not in cls._instances:
+            cls._instances[cls] = super().__call__(*args, **kwargs)
+        return cls._instances[cls]
+
+    def reset_instance(self) -> None:
+        """Reset the singleton instance (useful for testing)."""
+        del self._instances[self]
+
+
+class MregClient(metaclass=SingletonMeta):
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
@@ -70,15 +92,6 @@ class MregClient:
         >>> Host.get_by_any_means("example.uio.no")
     """
 
-    _instance: ClassVar[Self | None] = None
-
-    def __new__(cls, *args: Any, **kwargs: Any) -> Self:  # noqa: ARG004 # __new__ needs to match __init__
-        """Create or return the singleton instance."""
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-            cls._instance._initialized = False
-        return cls._instance
-
     def __init__(
         self,
         url: str = "https://mreg.uio.no",
@@ -89,9 +102,6 @@ class MregClient:
         cache_ttl: int = 300,
     ) -> None:
         """Initialize the client (only once for singleton)."""
-        if self._initialized:
-            return
-
         self.session = requests.Session()
         self.session.headers.update({"User-Agent": f"mreg-api-{__version__}"})
 
@@ -106,13 +116,6 @@ class MregClient:
         # State
         self._token: str | None = None
 
-        self._initialized = True
-
-    @classmethod
-    def reset_instance(cls) -> None:
-        """Reset the singleton instance (useful for testing)."""
-        cls._instance = None
-
     def set_token(self, token: str) -> None:
         """Set the authorization token for API requests.
 
@@ -120,7 +123,7 @@ class MregClient:
             token: Bearer token for authentication
 
         """
-        self.session.headers.update({"Authorization": f"Token {token}"})
+        self.session.headers.update({Header.AUTH: f"Token {token}"})
         self._token = token
 
     def get_token(self) -> str | None:
@@ -144,7 +147,7 @@ class MregClient:
         """
         suffix = re.sub(r"\s+", "_", suffix)
         correlation_id = f"{uuid4()}-{suffix}"
-        self.session.headers.update({"X-Correlation-ID": correlation_id})
+        self.session.headers.update({Header.CORRELATION_ID: correlation_id})
         return correlation_id
 
     def get_correlation_id(self) -> str:
@@ -154,7 +157,7 @@ class MregClient:
             Current correlation ID or empty string
 
         """
-        return str(self.session.headers.get("X-Correlation-ID", ""))
+        return str(self.session.headers.get(Header.CORRELATION_ID, ""))
 
     def login(self, username: str, password: str) -> str:
         """Authenticate with username and password.
