@@ -23,12 +23,6 @@ class InternalError(MregApiBaseError):
     pass
 
 
-class CannotDeleteError(MregApiBaseError):
-    """Error class for failed deletion due to dependencies."""
-
-    pass
-
-
 # TODO: rename or consolidate to show that this error type requires
 # a request object to instantiate.
 class APIError(MregApiBaseError):

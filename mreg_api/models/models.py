@@ -30,7 +30,6 @@ from typing_extensions import Unpack
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
-from mreg_api.exceptions import CannotDeleteError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
@@ -693,12 +692,12 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         # XXX: Not a fool proof check, as e.g. SRVs are not hosts. (yet.. ?)
         hosts = Host.get_list_by_field("zone", self.id)
         if hosts:
-            raise CannotDeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
+            raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
 
         zones = self.get_subzones()
         if zones:
             names = ", ".join(zone.name for zone in zones)
-            raise CannotDeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
+            raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
 
     def delete_zone(self, force: bool) -> bool:
         """Delete the zone.
@@ -1260,7 +1259,7 @@ class Role(HostPolicy, WithHistory):
         """Delete the role."""
         if self.hosts:
             hosts = ", ".join(self.hosts)
-            raise CannotDeleteError(f"Role {self.name!r} used on hosts: {hosts}")
+            raise DeleteError(f"Role {self.name!r} used on hosts: {hosts}")
         return super().delete()
 
 
@@ -1282,7 +1281,7 @@ class Atom(HostPolicy, WithHistory):
         roles = Role.get_roles_with_atom(self.name)
         if self.roles:
             roles = ", ".join(self.roles)
-            raise CannotDeleteError(f"Atom {self.name!r} used in roles: {roles}")
+            raise DeleteError(f"Atom {self.name!r} used in roles: {roles}")
         return super().delete()
 
 
@@ -1671,7 +1670,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
             Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id)
         )
         if not resp or not resp.is_success:
-            raise CannotDeleteError(f"Failed to delete excluded range {start} - {end}")
+            raise DeleteError(f"Failed to delete excluded range {start} - {end}")
 
     def set_category(self, category: str) -> Self:
         """Set the category tag of the network.
