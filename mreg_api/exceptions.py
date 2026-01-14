@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import logging
 
+from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
-from requests import Response
 
 logger = logging.getLogger(__name__)
 
@@ -17,32 +17,14 @@ class MregApiBaseError(Exception):
     pass
 
 
-class PostError(MregApiBaseError):
-    """Error class for failed creation."""
-
-    pass
-
-
-class PatchError(MregApiBaseError):
-    """Error class for failed patching."""
-
-    pass
-
-
-class DeleteError(MregApiBaseError):
-    """Error class for failed deletion."""
-
-    pass
-
-
-class GetError(MregApiBaseError):
-    """Error class for failed retrieval."""
-
-    pass
-
-
 class InternalError(MregApiBaseError):
     """Error class for internal errors."""
+
+    pass
+
+
+class CannotDeleteError(MregApiBaseError):
+    """Error class for failed deletion due to dependencies."""
 
     pass
 
@@ -52,16 +34,42 @@ class InternalError(MregApiBaseError):
 class APIError(MregApiBaseError):
     """Warning class for API errors."""
 
-    response: Response
+    response: Response | None
+    message: str
 
-    def __init__(self, message: str, response: Response):
+    def __init__(self, message: str, response: Response | None = None):
         """Initialize an APIError warning.
 
         :param message: The warning message.
         :param response: The response object that triggered the exception.
         """
         super().__init__(message)
+        self.message = message
         self.response = response
+
+
+class PostError(APIError):
+    """Error class for failed creation."""
+
+    pass
+
+
+class PatchError(APIError):
+    """Error class for failed patching."""
+
+    pass
+
+
+class DeleteError(APIError):
+    """Error class for failed deletion."""
+
+    pass
+
+
+class GetError(APIError):
+    """Error class for failed retrieval."""
+
+    pass
 
 
 class UnexpectedDataError(APIError):

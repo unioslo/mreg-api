@@ -493,7 +493,7 @@ class APIMixin(ABC):
 
         response = MregClient().delete(self.endpoint().with_id(self.id_for_endpoint()))
 
-        if response and response.ok:
+        if response and response.is_success:
             return True
 
         return False
@@ -515,9 +515,9 @@ class APIMixin(ABC):
 
         client = MregClient()
 
-        response = client.post(cls.endpoint(), params=None, **params)
+        response = client.post(cls.endpoint(), params=None, ok404=False, **params)
 
-        if response and response.ok:
+        if response and response.is_success:
             location = response.headers.get("Location")
             if location and fetch_after_create:
                 return client.get_typed(location, cls)

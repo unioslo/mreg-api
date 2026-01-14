@@ -14,18 +14,21 @@ from typing import overload
 from urllib.parse import urljoin
 from uuid import uuid4
 
-import requests
+import httpx
+from httpx import Response
 from pydantic import BaseModel
 from pydantic import TypeAdapter
 from pydantic import field_validator
-from requests import Response
 
 from mreg_api.__about__ import __version__
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import PatchError
+from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import parse_mreg_error
 from mreg_api.types import Json
@@ -50,6 +53,7 @@ class Header(StrEnum):
 
     AUTH = "Authorization"
     CORRELATION_ID = "X-Correlation-ID"
+    REQUEST_ID = "X-Request-Id"
 
 
 class SingletonMeta(type):
@@ -100,10 +104,13 @@ class MregClient(metaclass=SingletonMeta):
         timeout: int = 20,
         cache: bool = True,
         cache_ttl: int = 300,
+        follow_redirects: bool = False,
     ) -> None:
         """Initialize the client (only once for singleton)."""
-        self.session = requests.Session()
-        self.session.headers.update({"User-Agent": f"mreg-api-{__version__}"})
+        self.session = httpx.Client(
+            headers={"User-Agent": f"mreg-api-{__version__}"},
+            follow_redirects=follow_redirects,
+        )
 
         self.url = url
         self.domain = domain
@@ -177,15 +184,15 @@ class MregClient(metaclass=SingletonMeta):
         logger.info("Authenticating %s @ %s", username, token_url)
 
         try:
-            result = requests.post(
+            result = httpx.post(
                 token_url,
-                {"username": username, "password": password},
+                data={"username": username, "password": password},
                 timeout=self.timeout,
             )
-        except (requests.exceptions.SSLError, requests.exceptions.ConnectionError) as e:
+        except httpx.RequestError as e:
             raise LoginFailedError(f"Connection failed: {e}") from e
 
-        if not result.ok:
+        if not result.is_success:
             err = parse_mreg_error(result)
             msg = err.as_str() if err else result.text
             raise LoginFailedError(msg)
@@ -205,7 +212,7 @@ class MregClient(metaclass=SingletonMeta):
         path = urljoin(self.url, Endpoint.TokenLogout)
         try:
             self.session.post(path, timeout=self.timeout)
-        except requests.exceptions.ConnectionError as e:
+        except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
     def test_connection(self) -> bool:
@@ -222,7 +229,7 @@ class MregClient(metaclass=SingletonMeta):
                 timeout=5,
             )
             return ret.status_code != 401
-        except requests.exceptions.ConnectionError:
+        except httpx.RequestError:
             return False
 
     def _strip_none(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -240,7 +247,7 @@ class MregClient(metaclass=SingletonMeta):
 
     def _result_check(self, result: Response, operation_type: str, url: str) -> None:
         """Check the result of a request and raise on error."""
-        if not result.ok:
+        if not result.is_success:
             if err := parse_mreg_error(result):
                 res_text = err.as_json_str()
             elif result.status_code == 404:
@@ -253,12 +260,14 @@ class MregClient(metaclass=SingletonMeta):
                 )
             else:
                 res_text = result.text
-            message = f'{operation_type} "{url}": {result.status_code}: {result.reason}\n{res_text}'
+            message = (
+                f'{operation_type} "{url}": {result.status_code}: {result.reason_phrase}\n{res_text}'
+            )
             raise APIError(message, result)
 
     def request(
         self,
-        method: Literal["get", "post", "patch", "delete"],
+        method: Literal["GET", "POST", "PATCH", "DELETE"],
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
@@ -285,42 +294,35 @@ class MregClient(metaclass=SingletonMeta):
 
         url = urljoin(self.url, path)
 
-        # Build log URL
-        logurl = url
-        if method.upper() == "GET" and params:
-            logurl = logurl + "?" + "&".join(f"{k}={v}" for k, v in params.items())
-
-        logger.info("Request: %s %s [%s]", method.upper(), logurl, self.get_correlation_id())
-
-        if method.upper() != "GET" and params:
+        if method != "GET" and params:
             logger.debug("Params: %s", params)
 
         if data:
             logger.debug("Data: %s", data)
 
         # Strip None values from data (except for PATCH)
-        if data and method != "patch":
+        if data and method != "PATCH":
             data = self._strip_none(data)
 
         # Select the appropriate session method
-        func = getattr(self.session, method)
 
-        result = func(
-            url,
-            params=params,
-            json=data or None,
-            timeout=self.timeout,
-        )
+        request = self.session.build_request(method=method, url=url, params=params, json=data or None)
+        logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
+
+        result = self.session.send(request)
+        # # This is a workaround for old server versions that can't handle JSON data in requests
+        # if result.is_redirect and not result.history and params == {} and data:
+        #     self.session.build_request(method=method, url=url, params=params, data=data or None)
 
         # Update context variables for error reporting
-        last_request_url.set(logurl)
+        last_request_url.set(str(request.url))
         last_request_method.set(method)
 
         # Log response
-        request_id = result.headers.get("X-Request-Id", "?")
-        correlation_id = result.headers.get("X-Correlation-ID", "?")
+        request_id = result.headers.get(Header.REQUEST_ID, "?")
+        correlation_id = result.headers.get(Header.CORRELATION_ID, "?")
         id_str = f"[R:{request_id} C:{correlation_id}]"
-        log_message = f"Response: {method.upper()} {logurl} {result.status_code} {id_str}"
+        log_message = f"Response: {method} {request.url} {result.status_code} {id_str}"
 
         if result.status_code >= 300:
             logger.warning(log_message)
@@ -331,7 +333,7 @@ class MregClient(metaclass=SingletonMeta):
         if result.status_code == 404 and ok404:
             return None
 
-        self._result_check(result, method.upper(), url)
+        self._result_check(result, method, url)
         return result
 
     @overload
@@ -370,34 +372,100 @@ class MregClient(metaclass=SingletonMeta):
         """
         if params is None:
             params = {}
-        return self.request("get", path, params=params, ok404=ok404)
+        return self.request("GET", path, params=params, ok404=ok404)
+
+    @overload
+    def post(
+        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Any
+    ) -> Response | None: ...
+
+    @overload
+    def post(
+        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Any
+    ) -> Response: ...
+
+    @overload
+    def post(
+        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Any
+    ) -> Response: ...
+
+    @overload
+    def post(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
 
     def post(
         self,
         path: str,
         params: QueryParams | None = None,
+        ok404: bool = False,
         **kwargs: Any,
     ) -> Response | None:
         """Make a POST request."""
-        return self.request("post", path, params, **kwargs)
+        try:
+            return self.request("POST", path, params, ok404=ok404, **kwargs)
+        except APIError as e:
+            raise PostError(e.message, e.response) from e
+
+    @overload
+    def patch(
+        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Any
+    ) -> Response | None: ...
+
+    @overload
+    def patch(
+        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Any
+    ) -> Response: ...
+
+    @overload
+    def patch(
+        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Any
+    ) -> Response: ...
+
+    @overload
+    def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
 
     def patch(
         self,
         path: str,
         params: QueryParams | None = None,
+        ok404: bool = False,
         **kwargs: Any,
     ) -> Response | None:
         """Make a PATCH request."""
-        return self.request("patch", path, params, **kwargs)
+        try:
+            return self.request("PATCH", path, params, ok404=ok404, **kwargs)
+        except APIError as e:
+            raise PatchError(e.message, e.response) from e
+
+    @overload
+    def delete(
+        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Any
+    ) -> Response | None: ...
+
+    @overload
+    def delete(
+        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Any
+    ) -> Response: ...
+
+    @overload
+    def delete(
+        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Any
+    ) -> Response: ...
+
+    @overload
+    def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
 
     def delete(
         self,
         path: str,
         params: QueryParams | None = None,
+        ok404: bool = False,
         **kwargs: Any,
     ) -> Response | None:
         """Make a DELETE request."""
-        return self.request("delete", path, params, **kwargs)
+        try:
+            return self.request("DELETE", path, params, ok404=ok404, **kwargs)
+        except APIError as e:
+            raise DeleteError(e.message, e.response) from e
 
     def get_list(
         self,

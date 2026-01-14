@@ -53,3 +53,7 @@ IMPORTANT: mreg-cli needs to remember to clear this recording data structure bet
 ## Singleton instantation in models
 
 We could change the API of MregClient to require an `init` or `setup()` method to configure the singleton instance, which would let us call `client = MregClient()` at the top-level of `mreg_api.models` instead of requiring inline imports with client instantation in every method.
+
+## Follow redirects
+
+Automatic following of redirects can be enabled with a new `follow_redirects` parameter to MregClient.
