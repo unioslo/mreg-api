@@ -30,11 +30,13 @@ from typing_extensions import Unpack
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
+from mreg_api.exceptions import CannotDeleteError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import ForceMissing
+from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
@@ -691,12 +693,12 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         # XXX: Not a fool proof check, as e.g. SRVs are not hosts. (yet.. ?)
         hosts = Host.get_list_by_field("zone", self.id)
         if hosts:
-            raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
+            raise CannotDeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
 
         zones = self.get_subzones()
         if zones:
             names = ", ".join(zone.name for zone in zones)
-            raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
+            raise CannotDeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
 
     def delete_zone(self, force: bool) -> bool:
         """Delete the zone.
@@ -774,14 +776,19 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         self.get_delegation_and_raise(delegation)
 
         cls = Delegation.type_by_zone(self)
-        resp = MregClient().post(
-            cls.endpoint().with_params(self.name),
-            name=delegation,
-            nameservers=nameservers,
-            comment=comment,
-        )
-        if not resp or not resp.ok:
-            raise PostError(f"Failed to create delegation {delegation!r} in zone {self.name!r}")
+        try:
+            MregClient().post(
+                cls.endpoint().with_params(self.name),
+                name=delegation,
+                nameservers=nameservers,
+                comment=comment,
+            )
+        except PostError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PostError(
+            #     f"Failed to create delegation {delegation!r} in zone {self.name!r}", e.response
+            # ) from e
+            raise e
 
         if fetch_after_create:
             return self.get_delegation_or_raise(delegation)
@@ -850,7 +857,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         self.ensure_delegation_in_zone(name)  # check name
         delegation = self.get_delegation_or_raise(name)
         resp = MregClient().delete(delegation.endpoint_with_id(self, name))
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def set_delegation_comment(self, name: str, comment: str) -> None:
         """Set the comment for a delegation.
@@ -861,9 +868,14 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         delegation = self.get_delegation_or_raise(name)
-        resp = MregClient().patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
-        if not resp or not resp.ok:
-            raise PatchError(f"Failed to update comment for delegation {delegation.name!r}")
+        try:
+            MregClient().patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
+        except PatchError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PatchError(
+            #     f"Failed to update comment for delegation {delegation.name!r}", e.response
+            # ) from e
+            raise e
 
     def set_default_ttl(self, ttl: int) -> Self:
         """Set the default TTL for the zone.
@@ -883,9 +895,15 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
 
         self.verify_nameservers(nameservers, force=force)
         path = self.endpoint_nameservers().with_params(self.name)
-        resp = MregClient().patch(path, primary_ns=nameservers)
-        if not resp or not resp.ok:
-            raise PatchError(f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}")
+        try:
+            MregClient().patch(path, primary_ns=nameservers)
+        except PatchError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PatchError(
+            #     f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}",
+            #     e.response,
+            # ) from e
+            raise e
 
 
 class ForwardZone(Zone, WithName, APIMixin):
@@ -1161,7 +1179,7 @@ class Role(HostPolicy, WithHistory):
                 raise EntityAlreadyExists(f"Atom {atom!r} already a member of role {self.name!r}")
 
         resp = MregClient().post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def remove_atom(self, atom_name: str) -> bool:
         """Remove an atom from the role.
@@ -1177,7 +1195,7 @@ class Role(HostPolicy, WithHistory):
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {self.name!r}")
 
         resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def get_labels(self) -> list[Label]:
         """Get the labels associated with the role.
@@ -1226,7 +1244,7 @@ class Role(HostPolicy, WithHistory):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         resp = MregClient().post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def remove_host(self, name: str) -> bool:
         """Remove a host from the role by name.
@@ -1236,13 +1254,13 @@ class Role(HostPolicy, WithHistory):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def delete(self) -> bool:
         """Delete the role."""
         if self.hosts:
             hosts = ", ".join(self.hosts)
-            raise DeleteError(f"Role {self.name!r} used on hosts: {hosts}")
+            raise CannotDeleteError(f"Role {self.name!r} used on hosts: {hosts}")
         return super().delete()
 
 
@@ -1264,7 +1282,7 @@ class Atom(HostPolicy, WithHistory):
         roles = Role.get_roles_with_atom(self.name)
         if self.roles:
             roles = ", ".join(self.roles)
-            raise DeleteError(f"Atom {self.name!r} used in roles: {roles}")
+            raise CannotDeleteError(f"Atom {self.name!r} used in roles: {roles}")
         return super().delete()
 
 
@@ -1523,7 +1541,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
             name=name,
             description=description,
         )
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def overlaps(self, other: Network | str | IP_NetworkT) -> bool:
         """Check if the network overlaps with another network."""
@@ -1619,14 +1637,19 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         if start_ip.version != end_ip.version:
             raise InputFailure("Start and end IP addresses must be of the same version")
 
-        resp = MregClient().post(
-            Endpoint.NetworksAddExcludedRanges.with_params(self.network),
-            network=self.id,
-            start_ip=str(start_ip),
-            end_ip=str(end_ip),
-        )
-        if not resp or not resp.ok:
-            raise PostError(f"Failed to create excluded range for network {self.network}")
+        try:
+            MregClient().post(
+                Endpoint.NetworksAddExcludedRanges.with_params(self.network),
+                network=self.id,
+                start_ip=str(start_ip),
+                end_ip=str(end_ip),
+            )
+        except PostError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PostError(
+            #     f"Failed to create excluded range for network {self.network}", e.response
+            # ) from e
+            raise e
 
     def remove_excluded_range(self, start: str, end: str) -> None:
         """Remove an excluded range from the network.
@@ -1647,8 +1670,8 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         resp = MregClient().delete(
             Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id)
         )
-        if not resp or not resp.ok:
-            raise DeleteError(f"Failed to delete excluded range {start} - {end}")
+        if not resp or not resp.is_success:
+            raise CannotDeleteError(f"Failed to delete excluded range {start} - {end}")
 
     def set_category(self, category: str) -> Self:
         """Set the category tag of the network.
@@ -1803,9 +1826,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().patch(self.endpoint_with_id(), **fields)
-        if not resp or not resp.ok:
-            raise PatchError(f"Failed to patch community {self.name!r}")
+        try:
+            MregClient().patch(self.endpoint_with_id(), **fields)
+        except PatchError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
+            raise e
         new_object = self.refetch()
         return new_object
 
@@ -1814,7 +1840,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         resp = MregClient().delete(self.endpoint_with_id())
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
     def get_hosts(self) -> list[Host]:
         """Get a list of hosts in the community.
@@ -1836,8 +1862,8 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         kwargs: QueryParams = {"id": host.id}
         if ipaddress:
             kwargs["ipaddress"] = str(ipaddress)
-        resp = MregClient().post(self.hosts_endpoint, params=None, **kwargs)
-        return resp.ok if resp else False
+        resp = MregClient().post(self.hosts_endpoint, params=None, ok404=False, **kwargs)
+        return resp.is_success if resp else False
 
     def remove_host(self, host: Host, ipaddress: IP_AddressT | None) -> bool:
         """Remove a host from the community.
@@ -1857,7 +1883,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
                 host.id,
             )
         )
-        return resp.ok if resp else False
+        return resp.is_success if resp else False
 
 
 class NetworkPolicyAttributeValue(BaseModel):
@@ -2718,11 +2744,14 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         # Note, we can't use .id as the identifier here, as the host name is used
         # in the endpoint URL...
-        op = MregClient().delete(Endpoint.Hosts.with_id(str(self.name)))
-        if not op:
-            raise DeleteError(f"Failed to delete host {self.name}, operation failed.")
+        try:
+            resp = MregClient().delete(Endpoint.Hosts.with_id(str(self.name)), ok404=False)
+        except DeleteError as e:
+            # TODO: implement after mreg-cli parity
+            # raise DeleteError(f"Failed to delete host {self.name}.", e.response) from e
+            raise e
 
-        return op.status_code >= 200 and op.status_code < 300
+        return resp.is_success
 
     def rename(self, new_name: HostName) -> Host:
         """Rename the host.
@@ -3269,11 +3298,13 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
-        if resp and resp.ok:
-            return self.refetch()
-        else:
-            raise PostError(f"Failed to add group {groupname} to hostgroup {self.name}.")
+        try:
+            MregClient().post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
+        except PostError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PostError(f"Failed to add group {groupname} to hostgroup {self.name}.", e.response)
+            raise e
+        return self.refetch()
 
     def remove_group(self, groupname: str) -> Self:
         """Remove a group from the hostgroup.
@@ -3284,11 +3315,15 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
-        if resp and resp.ok:
-            return self.refetch()
-        else:
-            raise DeleteError(f"Failed to remove group {groupname} from hostgroup {self.name}.")
+        try:
+            MregClient().delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
+        except DeleteError as e:
+            # TODO: implement after mreg-cli parity
+            # raise DeleteError(
+            #     f"Failed to remove group {groupname} from hostgroup {self.name}.", e.response
+            # ) from e
+            raise e
+        return self.refetch()
 
     def has_host(self, hostname: str) -> bool:
         """Check if the hostgroup has the given host.
@@ -3308,11 +3343,13 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
-        if resp and resp.ok:
-            return self.refetch()
-        else:
-            raise PostError(f"Failed to add host {hostname} to hostgroup {self.name}.")
+        try:
+            MregClient().post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
+        except PostError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PostError(f"Failed to add host {hostname} to hostgroup {self.name}.", e.response)
+            raise e
+        return self.refetch()
 
     def remove_host(self, hostname: str) -> Self:
         """Remove a host from the hostgroup.
@@ -3323,11 +3360,15 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
-        if resp and resp.ok:
-            return self.refetch()
-        else:
-            raise DeleteError(f"Failed to remove host {hostname} from hostgroup {self.name}.")
+        try:
+            MregClient().delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
+        except DeleteError as e:
+            # TODO: implement after mreg-cli parity
+            # raise DeleteError(
+            #     f"Failed to remove host {hostname} from hostgroup {self.name}.", e.response
+            # ) from e
+            raise e
+        return self.refetch()
 
     def has_owner(self, ownername: str) -> bool:
         """Check if the hostgroup has the given owner.
@@ -3347,11 +3388,15 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
-        if resp and resp.ok:
-            return self.refetch()
-        else:
-            raise PostError(f"Failed to add owner {ownername} to hostgroup {self.name}.")
+        try:
+            MregClient().post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
+        except PostError as e:
+            # TODO: implement after mreg-cli parity
+            # raise PostError(
+            #     f"Failed to add owner {ownername} to hostgroup {self.name}.", e.response
+            # ) from e
+            raise e
+        return self.refetch()
 
     def remove_owner(self, ownername: str) -> Self:
         """Remove an owner from the hostgroup.
@@ -3362,11 +3407,15 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
-        if resp and resp.ok:
-            return self.refetch()
-        else:
-            raise DeleteError(f"Failed to remove owner {ownername} from hostgroup {self.name}.")
+        try:
+            MregClient().delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
+        except DeleteError as e:
+            # TODO: implement after mreg-cli parity
+            # raise DeleteError(
+            #     f"Failed to remove owner {ownername} from hostgroup {self.name}.", e.response
+            # ) from e
+            raise e
+        return self.refetch()
 
     def get_all_parents(self) -> list[HostGroup]:
         """Return a list of all parent groups."""
@@ -3459,8 +3508,8 @@ class ServerVersion(BaseModel):
         """Fetch the server version from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
-        :raises ValidationError: If the response data is invalid and ignore_errors is False.
-        :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
+        :raises GetError: If the response data is invalid and ignore_errors is False.
+        :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerVersion with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
@@ -3496,8 +3545,8 @@ class ServerLibraries(BaseModel):
         """Fetch the server libraries from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
-        :raises ValidationError: If the response data is invalid and ignore_errors is False.
-        :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
+        :raises GetError: If the response data is invalid and ignore_errors is False.
+        :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerLibraries with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
@@ -3549,8 +3598,8 @@ class UserInfo(BaseModel):
         :param user: The username to fetch information for. If None, fetch information for the
                               current user.
 
-        :raises ValidationError: If the response data is invalid and ignore_errors is False.
-        :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
+        :raises GetError: If the response data is invalid and ignore_errors is False.
+        :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of UserInfo with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
@@ -3598,7 +3647,7 @@ class LDAPHealth(BaseModel, APIMixin):
 
         :param ignore_errors: Ignore non-503 errors. 503 means LDAP is down,
             and should not be treated as an error in the traditional sense.
-        :raises requests.APIError: If the response code is not 200 or 503.
+        :raises GetError: If the response code is not 200 or 503.
         :returns: An instance of LDAPStatus.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
@@ -3606,7 +3655,7 @@ class LDAPHealth(BaseModel, APIMixin):
         try:
             MregClient().get(cls.endpoint())
             return cls(status="OK")
-        except APIError as e:
+        except GetError as e:
             if ignore_errors:
                 logger.error("Failed to fetch LDAP health: %s", e)
                 if e.response.status_code == 503:
