@@ -58,6 +58,7 @@ from mreg_api.models.history import HistoryResource
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
 from mreg_api.types import QueryParams
+from mreg_api.types import get_type_adapter
 from mreg_api.utilities.shared import convert_wildcard_to_regex
 
 logger = logging.getLogger(__name__)
@@ -2410,6 +2411,22 @@ class HostCommunity(FrozenModel):
     community: Community
 
 
+class HostContactModification(FrozenModel):
+    """Model for host contact email modifications."""
+
+    added: list[str] = Field(default_factory=list)
+    already_exists: list[str] = Field(default_factory=list)
+    removed: list[str] = Field(default_factory=list)
+    not_found: list[str] = Field(default_factory=list)
+
+
+class ContactEmail(FrozenModelWithTimestamps):
+    """Model for a host's contact email."""
+
+    id: int
+    email: str
+
+
 class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     """Model for an individual host."""
 
@@ -2423,7 +2440,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     hinfo: HInfo | None = None
     loc: Location | None = None
     bacnetid: int | None = None
-    contact: str
     ttl: int | None = None
     srvs: list[Srv] = []
     naptrs: list[NAPTR] = []
@@ -2431,6 +2447,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     roles: list[str] = []
     hostgroups: list[str] = []
     comment: str
+    contacts: list[ContactEmail] = []
+    contact: str | None = Field(default=None, deprecated=True)
 
     communities: list[HostCommunity] = []
 
@@ -2438,6 +2456,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     zone: int | None = None
 
     history_resource: ClassVar[HistoryResource] = HistoryResource.Host
+
+    @property
+    def contact_emails(self) -> list[str]:
+        """A list of contact email addresses for the host."""
+        return [contact.email for contact in self.contacts]
 
     @field_validator("communities", mode="before")
     @classmethod
@@ -2770,15 +2793,96 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         return self.patch(fields={"comment": comment})
 
-    def set_contact(self, contact: str) -> Host:
-        """Set the contact for the host.
+    def set_contacts(self, contacts: list[str]) -> Host:
+        """Set a new list of contacts for the host. Overwrites existing contacts.
 
-        :param contact: The contact to set. Should be a valid email, but we leave it to the
-                        server to validate the data.
+        Args:
+            contacts (list[str]): New contacts for the host.
 
-        :returns: A new Host object fetched from the API with the updated contact.
+        Returns:
+            Host: Updated Host object.
         """
-        return self.patch(fields={"contact": contact})
+        # Uses non-atomic host update via PATCH to set the contacts list.
+        return self.patch(fields={"contacts": contacts}, validate=False)
+
+    def add_contacts(self, contacts: list[str]) -> HostContactModification:
+        """Add contacts to the host.
+
+        Args:
+            contacts (list[str]): Contacts to add.
+
+        Raises:
+            CreateError: Failed to add contacts to host.
+
+        Returns:
+            HostContactModification: Summary of host contact modifications.
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        # Uses atomic endpoint for contact updates
+        endpoint = Endpoint.HostsContacts.with_params(self.name)
+        try:
+            resp = MregClient().post(endpoint, emails=contacts)
+        except PostError:
+            # TODO: implement after mreg-cli parity
+            # raise PostError(f"Failed to add contacts to host {self.name}.", e.response) from e
+            raise
+        adapter = get_type_adapter(HostContactModification)
+        return adapter.validate_json(resp.text)
+
+    def clear_contacts(self) -> HostContactModification:
+        """Remove all contacts from the host.
+
+        Raises:
+            DeleteError: _description_
+
+        Returns:
+            HostContactModification: _description_
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        endpoint = Endpoint.HostsContacts.with_params(self.name)
+        try:
+            resp = MregClient().delete(endpoint)
+        except DeleteError as e:
+            # TODO: implement after mreg-cli parity
+            # raise DeleteError(f"Failed to remove contacts from host {self.name}.", e.response) from e
+            raise e
+        adapter = get_type_adapter(HostContactModification)
+        return adapter.validate_json(resp.text)
+
+    def remove_contacts(self, contacts: list[str]) -> HostContactModification:
+        """Remove the given contacts from the host.
+
+        Args:
+            contacts (list[str]): Contacts to remove.
+
+        Raises:
+            DeleteError: Failed to remove contacts.
+
+        Returns:
+            HostContactModification: Summary of host contact modifications.
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        endpoint = Endpoint.HostsContacts.with_params(self.name)
+        try:
+            resp = MregClient().delete(endpoint, emails=contacts)
+        except DeleteError as e:
+            # TODO: implement after mreg-cli parity
+            # raise DeleteError(f"Failed to remove contacts from host {self.name}.", e.response) from e
+            raise e
+        adapter = get_type_adapter(HostContactModification)
+        return adapter.validate_json(resp.text)
+
+    def unset_contacts(self) -> Host:
+        """Remove all contacts from the host.
+
+        Returns:
+            Host: Updated host after contact removal
+        """
+        # TODO: add try/except with error message
+        return self.patch(fields={"contacts": []})
 
     def add_ip(self, ip: IP_AddressT, mac: MacAddress | None = None) -> Host:
         """Add an IP address to the host.
