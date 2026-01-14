@@ -10,13 +10,13 @@ from typing import Callable
 from typing import Self
 from typing import cast
 
-from mreg_api.outputmanager import OutputManager
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from pydantic import PrivateAttr
 from pydantic.fields import FieldInfo
 
-from mreg_api.api.endpoints import Endpoint
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
@@ -25,13 +25,6 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
-from mreg_api.utilities.api import delete
-from mreg_api.utilities.api import get
-from mreg_api.utilities.api import get_item_by_key_value
-from mreg_api.utilities.api import get_list_unique
-from mreg_api.utilities.api import get_typed
-from mreg_api.utilities.api import patch
-from mreg_api.utilities.api import post
 
 
 def get_field_aliases(field_info: FieldInfo) -> set[str]:
@@ -118,6 +111,17 @@ def _validate_default(new: Any, old: Any) -> bool:
 class FrozenModel(BaseModel):
     """Model for an immutable object."""
 
+    _notes: list[str] = PrivateAttr(default_factory=list)
+    """Internal notes for the object."""
+
+    def add_note(self, note: str) -> None:
+        """Add a note regarding the object."""
+        self._notes.append(note)
+
+    def get_notes(self) -> list[str]:
+        """Get all notes regarding the object."""
+        return self._notes
+
     def __setattr__(self, name: str, value: Any):
         """Raise an exception when trying to set an attribute."""
         raise AttributeError("Cannot set attribute on a frozen object")
@@ -138,12 +142,6 @@ class FrozenModelWithTimestamps(FrozenModel):
     created_at: datetime
     updated_at: datetime
 
-    def output_timestamps(self, padding: int = 14) -> None:
-        """Output the created and updated timestamps to the console."""
-        output_manager = OutputManager()
-        output_manager.add_line(f"{'Created:':<{padding}}{self.created_at:%c}")
-        output_manager.add_line(f"{'Updated:':<{padding}}{self.updated_at:%c}")
-
 
 class APIMixin(ABC):
     """A mixin for API-related methods."""
@@ -152,9 +150,7 @@ class APIMixin(ABC):
         """Ensure that the subclass inherits from BaseModel."""
         super().__init_subclass__(**kwargs)
         if BaseModel not in cls.__mro__:
-            raise TypeError(
-                f"{cls.__name__} must be applied on classes inheriting from BaseModel."
-            )
+            raise TypeError(f"{cls.__name__} must be applied on classes inheriting from BaseModel.")
 
     def id_for_endpoint(self) -> int | str:
         """Return the appropriate id for the object for its endpoint.
@@ -189,11 +185,13 @@ class APIMixin(ABC):
         :param _id: The ID of the object.
         :returns: A list of objects if found, an empty list otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         endpoint = cls.endpoint()
         if endpoint.requires_search_for_id():
             return cls.get_list_by_field("id", _id)
 
-        data = get(endpoint.with_id(_id), ok404=True)
+        data = MregClient().get(endpoint.with_id(_id), ok404=True)
         if not data:
             return []
 
@@ -208,14 +206,18 @@ class APIMixin(ABC):
         :param _id: The ID of the object.
         :returns: The object if found, None otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+
         endpoint = cls.endpoint()
 
         # Some endpoints do not use the ID field as the endpoint identifier,
         # and in these cases we need to search for the ID... Lovely.
         if endpoint.requires_search_for_id():
-            data = get_item_by_key_value(cls.endpoint(), "id", str(_id))
+            data = client.get_item_by_key_value(cls.endpoint(), "id", str(_id))
         else:
-            data = get(cls.endpoint().with_id(_id), ok404=True)
+            data = client.get(cls.endpoint().with_id(_id), ok404=True)
             if not data:
                 return None
             data = data.json()
@@ -245,15 +247,18 @@ class APIMixin(ABC):
 
         :returns: The object if found, None otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
         endpoint = cls.endpoint()
 
         if endpoint.requires_search_for_id() and field == endpoint.external_id_field():
-            data = get(endpoint.with_id(value), ok404=True)
+            data = client.get(endpoint.with_id(value), ok404=True)
             if not data:
                 return None
             data = data.json()
         else:
-            data = get_item_by_key_value(cls.endpoint(), field, value, ok404=True)
+            data = client.get_item_by_key_value(cls.endpoint(), field, value, ok404=True)
 
         if not data:
             return None
@@ -323,7 +328,9 @@ class APIMixin(ABC):
 
         :returns: A list of objects if found, an empty list otherwise.
         """
-        return get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
 
     @classmethod
     def get_by_query(
@@ -412,7 +419,9 @@ class APIMixin(ABC):
         :param data: The data to search for.
         :returns: The object if found, None otherwise.
         """
-        obj_dict = get_list_unique(cls.endpoint(), params=data)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        obj_dict = MregClient().get_list_unique(cls.endpoint(), params=data)
         if not obj_dict:
             return None
         return cls(**obj_dict)
@@ -452,7 +461,7 @@ class APIMixin(ABC):
     def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:
         """Patch the object with the given values.
 
-        Notes
+        Notes:
         -----
           1. Depending on the endpoint, the server may not return the patched object.
           2. Patching with None may not clear the field if it isn't nullable (which few fields
@@ -463,7 +472,9 @@ class APIMixin(ABC):
         :returns: The object refetched from the server.
 
         """
-        patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
         new_object = self.refetch()
 
         if validate:
@@ -478,7 +489,9 @@ class APIMixin(ABC):
 
         :returns: True if the object was deleted, False otherwise.
         """
-        response = delete(self.endpoint().with_id(self.id_for_endpoint()))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        response = MregClient().delete(self.endpoint().with_id(self.id_for_endpoint()))
 
         if response and response.ok:
             return True
@@ -498,12 +511,16 @@ class APIMixin(ABC):
         :raises GetError: If the object could not be fetched after creation.
         :returns: The object if created and its fetchable, None otherwise.
         """
-        response = post(cls.endpoint(), params=None, **params)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+
+        response = client.post(cls.endpoint(), params=None, **params)
 
         if response and response.ok:
             location = response.headers.get("Location")
             if location and fetch_after_create:
-                return get_typed(location, cls)
+                return client.get_typed(location, cls)
             # else:
             # Lots of endpoints don't give locations on creation,
             # so we can't fetch the object, but it's not an error...

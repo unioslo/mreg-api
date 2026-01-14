@@ -8,16 +8,14 @@ from enum import Enum
 from typing import Any
 from typing import Self
 
-from mreg_api.outputmanager import OutputManager
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import field_validator
 
-from mreg_api.api.endpoints import Endpoint
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import InternalError
 from mreg_api.types import QueryParams
-from mreg_api.utilities.api import get_typed
 
 
 class HistoryResource(str, Enum):
@@ -121,23 +119,14 @@ class HistoryItem(BaseModel):
 
         return msg
 
-    def output(self, basename: str) -> None:
-        """Output the history item."""
-        ts = self.clean_timestamp()
-        msg = self.msg(basename)
-        OutputManager().add_line(f"{ts} [{self.user}]: {self.model} {self.action}: {msg}")
-
-    @classmethod
-    def output_multiple(cls, basename: str, items: list[HistoryItem]) -> None:
-        """Output multiple history items."""
-        for item in sorted(items, key=lambda i: i.timestamp):
-            item.output(basename)
-
     @classmethod
     def get(cls, name: str, resource: HistoryResource) -> list[Self]:
         """Get history items for a resource."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
         params: QueryParams = {"resource": resource.resource(), "name": name}
-        ret = get_typed(Endpoint.History, list[cls], params=params)
+        ret = client.get_typed(Endpoint.History, list[cls], params=params)
         if len(ret) == 0:
             raise EntityNotFound(f"No history found for {name}")
 
@@ -146,12 +135,12 @@ class HistoryItem(BaseModel):
             "resource": resource.resource(),
             "model_id__in": model_ids,
         }
-        ret = get_typed(Endpoint.History, list[cls], params=params)
+        ret = client.get_typed(Endpoint.History, list[cls], params=params)
 
         params = {
             "data__relation": resource.relation(),
             "data__id__in": model_ids,
         }
-        ret.extend(get_typed(Endpoint.History, list[cls], params=params))
+        ret.extend(client.get_typed(Endpoint.History, list[cls], params=params))
 
         return ret

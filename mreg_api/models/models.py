@@ -1,9 +1,10 @@
-"""Pydantic models for the mreg_cli package."""
+"""Pydantic models for API resources."""
 
 from __future__ import annotations
 
 import ipaddress
 import logging
+from collections.abc import Iterable
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -11,7 +12,6 @@ from functools import cached_property
 from typing import Any
 from typing import Callable
 from typing import ClassVar
-from typing import Iterable
 from typing import Literal
 from typing import Protocol
 from typing import Self
@@ -19,26 +19,16 @@ from typing import TypeVar
 from typing import cast
 from typing import overload
 
-from mreg_api.choices import CommunitySortOrder
-from mreg_api.outputmanager import OutputManager
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
-from pydantic import MregValidationError as PydanticValidationError
+from pydantic import ValidationError as PydanticValidationError
 from pydantic import computed_field
 from pydantic import field_validator
 from typing_extensions import Unpack
 
-from mreg_api.api.abstracts import APIMixin
-from mreg_api.api.abstracts import FrozenModel
-from mreg_api.api.abstracts import FrozenModelWithTimestamps
-from mreg_api.api.endpoints import Endpoint
-from mreg_api.api.fields import HostName
-from mreg_api.api.fields import MacAddress
-from mreg_api.api.fields import NameList
-from mreg_api.api.history import HistoryItem
-from mreg_api.api.history import HistoryResource
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
@@ -46,7 +36,6 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import InputFailure
-from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
 from mreg_api.exceptions import InvalidIPv6Address
@@ -57,22 +46,18 @@ from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import UnexpectedDataError
+from mreg_api.models.abstracts import APIMixin
+from mreg_api.models.abstracts import FrozenModel
+from mreg_api.models.abstracts import FrozenModelWithTimestamps
+from mreg_api.models.fields import HostName
+from mreg_api.models.fields import MacAddress
+from mreg_api.models.fields import NameList
+from mreg_api.models.history import HistoryItem
+from mreg_api.models.history import HistoryResource
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
-from mreg_api.types import IP_Version
 from mreg_api.types import QueryParams
-from mreg_api.types import get_type_adapter
-from mreg_api.utilities.api import delete
-from mreg_api.utilities.api import get
-from mreg_api.utilities.api import get_item_by_key_value
-from mreg_api.utilities.api import get_list_in
-from mreg_api.utilities.api import get_list_unique
-from mreg_api.utilities.api import get_typed
-from mreg_api.utilities.api import patch
-from mreg_api.utilities.api import post
 from mreg_api.utilities.shared import convert_wildcard_to_regex
-from mreg_api.utilities.validators import is_valid_category_tag
-from mreg_api.utilities.validators import is_valid_location_tag
 
 logger = logging.getLogger(__name__)
 
@@ -132,9 +117,7 @@ class NetworkOrIP(BaseModel):
     def parse_or_raise(cls, value: Any, mode: Literal["networkv6"]) -> ipaddress.IPv6Network: ...
 
     @classmethod
-    def parse_or_raise(
-        cls, value: Any, mode: IPNetMode | None = None
-    ) -> IP_AddressT | IP_NetworkT:
+    def parse_or_raise(cls, value: Any, mode: IPNetMode | None = None) -> IP_AddressT | IP_NetworkT:
         """Parse a value as an IP address or network.
 
         Optionally specify the mode to validate the input as.
@@ -294,13 +277,15 @@ class WithHost(BaseModel):
     def resolve_host(self) -> Host | None:
         """Resolve the host ID to a Host object.
 
-        Notes
+        Notes:
         -----
             - This method will call the API to resolve the host ID to a Host object.
             - This assumes that there is a host attribute in the object.
 
         """
-        data = get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
 
         if not data:
             return None
@@ -316,13 +301,15 @@ class WithZone(BaseModel, APIMixin):
     def resolve_zone(self) -> ForwardZone | None:
         """Resolve the zone ID to a (Forward)Zone object.
 
-        Notes
+        Notes:
         -----
             - This method will call the API to resolve the zone ID to a Zone object.
             - This assumes that there is a zone attribute in the object.
 
         """
-        data = get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
 
         if not data:
             return None
@@ -345,19 +332,6 @@ class WithTTL(BaseModel, APIMixin):
     def MIN_TTL(self) -> int:
         """Return the minimum TTL value."""
         return 300
-
-    def output_ttl(self, label: str = "TTL", field: str = "ttl", padding: int = 14) -> None:
-        """Output a TTL value.
-
-        :param padding: Number of spaces for left-padding the output.
-        :param field: The field to output (defaults to 'ttl')
-        """
-        if not hasattr(self, field):
-            raise InternalError(f"Outputting TTL field {field} failed, field not found in object.")
-
-        ttl_value = getattr(self, field)
-        label = f"{label.removesuffix(':')}:"
-        OutputManager().add_line("{1:<{0}}{2}".format(padding, label, ttl_value or "(Default)"))
 
     def set_ttl(self, ttl: str | int | None, field: str | None = None) -> Self:
         """Set a new TTL for the object and returns the updated object.
@@ -453,8 +427,10 @@ class WithName(BaseModel, APIMixin):
         :param name: The regex pattern for names to search for.
         :returns: A list of resource objects.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         param, value = convert_wildcard_to_regex(cls.__name_field__, cls._case_name(name), True)
-        return get_typed(cls.endpoint(), list[cls], params={param: value})
+        return MregClient().get_typed(cls.endpoint(), list[cls], params={param: value})
 
     def rename(self, new_name: str) -> Self:
         """Rename the resource.
@@ -496,12 +472,6 @@ class WithHistory(BaseModel, APIMixin):
         """Get the history for the object."""
         return HistoryItem.get(name, cls.history_resource)
 
-    @classmethod
-    def output_history(cls, name: str) -> None:
-        """Output the history for the object."""
-        history = cls.get_history(name)
-        HistoryItem.output_multiple(name, history)
-
 
 class NameServer(FrozenModelWithTimestamps, WithTTL):
     """Model for representing a nameserver within a DNS zone."""
@@ -537,19 +507,6 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.PermissionNetgroupRegex
-
-    @classmethod
-    def output_multiple(cls, permissions: list[Permission], indent: int = 4) -> None:
-        """Print multiple permissions to the console."""
-        if not permissions:
-            return
-
-        OutputManager().add_formatted_table(
-            ("IP range", "Group", "Reg.exp."),
-            ("range", "group", "regex"),
-            permissions,
-            indent=indent,
-        )
 
     def add_label(self, label_name: str) -> Self:
         """Add a label to the permission.
@@ -628,76 +585,6 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def endpoint_nameservers(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.ForwardZonesNameservers
-
-    def output(self, padding: int = 20) -> None:
-        """Output the zone to the console."""
-        manager = OutputManager()
-
-        def fmt(label: str, text: str) -> None:
-            manager.add_line("{1:<{0}}{2}".format(padding, label, text))
-
-        fmt("Name:", self.name)
-        self.output_nameservers(self.nameservers)
-        fmt("Primary NS:", self.primary_ns)
-        fmt("Email:", self.email)
-        fmt("Serial:", str(self.serialno))
-        fmt("Refresh:", str(self.refresh))
-        fmt("Retry:", str(self.retry))
-        fmt("Expire:", str(self.expire))
-        self.output_ttl("SOA TTL", "soa_ttl", padding)
-        self.output_ttl("Default TTL", "default_ttl", padding)
-
-    @classmethod
-    def output_zones(cls, forward: bool, reverse: bool) -> None:
-        """Output all zones of the given type(s)."""
-        # Determine types of zones to list
-        zones_types: list[type[Zone]] = []
-        if forward:
-            zones_types.append(ForwardZone)
-        if reverse:
-            zones_types.append(ReverseZone)
-
-        # Fetch all zones of the given type(s)
-        zones: list[Zone] = []
-        for zone_type in zones_types:
-            zones.extend(zone_type.get_list())
-
-        manager = OutputManager()
-        if not zones:
-            manager.add_line("No zones found.")
-            return
-        manager.add_line("Zones:")
-        for zone in zones:
-            manager.add_line(f" {zone.name}")
-
-    @classmethod
-    def output_nameservers(cls, nameservers: list[NameServer], padding: int = 20) -> None:
-        """Output the nameservers of the zone."""
-        manager = OutputManager()
-
-        def fmt_ns(label: str, hostname: str, ttl: str) -> None:
-            manager.add_line(
-                "        {1:<{0}}{2:<{3}}{4}".format(padding, label, hostname, 20, ttl)
-            )
-
-        fmt_ns("Nameservers:", "hostname", "TTL")
-        for ns in nameservers:
-            # We don't have a TTL value for nameservers from the API
-            fmt_ns("", ns.name, "<not set>")
-
-    def output_delegations(self, padding: int = 20) -> None:
-        """Output the delegations of the zone."""
-        delegations = self.get_delegations()
-        manager = OutputManager()
-        if not delegations:
-            manager.add_line(f"No delegations for {self.name}.")
-            return
-        manager.add_line("Delegations:")
-        for delegation in sorted(delegations, key=lambda d: d.name):
-            manager.add_line(f"    {delegation.name}")
-            if delegation.comment:
-                manager.add_line(f"        Comment: {delegation.comment}")
-            self.output_nameservers(delegation.nameservers, padding=padding)
 
     def ensure_delegation_in_zone(self, name: str) -> None:
         """Ensure a delegation is in the zone.
@@ -871,6 +758,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Force creation if ns/zone doesn't exist.
         :returns: The created delegation object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         self.ensure_delegation_in_zone(delegation)
         self.verify_nameservers(nameservers, force=force)
 
@@ -880,14 +769,12 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             if not delegated_zone:
                 raise InputFailure(f"Zone {delegation!r} does not exist. Must force.")
             if delegated_zone.is_reverse() != self.is_reverse():
-                raise InputFailure(
-                    f"Delegation '{delegation}' is not a {self.__class__.__name__} zone"
-                )
+                raise InputFailure(f"Delegation '{delegation}' is not a {self.__class__.__name__} zone")
 
         self.get_delegation_and_raise(delegation)
 
         cls = Delegation.type_by_zone(self)
-        resp = post(
+        resp = MregClient().post(
             cls.endpoint().with_params(self.name),
             name=delegation,
             nameservers=nameservers,
@@ -906,9 +793,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param name: The name of the delegation to get.
         :returns: The delegation object if found.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         self.ensure_delegation_in_zone(name)
         cls = Delegation.type_by_zone(self)
-        resp = get(cls.endpoint_with_id(self, name), ok404=True)
+        resp = MregClient().get(cls.endpoint_with_id(self, name), ok404=True)
         if not resp:
             return None
         return cls.model_validate_json(resp.text)
@@ -935,9 +824,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         """
         delegation = self.get_delegation(name)
         if delegation:
-            raise EntityAlreadyExists(
-                f"Zone {self.name!r} already has a delegation named {name!r}"
-            )
+            raise EntityAlreadyExists(f"Zone {self.name!r} already has a delegation named {name!r}")
 
     def get_delegations(self) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """Get all delegations for a zone.
@@ -946,8 +833,10 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param name: The name of the delegation to get.
         :returns: The delegation object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         cls = Delegation.type_by_zone(self)
-        return get_typed(cls.endpoint().with_params(self.name), list[cls])
+        return MregClient().get_typed(cls.endpoint().with_params(self.name), list[cls])
 
     def delete_delegation(self, name: str) -> bool:
         """Delete a delegation from the zone.
@@ -955,10 +844,12 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param delegation: The name of the delegation.
         :returns: True if the deletion was successful.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # Check if delegation exists
         self.ensure_delegation_in_zone(name)  # check name
         delegation = self.get_delegation_or_raise(name)
-        resp = delete(delegation.endpoint_with_id(self, name))
+        resp = MregClient().delete(delegation.endpoint_with_id(self, name))
         return resp.ok if resp else False
 
     def set_delegation_comment(self, name: str, comment: str) -> None:
@@ -967,8 +858,10 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param name: The name of the delegation.
         :param comment: The comment to set.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         delegation = self.get_delegation_or_raise(name)
-        resp = patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
+        resp = MregClient().patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
         if not resp or not resp.ok:
             raise PatchError(f"Failed to update comment for delegation {delegation.name!r}")
 
@@ -986,13 +879,13 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Whether to force the update.
         :returns: True if the update was successful.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         self.verify_nameservers(nameservers, force=force)
         path = self.endpoint_nameservers().with_params(self.name)
-        resp = patch(path, primary_ns=nameservers)
+        resp = MregClient().patch(path, primary_ns=nameservers)
         if not resp or not resp.ok:
-            raise PatchError(
-                f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}"
-            )
+            raise PatchError(f"Failed to update nameservers for {self.__class__.__name__} {self.name!r}")
 
 
 class ForwardZone(Zone, WithName, APIMixin):
@@ -1017,7 +910,9 @@ class ForwardZone(Zone, WithName, APIMixin):
         :param hostname: The hostname to search for.
         :returns: The zone if found, None otherwise.
         """
-        resp = get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
         if not resp:
             return None
 
@@ -1164,7 +1059,7 @@ class HostPolicy(FrozenModel, WithName):
         # Date object is also valid input (parity with API)
         elif isinstance(value, date):
             return datetime.combine(value, datetime.min.time())
-        return value  # let pydantic throw the MregValidationError
+        return value  # let pydantic throw the ValidationError
 
     @computed_field  # noqa: A003
     def created_at(self) -> datetime:
@@ -1221,23 +1116,6 @@ class HostPolicy(FrozenModel, WithName):
         """Set a new description."""
         return self.patch({"description": description})
 
-    def output_timestamps(self, padding: int = 14) -> None:
-        """Output the created and updated timestamps to the console."""
-        output_manager = OutputManager()
-        output_manager.add_line(f"{'Created:':<{padding}}{self.created_at:%c}")
-        output_manager.add_line(f"{'Updated:':<{padding}}{self.updated_at:%c}")
-
-    def output(self, padding: int = 14) -> None:
-        """Output the host policy object to the console.
-
-        Subclasses should provide their own output method and call this method
-        first to output the commmon fields.
-        """
-        output_manager = OutputManager()
-        output_manager.add_line(f"{'Name:':<{padding}}{self.name}")
-        self.output_timestamps(padding=padding)
-        output_manager.add_line(f"{'Description:':<{padding}}{self.description}")
-
 
 class Role(HostPolicy, WithHistory):
     """Model for a role."""
@@ -1258,112 +1136,6 @@ class Role(HostPolicy, WithHistory):
         """Return the endpoint for the class."""
         return Endpoint.HostPolicyRoles
 
-    def output(self, padding: int = 14) -> None:
-        """Output the role to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        super().output(padding=padding)
-        output_manager = OutputManager()
-        output_manager.add_line("Atom members:")
-        for atom in self.atoms:
-            output_manager.add_formatted_line("", atom, padding)
-        labels = self.get_labels()
-        output_manager.add_line("Labels:")
-        for label in labels:
-            output_manager.add_formatted_line("", label.name, padding)
-
-    def output_hosts(self, _padding: int = 14, exclude_roles: list[Role] | None = None) -> None:
-        """Output the hosts that use the role.
-
-        :param padding: Number of spaces for left-padding the output.
-        :param exclude_roles: List of other roles to exclude hosts with.
-        """
-        manager = OutputManager()
-        hosts = self.hosts
-
-        if exclude_roles:
-            # Exclude any hosts that are found in the excluded roles
-            excluded_hosts: set[str] = set()
-            for host in hosts:
-                for role in exclude_roles:
-                    if host in role.hosts:
-                        excluded_hosts.add(host)
-                        break
-            hosts = [host for host in hosts if host not in excluded_hosts]
-
-        if hosts:
-            manager.add_line("Name:")
-            for host in hosts:
-                manager.add_line(f" {host}")
-        else:
-            manager.add_line("No host uses this role")
-
-    def output_atoms(self, _padding: int = 14) -> None:
-        """Output the atoms that are members of the role.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        manager = OutputManager()
-        if self.atoms:
-            manager.add_line("Name:")
-            for atom in self.atoms:
-                manager.add_line(f" {atom}")
-        else:
-            manager.add_line("No atom members")
-
-    @classmethod
-    def output_multiple(cls, roles: list[Role] | list[str], padding: int = 14) -> None:
-        """Output multiple roles to the console.
-
-        :param roles: List of roles to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        if not roles:
-            return
-
-        rolenames: list[str] = []
-        for role in roles:
-            if isinstance(role, str):
-                rolenames.append(role)
-            else:
-                rolenames.append(role.name)
-
-        OutputManager().add_line("{1:<{0}}{2}".format(padding, "Roles:", ", ".join(rolenames)))
-
-    @classmethod
-    def output_multiple_table(cls, roles: list[Role], _padding: int = 14) -> None:
-        """Output multiple roles to the console in a table.
-
-        :param roles: List of roles to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        if not roles:
-            return
-
-        class RoleTableRow(BaseModel):
-            name: str
-            description: str
-            labels: str
-
-        rows: list[RoleTableRow] = []
-        for role in roles:
-            labels = role.get_labels()
-            row = RoleTableRow(
-                name=role.name,
-                description=role.description,
-                labels=", ".join([label.name for label in labels]),
-            )
-            rows.append(row)
-
-        keys = list(RoleTableRow.model_fields.keys())
-        headers = [h.capitalize() for h in keys]
-        OutputManager().add_formatted_table(
-            headers=headers,
-            keys=keys,
-            data=rows,
-        )
-
     @classmethod
     def get_roles_with_atom(cls, name: str) -> list[Self]:
         """Get all roles with a specific atom.
@@ -1371,20 +1143,24 @@ class Role(HostPolicy, WithHistory):
         :param atom: Name of the atom to search for.
         :returns: A list of Role objects.
         """
-        return get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
 
     def add_atom(self, atom_name: str) -> bool:
         """Add an atom to the role.
 
         :param atom_name: The name of the atom to add.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # Ensure the atom exists
         Atom.get_by_name_or_raise(atom_name)
         for atom in self.atoms:
             if atom_name == atom:
                 raise EntityAlreadyExists(f"Atom {atom!r} already a member of role {self.name!r}")
 
-        resp = post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
+        resp = MregClient().post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
         return resp.ok if resp else False
 
     def remove_atom(self, atom_name: str) -> bool:
@@ -1392,13 +1168,15 @@ class Role(HostPolicy, WithHistory):
 
         :param atom_name: The name of the atom to remove.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         for atom in self.atoms:
             if atom_name == atom:
                 break
         else:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {self.name!r}")
 
-        resp = delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
+        resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
         return resp.ok if resp else False
 
     def get_labels(self) -> list[Label]:
@@ -1417,9 +1195,7 @@ class Role(HostPolicy, WithHistory):
         """
         label = Label.get_by_name_or_raise(label_name)
         if label.id in self.labels:
-            raise EntityAlreadyExists(
-                f"The role {self.name!r} already has the label {label_name!r}"
-            )
+            raise EntityAlreadyExists(f"The role {self.name!r} already has the label {label_name!r}")
 
         label_ids = self.labels.copy()
         label_ids.append(label.id)
@@ -1447,7 +1223,9 @@ class Role(HostPolicy, WithHistory):
 
         :param name: The name of the host to add.
         """
-        resp = post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
         return resp.ok if resp else False
 
     def remove_host(self, name: str) -> bool:
@@ -1455,7 +1233,9 @@ class Role(HostPolicy, WithHistory):
 
         :param name: The name of the host to remove.
         """
-        resp = delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
         return resp.ok if resp else False
 
     def delete(self) -> bool:
@@ -1478,42 +1258,6 @@ class Atom(HostPolicy, WithHistory):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.HostPolicyAtoms
-
-    def output(self, padding: int = 14) -> None:
-        """Output the role to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        super().output(padding=padding)
-        output_manager = OutputManager()
-        output_manager.add_line("Roles where this atom is a member:")
-        for role in self.roles:
-            output_manager.add_formatted_line("", role, padding)
-
-    @classmethod
-    def output_multiple(cls, atoms: list[Atom], padding: int = 14) -> None:
-        """Output multiple atoms to the console as a single formatted string.
-
-        :param atoms: List of atoms to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        if not atoms:
-            return
-
-        OutputManager().add_line(
-            "{1:<{0}}{2}".format(padding, "Atoms:", ", ".join([atom.name for atom in atoms]))
-        )
-
-    @classmethod
-    def output_multiple_lines(cls, atoms: list[Atom], padding: int = 20) -> None:
-        """Output multiple atoms to the console, one atom per line.
-
-        :param atoms: List of atoms to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        manager = OutputManager()
-        for atom in atoms:
-            manager.add_formatted_line(atom.name, f"{atom.description!r}", padding)
 
     def delete(self) -> bool:
         """Delete the atom."""
@@ -1542,7 +1286,9 @@ class Label(FrozenModelWithTimestamps, WithName):
 
         :returns: A list of Label objects.
         """
-        return get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
 
     @classmethod
     def get_by_id_or_raise(cls, _id: int) -> Self:
@@ -1560,32 +1306,6 @@ class Label(FrozenModelWithTimestamps, WithName):
     def set_description(self, description: str) -> Self:
         """Set a new description."""
         return self.patch({"description": description})
-
-    def output(self, padding: int = 14) -> None:
-        """Output the label to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        short_padding = 4
-        output_manager = OutputManager()
-        output_manager.add_line(f"{'Name:':<{padding}}{self.name}")
-        output_manager.add_line(f"{'Description:':<{padding}}{self.description}")
-        output_manager.add_line("Roles with this label:")
-
-        roles = Role.get_list_by_field("labels", self.id)
-        if roles:
-            for role in roles:
-                output_manager.add_line(f"{'':<{short_padding}}{role.name}")
-        else:
-            output_manager.add_line(f"{'None':<{short_padding}}")
-
-        permission_list = Permission.get_list_by_field("labels", self.id)
-
-        output_manager.add_line("Permissions with this label:")
-        if permission_list:
-            Permission.output_multiple(permission_list, indent=4)
-        else:
-            output_manager.add_line(f"{'None':<{short_padding}}")
 
 
 class ExcludedRange(FrozenModelWithTimestamps):
@@ -1628,9 +1348,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         try:
             return NetworkOrIP.parse_or_raise(self.network, mode="network")
         except IPNetworkWarning as e:
-            logger.error(
-                "Invalid network address %s for network with ID %s", self.network, self.id
-            )
+            logger.error("Invalid network address %s for network with ID %s", self.network, self.id)
             raise e
 
     @property
@@ -1731,7 +1449,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         :returns: The network if found, None otherwise.
         :raises EntityNotFound: If the network is not found.
         """
-        resp = get(Endpoint.NetworksByIP.with_id(str(ip)), ok404=True)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().get(Endpoint.NetworksByIP.with_id(str(ip)), ok404=True)
         if not resp:
             return None
         return cls.model_validate_json(resp.text)
@@ -1796,115 +1516,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
     def create_community(self, name: str, description: str) -> bool:
         """Create a community for the network."""
-        resp = post(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(
             Endpoint.NetworkCommunities.with_params(self.network),
             name=name,
             description=description,
         )
         return resp.ok if resp else False
-
-    def output(self, padding: int = 25) -> None:
-        """Output the network to the console."""
-        manager = OutputManager()
-
-        def fmt(label: str, value: Any) -> None:
-            manager.add_line(f"{label:<{padding}}{value}")
-
-        ipnet = NetworkOrIP.parse_or_raise(self.network, mode="network")
-        reserved_ips = self.get_reserved_ips()
-        # Remove network address and broadcast address from reserved IPs
-        reserved_ips_filtered = [
-            ip for ip in reserved_ips if ip not in (ipnet.network_address, ipnet.broadcast_address)
-        ]
-
-        community_list: list[str] = []
-        for community in self.communities:
-            host_count = len(community.hosts)
-            global_name = f" ({community.global_name})" if community.global_name else ""
-            community_list.append(f"{community.name}{global_name} [{host_count}]")
-
-        fmt("Network:", self.network)
-        fmt("Netmask:", ipnet.netmask)
-        fmt("Description:", self.description)
-        fmt("Category:", self.category)
-        fmt("Network policy: ", self.policy.name if self.policy else "")
-        fmt("Communities:", ", ".join(sorted(community_list)))
-        if self.max_communities is not None:
-            fmt("Max communities:", self.max_communities)
-        fmt("Location:", self.location)
-        fmt("VLAN:", self.vlan)
-        fmt("DNS delegated:", str(self.dns_delegated))
-        fmt("Frozen:", self.frozen)
-        fmt("IP-range:", f"{ipnet.network_address} - {ipnet.broadcast_address}")
-        fmt("Reserved host addresses:", self.reserved)
-        fmt("", f"{ipnet.network_address} (net)")
-        for ip in reserved_ips_filtered:
-            fmt("", ip)
-        if ipnet.broadcast_address in reserved_ips:
-            fmt("", f"{ipnet.broadcast_address} (broadcast)")
-        if self.excluded_ranges:
-            excluded_ips = 0
-            for ex_range in self.excluded_ranges:
-                excluded_ips += ex_range.excluded_ips()
-            fmt("Excluded ranges:", f"{excluded_ips} ipaddresses")
-            self.output_excluded_ranges(padding=padding)
-        fmt("Used addresses:", self.get_used_count())
-        fmt("Unused addresses:", f"{self.get_unused_count()} (excluding reserved adr.)")
-
-    @classmethod
-    def output_multiple(cls, networks: list[Network], padding: int = 25) -> None:
-        """Print multiple networks to the console."""
-        for i, network in enumerate(networks, start=1):
-            network.output(padding=padding)
-            if i != len(networks):  # add newline between networks (except last one)
-                OutputManager().add_line("")
-
-    def output_unused_addresses(self, padding: int = 25) -> None:
-        """Output the unused addresses of the network."""
-        unused = self.get_unused_list()
-
-        manager = OutputManager()
-        if not unused:
-            manager.add_line(f"No free addresses remaining on network {self.network}")
-            return
-
-        for ip in unused:
-            manager.add_line("{1:<{0}}".format(padding, str(ip)))
-
-    def output_used_addresses(self, padding: int = 46) -> None:
-        """Output the used addresses and their corresponding hosts."""
-        # Reason for 46 padding:
-        # https://stackoverflow.com/questions/166132/maximum-length-of-the-textual-representation-of-an-ipv6-address/166157#comment2055398_166157
-        used = self.get_used_host_list()
-        ptr_overrides = self.get_ptroverride_host_list()
-        ips = set(list(used.keys()) + list(ptr_overrides.keys()))
-        ips = sorted(ips, key=ipaddress.ip_address)
-
-        manager = OutputManager()
-        if not ips:
-            manager.add_line(f"No used addresses on network {self.network}")
-            return
-
-        for ip in ips:
-            if ip in ptr_overrides:
-                manager.add_line(f"{ip:<{padding}}{ptr_overrides[ip]} (PTR override)")
-            elif ip in used:
-                hosts = used[ip]
-                msg = f"{ip:<{padding}}{', '.join(hosts)}"
-                if len(hosts) > 1:
-                    msg += " (NO ptr override!!)"
-                manager.add_line(msg)
-
-    def output_excluded_ranges(self, padding: int = 32) -> None:
-        """Output the excluded ranges of the network."""
-        manager = OutputManager()
-        if not self.excluded_ranges:
-            manager.add_line(f"No excluded ranges for network {self.network}")
-            return
-
-        # manager.add_line(f"{'Start IP':<{padding}}End IP")
-        for exrange in self.excluded_ranges:
-            manager.add_line(f" {str(exrange.start_ip):<{padding}} -> {exrange.end_ip}")
 
     def overlaps(self, other: Network | str | IP_NetworkT) -> bool:
         """Check if the network overlaps with another network."""
@@ -1919,41 +1538,61 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
     def get_first_available_ip(self) -> IP_AddressT:
         """Return the first available IPv4 address of the network."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         return ipaddress.ip_address(
-            get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
+            MregClient().get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
         )
 
     def get_reserved_ips(self) -> list[IP_AddressT]:
         """Return the reserved IP addresses of the network."""
-        return get_typed(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
             Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT]
         )
 
     def get_used_count(self) -> int:
         """Return the number of used IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
 
     def get_used_list(self) -> list[IP_AddressT]:
         """Return the list of used IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUsedList.with_params(self.network), list[IP_AddressT])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksUsedList.with_params(self.network), list[IP_AddressT]
+        )
 
     def get_unused_count(self) -> int:
         """Return the number of unused IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
 
     def get_unused_list(self) -> list[IP_AddressT]:
         """Return the list of unused IP addresses in the network."""
-        return get_typed(Endpoint.NetworksUnusedList.with_params(self.network), list[IP_AddressT])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksUnusedList.with_params(self.network), list[IP_AddressT]
+        )
 
     def get_used_host_list(self) -> dict[str, list[str]]:
         """Return a dict of used IP addresses and their associated hosts."""
-        return get_typed(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
             Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]]
         )
 
     def get_ptroverride_host_list(self) -> dict[str, str]:
         """Return a dict of PTR override IP addresses and their associated hosts."""
-        return get_typed(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
             Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str]
         )
 
@@ -1973,12 +1612,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
         :returns: The new ExcludedRange object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
         end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
         if start_ip.version != end_ip.version:
             raise InputFailure("Start and end IP addresses must be of the same version")
 
-        resp = post(
+        resp = MregClient().post(
             Endpoint.NetworksAddExcludedRanges.with_params(self.network),
             network=self.id,
             start_ip=str(start_ip),
@@ -1993,6 +1634,8 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         :param start: The start of the excluded range.
         :param end: The end of the excluded range.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # No need to validate IPs - if we find a match it's valid
         exrange: ExcludedRange | None = None
         for excluded_range in self.excluded_ranges:
@@ -2001,7 +1644,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
                 break
         else:
             raise EntityNotFound(f"Excluded range {start} - {end} not found")
-        resp = delete(Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id))
+        resp = MregClient().delete(
+            Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id)
+        )
         if not resp or not resp.ok:
             raise DeleteError(f"Failed to delete excluded range {start} - {end}")
 
@@ -2011,8 +1656,6 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         :param category: The new category tag.
         :returns: The updated Network object.
         """
-        if not is_valid_category_tag(category):
-            raise InputFailure(f"Invalid category tag: {category}")
         return self.patch({"category": category})
 
     def set_location(self, location: str) -> Self:
@@ -2021,8 +1664,6 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         :param category: The new category.
         :returns: The updated Network object.
         """
-        if not is_valid_location_tag(location):
-            raise InputFailure(f"Invalid location tag: {location}")
         return self.patch({"location": location})
 
     def set_description(self, description: str) -> Self:
@@ -2117,24 +1758,6 @@ class NetworkPolicyAttribute(FrozenModelWithTimestamps, WithName):
         """Return the endpoint for the class."""
         return Endpoint.NetworkPolicyAttributes
 
-    def output(self) -> None:
-        """Output the network policy attribute to the console."""
-        manager = OutputManager()
-        manager.add_line(f"Name: {self.name}")
-        manager.add_line(f"Description: {self.description}")
-        self.output_timestamps()
-
-    @classmethod
-    def output_multiple(cls, attributes: list[Self], padding: int = 20) -> None:
-        """Output multiple attributes to the console, one attribute per line.
-
-        :param attributes: List of attributes to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        manager = OutputManager()
-        for attr in attributes:
-            manager.add_formatted_line(attr.name, f"{attr.description!r}", padding)
-
 
 class Community(FrozenModelWithTimestamps, APIMixin):
     """Network community."""
@@ -2165,46 +1788,11 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         """Return the endpoint with policy and community IDs."""
         return Endpoint.NetworkCommunityHosts.with_params(self.network_address, self.id)
 
-    @classmethod
-    def output_multiple(
-        cls,
-        communities: list[Self],
-        padding: int = 14,
-        show_hosts: bool = True,
-        sort: CommunitySortOrder = CommunitySortOrder.NAME,
-    ) -> None:
-        """Output multiple communities to the console."""
-
-        def sort_key(community: Community) -> Any:
-            if sort == CommunitySortOrder.NAME:
-                return community.name
-            elif sort == CommunitySortOrder.GLOBAL_NAME:
-                return community.global_name or ""
-
-        communities = sorted(communities, key=sort_key)
-        for community in communities:
-            community.output(padding=padding, show_hosts=show_hosts)
-            OutputManager().add_line("")  # add newline between communities
-
-    def output(self, *, padding: int = 14, show_hosts: bool = True) -> None:
-        """Output the community to the console."""
-        manager = OutputManager()
-        manager.add_line(f"{'Name:':<{padding}}{self.name}")
-        manager.add_line(f"{'Description:':<{padding}}{self.description}")
-        if self.global_name:
-            manager.add_line(f"{'Global name:':<{padding}}{self.global_name}")
-        self.output_timestamps()
-
-        if show_hosts and self.hosts:
-            manager.add_line("Hosts:")
-            for host in self.hosts:
-                manager.add_line(f"{'':{padding}}{host}")
-        else:
-            manager.add_line(f"{'Hosts:':<{padding}}{len(self.hosts)}")
-
     def refetch(self) -> Self:
         """Refetch the community object."""
-        return get_typed(self.endpoint_with_id(), self.__class__)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(self.endpoint_with_id(), self.__class__)
 
     def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
         """Patch the community.
@@ -2213,7 +1801,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param validate: Whether to validate the response. (Not implemented)
         :returns: The updated Community object.
         """
-        resp = patch(self.endpoint_with_id(), **fields)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().patch(self.endpoint_with_id(), **fields)
         if not resp or not resp.ok:
             raise PatchError(f"Failed to patch community {self.name!r}")
         new_object = self.refetch()
@@ -2221,7 +1811,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
     def delete(self) -> bool:
         """Delete the community."""
-        resp = delete(self.endpoint_with_id())
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(self.endpoint_with_id())
         return resp.ok if resp else False
 
     def get_hosts(self) -> list[Host]:
@@ -2229,7 +1821,9 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
         :returns: A list of Host objects.
         """
-        return get_typed(self.hosts_endpoint, list[Host])
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(self.hosts_endpoint, list[Host])
 
     def add_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
         """Add a host to the community.
@@ -2237,10 +1831,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param host: The host to add.
         :returns: True if the host was added, False otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         kwargs: QueryParams = {"id": host.id}
         if ipaddress:
             kwargs["ipaddress"] = str(ipaddress)
-        resp = post(self.hosts_endpoint, params=None, **kwargs)
+        resp = MregClient().post(self.hosts_endpoint, params=None, **kwargs)
         return resp.ok if resp else False
 
     def remove_host(self, host: Host, ipaddress: IP_AddressT | None) -> bool:
@@ -2249,10 +1845,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param host: The host to remove.
         :returns: True if the host was removed, False otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         params: QueryParams = {}
         if ipaddress:
             params["ipaddress"] = str(ipaddress)
-        resp = delete(
+        resp = MregClient().delete(
             Endpoint.NetworkCommunityHost.with_params(
                 self.network_address,
                 self.id,
@@ -2287,34 +1885,6 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.NetworkPolicies
-
-    @classmethod
-    def output_multiple(cls, policies: list[Self]) -> None:
-        """Output multiple network policies to the console."""
-        for policy in policies:
-            policy.output()
-            OutputManager().add_line("")  # add newline between policies
-
-    def output(self) -> None:
-        """Output the network policy to the console."""
-        manager = OutputManager()
-        manager.add_line(f"Name: {self.name}")
-        if self.description:
-            manager.add_line(f"Description: {self.description}")
-        if self.community_template_pattern:
-            manager.add_line(f"Community template pattern: {self.community_template_pattern}")
-        if self.attributes:
-            manager.add_line("Attributes:")
-            for attribute in self.attributes:
-                manager.add_line(f" {attribute.name}: {attribute.value}")
-
-        networks = self.networks()
-        if networks:
-            manager.add_line("Networks:")
-            for network in networks:
-                manager.add_line(f" {network.network}")
-
-        self.output_timestamps()
 
     def get_attribute_or_raise(self, name: str) -> NetworkPolicyAttributeValue:
         """Get a network attribute value by name, and raise if not found.
@@ -2402,13 +1972,17 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
         :param description: The description of the community.
         :returns: The new Community object.
         """
-        resp = post(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+
+        resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.id),
             name=name,
             description=description,
         )
         if resp and (location := resp.headers.get("Location")):
-            return get_typed(location, Community)
+            return client.get_typed(location, Community)
         return None
 
 
@@ -2464,12 +2038,12 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
 
         if len(ips) == 1:
             raise EntityAlreadyExists(
-                f"MAC address {mac} is already associated with IP address {ips[0].ipaddress}, must force."
+                f"MAC address {mac} is already associated with IP address {ips[0].ipaddress}, must force."  # noqa: E501
             )
         else:
             ips_str = ", ".join([str(ip.ipaddress) for ip in ips])
             raise MultipleEntitiesFound(
-                f"MAC address {mac} is already associated with multiple IP addresses: {ips_str}, must force."
+                f"MAC address {mac} is already associated with multiple IP addresses: {ips_str}, must force."  # noqa: E501
             )
 
     @classmethod
@@ -2512,8 +2086,10 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
 
     def network(self) -> Network | None:
         """Return the network of the IP address."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            return get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
+            return MregClient().get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
         except APIError:
             return None
 
@@ -2551,43 +2127,6 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             raise PatchError(f"Failed to disassociate MAC address from {self.ipaddress}")
         return patched
 
-    def output(self, len_ip: int, len_names: int, names: bool = False):
-        """Output the IP address to the console."""
-        ip = self.ipaddress.__str__()
-        mac = self.macaddress if self.macaddress else "<not set>"
-
-        name = ""
-        if names:
-            name = Host.get_by_id(self.host)
-            name = name.name if name else "<Not found>"
-
-        OutputManager().add_line(f"{name:<{len_names}}{ip:<{len_ip}}{mac}")
-
-    @classmethod
-    def output_multiple(cls, ips: list[IPAddress], padding: int = 14, names: bool = False):
-        """Output IP addresses to the console."""
-        output_manager = OutputManager()
-        len_ip = max(padding, max([len(str(ip.ipaddress)) for ip in ips], default=0) + 2)
-
-        # This seems completely broken, we need to look up all the hosts and get their names.
-        # This again requires a fetch_hosts() call that takes a series of identifiers using
-        # id__in.
-        len_names = (
-            padding
-            if not names
-            else max(padding, max([len(str(ip.host)) for ip in ips], default=0) + 2)
-        )
-
-        # Separate and output A and AAAA records
-        for record_type, records in (
-            ("A_Records", [ip for ip in ips if ip.is_ipv4()]),
-            ("AAAA_Records", [ip for ip in ips if ip.is_ipv6()]),
-        ):
-            if records:
-                output_manager.add_line(f"{record_type:<{len_names}}IP{' ' * (len_ip - 2)}MAC")
-                for record in records:
-                    record.output(len_ip=len_ip, len_names=len_names, names=names)
-
     def __hash__(self):
         """Return a hash of the IP address."""
         return hash((self.id, self.ipaddress, self.macaddress))
@@ -2603,12 +2142,6 @@ class HInfo(FrozenModelWithTimestamps, WithHost, APIMixin):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.Hinfos
-
-    def output(self, padding: int = 14):
-        """Output the HINFO record to the console."""
-        OutputManager().add_line(
-            "{1:<{0}}cpu={2} os={3}".format(padding, "Hinfo:", self.cpu, self.os)
-        )
 
 
 class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
@@ -2630,7 +2163,9 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         :param name: The name to search for.
         :returns: The CNAME record if found, None otherwise.
         """
-        data = get_item_by_key_value(Endpoint.Cnames, "name", name)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_item_by_key_value(Endpoint.Cnames, "name", name)
         if not data:
             raise EntityNotFound(f"CNAME record for {name} not found.")
         return CNAME.model_validate(data)
@@ -2667,33 +2202,6 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
 
         return results[0]
 
-    def output(self, host: Host | None = None, padding: int = 14) -> None:
-        """Output the CNAME record to the console.
-
-        :param host: Host CNAME points to. Attempts to resolve the host if not provided.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        if host:
-            hostname = host.name
-        elif not host and (actual_host := self.resolve_host()):
-            hostname = actual_host.name
-        else:
-            hostname = "<Not found>"
-        OutputManager().add_line(f"{'Cname:':<{padding}}{self.name} -> {hostname}")
-
-    @classmethod
-    def output_multiple(
-        cls, cnames: list[CNAME], host: Host | None = None, padding: int = 14
-    ) -> None:
-        """Output multiple CNAME records to the console.
-
-        :param cnames: List of CNAME records to output.
-        :param host: Host CNAMEs point to. Attempts to resolve the host if not provided.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        for cname in cnames:
-            cname.output(host=host, padding=padding)
-
 
 class TXT(FrozenModelWithTimestamps, WithHost, APIMixin):
     """Represents a TXT record."""
@@ -2705,23 +2213,6 @@ class TXT(FrozenModelWithTimestamps, WithHost, APIMixin):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.Txts
-
-    def output(self, padding: int = 14) -> None:
-        """Output the TXT record to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        OutputManager().add_line(f"{'TXT:':<{padding}}{self.txt}")
-
-    @classmethod
-    def output_multiple(cls, txts: list[TXT], padding: int = 14) -> None:
-        """Output multiple TXT records to the console.
-
-        :param txts: List of TXT records to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        for txt in txts:
-            txt.output(padding=padding)
 
 
 class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
@@ -2745,7 +2236,9 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         :param priority: The priority.
         :returns: The MX record if found, None otherwise.
         """
-        data = get_list_unique(
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        data = MregClient().get_list_unique(
             Endpoint.Mxs, params={"host": str(host), "mx": mx, "priority": str(priority)}
         )
         if not data:
@@ -2761,26 +2254,6 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         """
         return self.mx == mx and self.priority == priority
 
-    def output(self, padding: int = 14) -> None:
-        """Output the MX record to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        len_pri = len("Priority")
-        OutputManager().add_line(
-            "{1:<{0}}{2:>{3}} {4}".format(padding, "", self.priority, len_pri, self.mx)
-        )
-
-    @classmethod
-    def output_multiple(cls, mxs: list[MX], padding: int = 14) -> None:
-        """Output MX records to the console."""
-        if not mxs:
-            return
-
-        OutputManager().add_line("{1:<{0}}{2} {3}".format(padding, "MX:", "Priority", "Server"))
-        for mx in sorted(mxs, key=lambda i: i.priority):
-            mx.output(padding=padding)
-
 
 class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
     """Represents a NAPTR record."""
@@ -2792,24 +2265,6 @@ class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
     service: str | None = None
     regex: str | None = None
     replacement: str
-
-    def output(self, padding: int = 14) -> None:
-        """Output the NAPTR record to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        row_format = f"{{:<{padding}}}" * len(NAPTR.headers())
-        OutputManager().add_line(
-            row_format.format(
-                "",
-                self.preference,
-                self.order,
-                self.flag,
-                self.service,
-                self.regex or '""',
-                self.replacement,
-            )
-        )
 
     @classmethod
     def endpoint(cls) -> Endpoint:
@@ -2829,17 +2284,6 @@ class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
             "Replacement",
         ]
 
-    @classmethod
-    def output_multiple(cls, naptrs: list[NAPTR], padding: int = 14) -> None:
-        """Output multiple NAPTR records to the console."""
-        headers = cls.headers()
-        row_format = f"{{:<{padding}}}" * len(headers)
-        manager = OutputManager()
-        if naptrs:
-            manager.add_line(row_format.format(*headers))
-            for naptr in naptrs:
-                naptr.output(padding=padding)
-
 
 class Srv(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
     """Represents a SRV record."""
@@ -2855,68 +2299,6 @@ class Srv(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.Srvs
-
-    def output(self, padding: int = 14, host_id_name_map: dict[int, str] | None = None) -> None:
-        """Output the SRV record to the console.
-
-        The output will include the record name, priority, weight, port,
-        and the associated host name. Optionally uses a mapping of host IDs
-        to host names to avoid repeated lookups.
-
-        :param padding: Number of spaces for left-padding the output.
-        :param host_names: Optional dictionary mapping host IDs to host names.
-        """
-        host_name = "<Not found>"
-        if host_id_name_map and self.host in host_id_name_map:
-            host_name = host_id_name_map[self.host]
-        elif not host_id_name_map or self.host not in host_id_name_map:
-            host = self.resolve_host()
-            if host:
-                host_name = host.name
-
-        # Format the output string to include padding and center alignment
-        # for priority, weight, and port.
-        output_manager = OutputManager()
-        format_str = "SRV: {:<{padding}} {:^6} {:^6} {:^6} {}"
-        output_manager.add_line(
-            format_str.format(
-                self.name,
-                str(self.priority),
-                str(self.weight),
-                str(self.port),
-                host_name,
-                padding=padding,
-            )
-        )
-
-    @classmethod
-    def output_multiple(cls, srvs: list[Srv], padding: int = 14) -> None:
-        """Output multiple SRV records.
-
-        This method adjusts the padding dynamically based on the longest record name.
-
-        :param srvs: List of Srv records to output.
-        :param padding: Minimum number of spaces for left-padding the output.
-        """
-        if not srvs:
-            return
-
-        host_ids = {srv.host for srv in srvs}
-
-        host_data = get_list_in(Endpoint.Hosts, "id", list(host_ids))
-        hosts = [Host.model_validate(host) for host in host_data]
-
-        host_id_name_map = {host.id: str(host.name) for host in hosts}
-
-        host_id_name_map.update(
-            {host_id: host_id_name_map.get(host_id, "<Not found>") for host_id in host_ids}
-        )
-
-        padding = max((len(srv.name) for srv in srvs), default=padding)
-
-        # Output each SRV record with the optimized host name lookup
-        for srv in srvs:
-            srv.output(padding=padding, host_id_name_map=host_id_name_map)
 
     def __str__(self) -> str:
         """Return a string representation of the SRV record."""
@@ -2934,29 +2316,6 @@ class PTR_override(FrozenModelWithTimestamps, WithHost, APIMixin):
         """Return the endpoint for the class."""
         return Endpoint.PTR_overrides
 
-    @classmethod
-    def output_multiple(cls, ptrs: list[PTR_override], padding: int = 14):
-        """Output multiple PTR override records to the console.
-
-        :param ptrs: List of PTR override records to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        if not ptrs:
-            return
-
-        for ptr in ptrs:
-            ptr.output(padding=padding)
-
-    def output(self, padding: int = 14):
-        """Output the PTR override record to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        host = self.resolve_host()
-        hostname = host.name if host else "<Not found>"
-
-        OutputManager().add_line(f"{'PTR override:':<{padding}}{self.ipaddress} -> {hostname}")
-
 
 class SSHFP(FrozenModelWithTimestamps, WithHost, WithTTL, APIMixin):
     """Represents a SSHFP record."""
@@ -2971,36 +2330,6 @@ class SSHFP(FrozenModelWithTimestamps, WithHost, WithTTL, APIMixin):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.Sshfps
-
-    @classmethod
-    def output_multiple(cls, sshfps: list[SSHFP], padding: int = 14):
-        """Output multiple SSHFP records to the console.
-
-        :param sshfps: List of SSHFP records to output.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        headers = cls.headers()
-        row_format = f"{{:<{padding}}}" * len(headers)
-        manager = OutputManager()
-        if sshfps:
-            manager.add_line(row_format.format(*headers))
-            for sshfp in sshfps:
-                sshfp.output(padding=padding)
-
-    @classmethod
-    def headers(cls) -> list[str]:
-        """Return the headers for the SSHFP record."""
-        return ["SSHFPs:", "Algorithm", "Hash Type", "Fingerprint"]
-
-    def output(self, padding: int = 14):
-        """Output the SSHFP record to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        row_format = f"{{:<{padding}}}" * len(SSHFP.headers())
-        OutputManager().add_line(
-            row_format.format("", self.algorithm, self.hash_type, self.fingerprint)
-        )
 
 
 class BacnetID(FrozenModel, WithHost, APIMixin):
@@ -3027,19 +2356,10 @@ class BacnetID(FrozenModel, WithHost, APIMixin):
         :param end: The end of the range.
         :returns: List of BacnetID objects in the range.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         params: QueryParams = {"id__range": f"{start},{end}"}
-        return get_typed(Endpoint.BacnetID, list[cls], params=params)
-
-    @classmethod
-    def output_multiple(cls, bacnetids: list[BacnetID]):
-        """Output multiple Bacnet ID records to the console.
-
-        :param bacnetids: List of Bacnet ID records to output.
-        """
-        if not bacnetids:
-            return
-
-        OutputManager().add_formatted_table(("ID", "Hostname"), ("id", "hostname"), bacnetids)
+        return MregClient().get_typed(Endpoint.BacnetID, list[cls], params=params)
 
 
 class Location(FrozenModelWithTimestamps, WithHost, APIMixin):
@@ -3052,13 +2372,6 @@ class Location(FrozenModelWithTimestamps, WithHost, APIMixin):
         """Return the endpoint for the class."""
         return Endpoint.Locs
 
-    def output(self, padding: int = 14):
-        """Output the LOC record to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        OutputManager().add_line(f"{'LOC:':<{padding}}{self.loc}")
-
 
 class HostCommunity(FrozenModel):
     """Model for a host's community.
@@ -3070,22 +2383,6 @@ class HostCommunity(FrozenModel):
     """ID of the IP address associated with the community"""
 
     community: Community
-
-
-class HostContactModification(FrozenModel):
-    """Model for host contact email modifications."""
-
-    added: list[str] = Field(default_factory=list)
-    already_exists: list[str] = Field(default_factory=list)
-    removed: list[str] = Field(default_factory=list)
-    not_found: list[str] = Field(default_factory=list)
-
-
-class ContactEmail(FrozenModelWithTimestamps):
-    """Model for a host's contact email."""
-
-    id: int
-    email: str
 
 
 class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
@@ -3101,6 +2398,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     hinfo: HInfo | None = None
     loc: Location | None = None
     bacnetid: int | None = None
+    contact: str
     ttl: int | None = None
     srvs: list[Srv] = []
     naptrs: list[NAPTR] = []
@@ -3108,8 +2406,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     roles: list[str] = []
     hostgroups: list[str] = []
     comment: str
-    contacts: list[ContactEmail] = []
-    contact: str | None = Field(default=None, deprecated=True)
 
     communities: list[HostCommunity] = []
 
@@ -3117,11 +2413,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     zone: int | None = None
 
     history_resource: ClassVar[HistoryResource] = HistoryResource.Host
-
-    @property
-    def contact_emails(self) -> list[str]:
-        """A list of contact email addresses for the host."""
-        return [contact.email for contact in self.contacts]
 
     @field_validator("communities", mode="before")
     @classmethod
@@ -3155,7 +2446,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             hosts = cls.get_list_by_field("ptr_overrides__ipaddress", str(ip))
             if hosts and inform_as_ptr:
                 for host in hosts:
-                    OutputManager().add_line(f"{ip} is a PTR override for {host.name}")
+                    host.add_note(f"{ip} is a PTR override for {host.name}")
         return hosts
 
     @classmethod
@@ -3184,7 +2475,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             if not host:
                 host = cls.get_by_field("ptr_overrides__ipaddress", str(ip))
                 if host and inform_as_ptr:
-                    OutputManager().add_line(f"{ip} is a PTR override for {host.name}")
+                    host.add_note(f"{ip} is a PTR override for {host.name}")
             return host
         except MultipleEntitiesFound as e:
             raise MultipleEntitiesFound(f"Multiple hosts found with IP address {ip}.") from e
@@ -3327,7 +2618,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             host = Host.get_by_id(cname.host)
 
             if host and inform_as_cname:
-                OutputManager().add_line(f"{identifier} is a CNAME for {host.name}")
+                host.add_note(f"{identifier} is a CNAME for {host.name}")
 
         return host
 
@@ -3411,7 +2702,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         if cname := CNAME.get_by_field("name", identifier):
             host = cls.get_by_id(cname.host)
             if host and inform_as_cname:
-                OutputManager().add_line(f"{identifier} is a CNAME for {host.name}")
+                host.add_note(f"{identifier} is a CNAME for {host.name}")
                 return [host]
 
         return []
@@ -3423,9 +2714,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: True if the host was deleted successfully, False otherwise.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         # Note, we can't use .id as the identifier here, as the host name is used
         # in the endpoint URL...
-        op = delete(Endpoint.Hosts.with_id(str(self.name)))
+        op = MregClient().delete(Endpoint.Hosts.with_id(str(self.name)))
         if not op:
             raise DeleteError(f"Failed to delete host {self.name}, operation failed.")
 
@@ -3449,68 +2742,15 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         return self.patch(fields={"comment": comment})
 
-    def set_contacts(self, contacts: list[str]) -> Host:
-        """Set the contact(s) for the host.
+    def set_contact(self, contact: str) -> Host:
+        """Set the contact for the host.
 
         :param contact: The contact to set. Should be a valid email, but we leave it to the
                         server to validate the data.
 
         :returns: A new Host object fetched from the API with the updated contact.
         """
-        # Uses non-atomic host update via PATCH to set the contacts list.
-        return self.patch(fields={"contacts": contacts}, validate=False)
-
-    def add_contacts(self, contacts: list[str]) -> HostContactModification:
-        """Add contact(s) to the host.
-
-        :param contacts: The contact(s) to set. Should be a valid email, but we leave it to the
-                        server to validate the data.
-
-        :returns: A HostContactModification object with the result of the operation.
-        """
-        # Uses atomic endpoint for contact updates
-        endpoint = Endpoint.HostsContacts.with_params(self.name)
-        resp = post(endpoint, emails=contacts)
-        if not resp:
-            raise PostError(f"Failed to add contacts to host {self.name}.")
-        adapter = get_type_adapter(HostContactModification)
-        return adapter.validate_json(resp.text)
-
-    def clear_contacts(self) -> HostContactModification:
-        """Clear all contacts for a host.
-
-        :returns: A HostContactModification object with the result of the operation.
-        """
-        endpoint = Endpoint.HostsContacts.with_params(self.name)
-        resp = delete(endpoint)
-        if not resp:
-            raise DeleteError(f"Failed to remove contacts from host {self.name}.")
-        adapter = get_type_adapter(HostContactModification)
-        return adapter.validate_json(resp.text)
-
-    def remove_contacts(self, contacts: list[str]) -> HostContactModification:
-        """Remove the given contacts from the host.
-
-        :param contacts: The contact(s) to remove.
-
-        :returns: A HostContactModification object with the result of the operation.
-        """
-        endpoint = Endpoint.HostsContacts.with_params(self.name)
-        resp = delete(endpoint, emails=contacts)
-        if not resp:
-            raise DeleteError(f"Failed to remove contacts from host {self.name}.")
-        adapter = get_type_adapter(HostContactModification)
-        return adapter.validate_json(resp.text)
-
-    def unset_contacts(self) -> Host:
-        """Set the contact(s) for the host.
-
-        :param contact: The contact to set. Should be a valid email, but we leave it to the
-                        server to validate the data.
-
-        :returns: A new Host object fetched from the API with the updated contact.
-        """
-        return self.patch(fields={"contacts": []})
+        return self.patch(fields={"contact": contact})
 
     def add_ip(self, ip: IP_AddressT, mac: MacAddress | None = None) -> Host:
         """Add an IP address to the host.
@@ -3652,9 +2892,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """Return a list of IPv6 addresses."""
         return [ip for ip in self.ipaddresses if ip.is_ipv6()]
 
-    def associate_mac_to_ip(
-        self, mac: MacAddress, ip: IP_AddressT | str, force: bool = False
-    ) -> Host:
+    def associate_mac_to_ip(self, mac: MacAddress, ip: IP_AddressT | str, force: bool = False) -> Host:
         """Associate a MAC address to an IP address.
 
         :param mac: The MAC address to associate.
@@ -3662,6 +2900,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A new Host object fetched from the API after updating the IP address.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         if isinstance(ip, str):
             ip = NetworkOrIP.parse_or_raise(ip, mode="ip")
 
@@ -3670,14 +2910,14 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             "ordering": "ipaddress",
         }
 
-        ipadresses = get_typed(Endpoint.Ipaddresses, list[IPAddress], params=params)
+        ipadresses = MregClient().get_typed(Endpoint.Ipaddresses, list[IPAddress], params=params)
 
         if ip in [ip.ipaddress for ip in ipadresses]:
             raise EntityAlreadyExists(f"IP address {ip} already has MAC address {mac} associated.")
 
         if len(ipadresses) and not force:
             raise EntityOwnershipMismatch(
-                f"mac {mac} already in use by: {', '.join(str(ip.ipaddress) for ip in ipadresses)}. Use force to add {ip} -> {mac} as well."
+                f"mac {mac} already in use by: {', '.join(str(ip.ipaddress) for ip in ipadresses)}. Use force to add {ip} -> {mac} as well."  # noqa: E501
             )
 
         ip_found_in_host = False
@@ -3801,18 +3041,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :param validate_zone_resolution: If True, validate that the resolved zone matches the
                 expected zone ID. Fail with ValidationFailure if it does not.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         if not self.zone:
             return None
 
-        data = get(Endpoint.ForwardZoneForHost.with_id(str(self.name)))
+        data = MregClient().get(Endpoint.ForwardZoneForHost.with_id(str(self.name)))
         data_as_dict = data.json()
 
         if data_as_dict["zone"]:
             zone = ForwardZone.model_validate(data_as_dict["zone"])
             if validate_zone_resolution and zone.id != self.zone:
-                raise MregValidationError(
-                    f"Expected zone ID {self.zone} but resolved as {zone.id}."
-                )
+                raise MregValidationError(f"Expected zone ID {self.zone} but resolved as {zone.id}.")
             return zone
 
         if data_as_dict["delegation"]:
@@ -3890,172 +3130,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         return next((mx for mx in self.mxs if mx.has_mx_with_priority(mx_arg, priority)), None)
 
-    @classmethod
-    def output_multiple(
-        cls, hosts: list[Host], names: bool = False, traverse_hostgroups: bool = False
-    ):
-        """Output multiple hosts to the console.
-
-        :param hosts: List of Host objects to output.
-        :param names: If True, output the host names only.
-        :param traverse_hostgroups: If True, traverse the hostgroups and include them in the output.
-        """
-        for i, host in enumerate(hosts, start=1):
-            host.output(names=names, traverse_hostgroups=traverse_hostgroups)
-            if i != len(hosts):
-                OutputManager().add_line("")
-
-    def output(self, names: bool = False, traverse_hostgroups: bool = False):
-        """Output host information to the console with padding."""
-        padding = 14
-
-        output_manager = OutputManager()
-        output_manager.add_line(f"{'Name:':<{padding}}{self.name}")
-        output_manager.add_line(f"{'Contact:':<{padding}}{', '.join(self.contact_emails)}")
-
-        if self.comment:
-            output_manager.add_line(f"{'Comment:':<{padding}}{self.comment}")
-
-        self.output_networks()
-        PTR_override.output_multiple(self.ptr_overrides, padding=padding)
-
-        self.output_ttl(padding=padding)
-
-        MX.output_multiple(self.mxs, padding=padding)
-
-        if self.hinfo:
-            self.hinfo.output(padding=padding)
-
-        if self.loc:
-            self.loc.output(padding=padding)
-
-        self.output_cnames(padding=padding)
-
-        TXT.output_multiple(self.txts, padding=padding)
-        Srv.output_multiple(self.srvs, padding=padding)
-        NAPTR.output_multiple(self.naptrs, padding=padding)
-        SSHFP.output_multiple(self.sshfps, padding=padding)
-
-        if self.bacnetid is not None:  # This may be zero.
-            output_manager.add_line(f"{'Bacnet ID:':<{padding}}{self.bacnetid}")
-
-        Role.output_multiple(self.roles, padding=padding)
-        if traverse_hostgroups:
-            hostgroups = self.get_hostgroups(traverse=True)
-        else:
-            hostgroups = self.hostgroups
-        HostGroup.output_multiple(hostgroups, padding=padding)
-
-        self.output_timestamps()
-
-    def output_networks(self, padding: int = 14, only: Literal[4, 6, None] = None) -> None:
-        """Output all A(AAA) records along with the MAC address and network policy for the host."""
-        networks = self.networks()
-        if not networks:
-            return
-
-        output_manager = OutputManager()
-
-        v4: list[tuple[Network, IPAddress]] = []
-        v6: list[tuple[Network, IPAddress]] = []
-
-        for network, ips in networks.items():
-            for ip in ips:
-                if network.ip_network.version == 4:
-                    v4.append((network, ip))
-                elif network.ip_network.version == 6:
-                    v6.append((network, ip))
-
-        def output_a_records(networks: list[tuple[Network, IPAddress]], version: int):
-            if not networks:
-                return
-            record_type = "A" if version == 4 else "AAAA"
-            output_manager.add_line(f"{record_type}_Records:")
-            data: list[dict[str, str]] = []
-
-            headers = ("IP", "MAC")
-            keys = ("ip", "mac")
-
-            ip_to_community: dict[IPAddress, Community] = {}
-            if self.communities:
-                for com in self.communities:
-                    ip = self.get_ip_by_id(com.ipaddress)
-
-                    if ip:
-                        ip_to_community[ip] = com.community
-
-            if ip_to_community:
-                for net, ip in networks:
-                    policy = ""
-                    if net.policy:
-                        policy = net.policy.name
-                    d: dict[str, str] = {
-                        "ip": str(ip.ipaddress),
-                        "mac": ip.macaddress or "<not set>",
-                        "policy": policy,
-                        "community": "",
-                    }
-                    if ip in ip_to_community:
-                        d["community"] = ip_to_community[ip].name
-                        if ip_to_community[ip].global_name:
-                            d["community"] += f" ({ip_to_community[ip].global_name})"
-
-                    data.append(d)
-
-                headers = ("IP", "MAC", "Policy", "Community")
-                keys = ("ip", "mac", "policy", "community")
-
-            else:
-                for _, ip in networks:
-                    d: dict[str, str] = {
-                        "ip": str(ip.ipaddress),
-                        "mac": ip.macaddress or "<not set>",
-                    }
-                    data.append(d)
-
-            output_manager.add_formatted_table(
-                headers=headers,
-                keys=keys,
-                data=data,
-                indent=padding,
-            )
-
-        if only is None or only == 4:
-            output_a_records(v4, 4)
-        if only is None or only == 6:
-            output_a_records(v6, 6)
-
-    def output_ipaddresses(
-        self, padding: int = 14, names: bool = False, only: IP_Version | None = None
-    ):
-        """Output the IP addresses for the host."""
-        if not self.ipaddresses:
-            return
-
-        if only and only == 4:
-            IPAddress.output_multiple(self.ipv4_addresses(), padding=padding, names=names)
-        elif only and only == 6:
-            IPAddress.output_multiple(self.ipv6_addresses(), padding=padding, names=names)
-        else:
-            IPAddress.output_multiple(self.ipaddresses, padding=padding, names=names)
-
-    def output_cnames(self, padding: int = 14):
-        """Output the CNAME records for the host."""
-        if not self.cnames:
-            return
-        CNAME.output_multiple(self.cnames, host=self, padding=padding)
-
-    def output_roles(self, _padding: int = 14) -> None:
-        """Output the roles for the host."""
-        roles = self.roles
-        manager = OutputManager()
-        if not roles:
-            manager.add_line(f"Host {self.name} has no roles")
-        else:
-            manager.add_line(f"Roles for {self.name}:")
-            for role in roles:
-                manager.add_line(f"  {role}")
-
     def __str__(self) -> str:
         """Return the host name as a string."""
         return self.name
@@ -4065,6 +3139,22 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hash((self.id, self.name))
 
 
+class HostList2(list[T]):
+    """List of hosts that may be CNAMEs or PTRs."""
+
+    def __init__(self, iterable: Iterable[T], is_cname: bool = False, is_ptr: bool = False) -> None:
+        """Initialize a list of hosts.
+
+        Args:
+            iterable (Iterable[T]): The iterable to initialize with.
+            is_cname (bool, optional): Hosts are cnames. Defaults to False.
+            is_ptr (bool, optional): Hosts are ptrs. Defaults to False.
+        """
+        super().__init__(iterable)
+        self.is_ptr = is_ptr
+        self.is_cname = is_cname
+
+
 class HostList(FrozenModel):
     """Model for a list of hosts.
 
@@ -4072,6 +3162,8 @@ class HostList(FrozenModel):
     """
 
     results: list[Host]
+    is_ptr: bool = False
+    is_cname: bool = False
 
     @classmethod
     def endpoint(cls) -> Endpoint:
@@ -4086,13 +3178,15 @@ class HostList(FrozenModel):
 
         :returns: A HostList object.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         if params is None:
             params = {}
 
         if "ordering" not in params:
             params["ordering"] = "name"
 
-        hosts = get_typed(cls.endpoint(), list[Host], params=params)
+        hosts = MregClient().get_typed(cls.endpoint(), list[Host], params=params)
         return cls(results=hosts)
 
     @classmethod
@@ -4129,25 +3223,6 @@ class HostList(FrozenModel):
         """Return the number of results."""
         return len(self.results)
 
-    def output(self):
-        """Output a list of hosts to the console."""
-        if not self.results:
-            raise EntityNotFound("No hosts found.")
-
-        max_name = max_contact = 20
-        for i in self.results:
-            max_name = max(max_name, len(str(i.name)))
-            max_contact = max(max_contact, max((len(c) for c in i.contact_emails), default=0))
-
-        def _format(name: str, contact: str, comment: str) -> None:
-            OutputManager().add_line(
-                "{0:<{1}} {2:<{3}} {4}".format(name, max_name, contact, max_contact, comment)
-            )
-
-        _format("Name", "Contact", "Comment")
-        for i in self.results:
-            _format(str(i.name), ", ".join(i.contact_emails), i.comment)
-
 
 class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     """Model for a hostgroup."""
@@ -4166,34 +3241,6 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.HostGroups
-
-    @classmethod
-    def output_multiple(
-        cls, hostgroups: list[HostGroup] | list[str], padding: int = 14, multiline: bool = False
-    ) -> None:
-        """Output multiple hostgroups to the console.
-
-        :param hostgroups: List of HostGroup records to output.
-        :param multiline: If True, output each group on a new line.
-        :param padding: Number of spaces for left-padding the output.
-        """
-        manager = OutputManager()
-        if not hostgroups:
-            return
-
-        groups: list[str] = []
-        for hg in hostgroups:
-            if isinstance(hg, str):
-                groups.append(hg)
-            else:
-                groups.append(hg.name)
-
-        if multiline:
-            manager.add_line("Groups:")
-            for group in groups:
-                manager.add_line(f"  {group}")
-        else:
-            manager.add_line("{1:<{0}}{2}".format(padding, "Groups:", ", ".join(sorted(groups))))
 
     def set_description(self, description: str) -> Self:
         """Set the description for the hostgroup.
@@ -4220,7 +3267,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        resp = post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -4233,7 +3282,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        resp = delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -4255,7 +3306,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        resp = post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -4268,7 +3321,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        resp = delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -4290,7 +3345,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        resp = post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -4303,7 +3360,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        resp = delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        resp = MregClient().delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
         if resp and resp.ok:
             return self.refetch()
         else:
@@ -4319,70 +3378,6 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
                 parents.extend(pobj.get_all_parents())
 
         return parents
-
-    def output(self, padding: int = 14) -> None:
-        """Output the hostgroup to the console.
-
-        :param padding: Number of spaces for left-padding the output.
-        """
-        outputmanager = OutputManager()
-
-        parents = self.parent
-        inherited: list[str] = []
-
-        for p in self.get_all_parents():
-            if p.name not in parents:
-                inherited.append(p.name)
-
-        parentlist = ", ".join(parents)
-        if inherited:
-            parentlist += f" (Inherits: {', '.join(inherited)})"
-
-        output_tuples = (
-            ("Name:", self.name),
-            ("Description:", self.description or ""),
-            ("Owners:", ", ".join(self.owners if self.owners else [])),
-            ("Parents:", parentlist),
-            ("Groups:", ", ".join(self.groups if self.groups else [])),
-            ("Hosts:", len(self.hosts)),
-        )
-        for key, value in output_tuples:
-            outputmanager.add_line(f"{key:<{padding}}{value}")
-
-        self.output_timestamps()
-
-    def output_members(self, expand: bool = False) -> None:
-        """Output the members of the hostgroup to the console.
-
-        :param expand: If True, expand the members to include all hosts in all parent groups.
-        """
-        if expand:
-            self._output_members_expanded()
-        else:
-            self._output_members()
-
-    def _output_members(self) -> None:
-        """Output the members of the hostgroup to the console, not expanded."""
-        manager = OutputManager()
-        manager.add_formatted_line("Type", "Name")
-
-        for group in self.groups:
-            manager.add_formatted_line("group", group)
-
-        for host in self.hosts:
-            manager.add_formatted_line("host", host)
-
-    def _output_members_expanded(self):
-        """Output the members of the hostgroup to the console, expanded."""
-        manager = OutputManager()
-        manager.add_formatted_line_with_source("Type", "Name", "Source")
-
-        for parent in self.get_all_parents():
-            for host in parent.hosts:
-                manager.add_formatted_line_with_source("host", host, parent.name)
-
-        for host in self.hosts:
-            manager.add_formatted_line_with_source("host", host, self.name)
 
 
 ### Meta models
@@ -4425,30 +3420,6 @@ class UserPermission(BaseModel):
         """Return the labels as a string."""
         return ", ".join(self.labels)
 
-    @classmethod
-    def output_multiple(cls, permissions: Iterable[Self]) -> None:
-        """Output multiple permissions to the console.
-
-        :param permissions: List of UserPermission records to output.
-        """
-        # NOTE: this is more or less identical to `Permission.output_multiple()`
-        # with the addition of printing labels.
-        # Since UserPermission is a different model from Permission, sharing a
-        # common method is difficult to make type safe without declaring some sort
-        # of protocol class, which seems a bit overkill.
-        manager = OutputManager()
-        manager.add_line("Permissions:")
-        if not permissions:
-            manager.add_line("  None")
-            return
-
-        OutputManager().add_formatted_table(
-            ("IP range", "Group", "Reg.exp.", "Labels"),
-            ("range", "group", "regex", "labels_str"),
-            permissions,
-            indent=2,
-        )
-
 
 FetchT_co = TypeVar("FetchT_co", covariant=True)
 
@@ -4488,22 +3459,19 @@ class ServerVersion(BaseModel):
         """Fetch the server version from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
-        :raises MregValidationError: If the response data is invalid and ignore_errors is False.
+        :raises ValidationError: If the response data is invalid and ignore_errors is False.
         :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerVersion with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            response = get(cls.endpoint())
+            response = MregClient().get(cls.endpoint())
             return cls.model_validate(response.json())
         except Exception as e:
             if ignore_errors:
                 return cls(version="Unknown")
             raise e
-
-    def output(self) -> None:
-        """Output the server version to the console."""
-        manager = OutputManager()
-        manager.add_line(f"mreg-server: {self.version}")
 
 
 class Library(BaseModel):
@@ -4528,12 +3496,14 @@ class ServerLibraries(BaseModel):
         """Fetch the server libraries from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
-        :raises MregValidationError: If the response data is invalid and ignore_errors is False.
+        :raises ValidationError: If the response data is invalid and ignore_errors is False.
         :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerLibraries with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            response = get(cls.endpoint())
+            response = MregClient().get(cls.endpoint())
             libraries: list[Library] = []
 
             for name, version in response.json().items():
@@ -4543,16 +3513,6 @@ class ServerLibraries(BaseModel):
             if ignore_errors:
                 return cls(libraries=[])
             raise e
-
-    def output(self, indent: int = 4) -> None:
-        """Output the server libraries to the console."""
-        manager = OutputManager()
-        if not self.libraries:
-            return
-
-        manager.add_line("Libraries:")
-        for lib in self.libraries:
-            manager.add_line(f"{' ' * indent}{lib.name}: {lib.version}")
 
 
 class TokenInfo(BaseModel):
@@ -4589,16 +3549,18 @@ class UserInfo(BaseModel):
         :param user: The username to fetch information for. If None, fetch information for the
                               current user.
 
-        :raises MregValidationError: If the response data is invalid and ignore_errors is False.
+        :raises ValidationError: If the response data is invalid and ignore_errors is False.
         :raises requests.RequestException: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of UserInfo with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
             endpoint = cls.endpoint()
             if user:
                 endpoint = f"{endpoint}?username={user}"
 
-            response = get(endpoint)
+            response = MregClient().get(endpoint)
             return cls.model_validate(response.json())
         except Exception as e:
             if ignore_errors:
@@ -4618,43 +3580,6 @@ class UserInfo(BaseModel):
                     permissions=[],
                 )
             raise e
-
-    def output(self, django: bool = False) -> None:
-        """Output the user information to the console."""
-        outputmanager = OutputManager()
-        outputmanager.add_line(f"Username: {self.username}")
-        outputmanager.add_line(f"Last login: {self.last_login or 'Never'}")
-
-        if self.token:
-            outputmanager.add_line("Token:")
-            outputmanager.add_line(f"  Valid: {self.token.is_valid}")
-            outputmanager.add_line(f"  Created: {self.token.created}")
-            outputmanager.add_line(f"  Expires: {self.token.expire}")
-            outputmanager.add_line(f"  Last used: {self.token.last_used or 'Never'}")
-            outputmanager.add_line(f"  Lifespan: {self.token.lifespan}")
-        else:
-            outputmanager.add_line("Token: None")
-
-        if django:
-            outputmanager.add_line("Django roles:")
-            outputmanager.add_line(f"  Superuser: {self.django_status.superuser}")
-            outputmanager.add_line(f"  Staff: {self.django_status.staff}")
-            outputmanager.add_line(f"  Active: {self.django_status.active}")
-
-        outputmanager.add_line("Mreg roles:")
-        outputmanager.add_line(f"  Superuser: {self.mreg_status.superuser}")
-        outputmanager.add_line(f"  Admin: {self.mreg_status.admin}")
-        outputmanager.add_line(f"  Group admin: {self.mreg_status.group_admin}")
-        outputmanager.add_line(f"  Network admin: {self.mreg_status.network_admin}")
-        outputmanager.add_line(f"  Hostpolicy admin: {self.mreg_status.hostpolicy_admin}")
-        outputmanager.add_line(f"  DNS wildcard admin: {self.mreg_status.dns_wildcard_admin}")
-        outputmanager.add_line(f"  Underscore admin: {self.mreg_status.underscore_admin}")
-
-        outputmanager.add_line("Groups:")
-        for group in self.groups:
-            outputmanager.add_line(f"  {group}")
-
-        UserPermission.output_multiple(self.permissions)
 
 
 class LDAPHealth(BaseModel, APIMixin):
@@ -4676,8 +3601,10 @@ class LDAPHealth(BaseModel, APIMixin):
         :raises requests.APIError: If the response code is not 200 or 503.
         :returns: An instance of LDAPStatus.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            get(cls.endpoint())
+            MregClient().get(cls.endpoint())
             return cls(status="OK")
         except APIError as e:
             if ignore_errors:
@@ -4712,8 +3639,10 @@ class HeartbeatHealth(BaseModel, APIMixin):
         :param ignore_errors: Ignore HTTP errors and return dummy object with negative uptime.
         :returns: An instance of HeartbeatHealth with the fetched data.
         """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
         try:
-            result = get(cls.endpoint())
+            result = MregClient().get(cls.endpoint())
             return cls.model_validate_json(result.text)
         except Exception as e:
             if ignore_errors:
@@ -4738,10 +3667,3 @@ class HealthInfo(BaseModel):
             heartbeat=HeartbeatHealth.fetch(),
             ldap=LDAPHealth.fetch(),
         )
-
-    def output(self) -> None:
-        """Output the health information to the console."""
-        manager = OutputManager()
-        manager.add_line("Health Information:")
-        manager.add_line(f"  Uptime: {self.heartbeat.as_str()}")
-        manager.add_line(f"  LDAP: {self.ldap.status}")

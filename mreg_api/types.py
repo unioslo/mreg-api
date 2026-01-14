@@ -5,27 +5,34 @@ from __future__ import annotations
 import argparse
 import ipaddress
 from collections.abc import Callable
+from enum import Enum
 from functools import lru_cache
-from typing import Annotated
 from typing import Any
 from typing import Literal
 from typing import Mapping
 from typing import MutableMapping
-from typing import Sequence
 from typing import TypeAlias
 from typing import TypedDict
 from typing import TypeVar
-from typing import Union
 
 from pydantic import TypeAdapter
 from pydantic import ValidationError
 from pydantic import ValidationInfo
 from pydantic import ValidatorFunctionWrapHandler
-from pydantic import WrapValidator
 from pydantic_core import PydanticCustomError
 from typing_extensions import TypeAliasType
 
 CommandFunc = Callable[[argparse.Namespace], None]
+
+
+class LogLevel(str, Enum):
+    """Logging levels."""
+
+    DEBUG = "DEBUG"
+    INFO = "INFO"
+    WARNING = "WARNING"
+    ERROR = "ERROR"
+    CRITICAL = "CRITICAL"
 
 
 class TimeInfo(TypedDict):
@@ -77,10 +84,7 @@ def json_custom_error_validator(
 
 Json = TypeAliasType(
     "Json",
-    Annotated[
-        Union[Mapping[str, "Json"], Sequence["Json"], str, int, float, bool, None],
-        WrapValidator(json_custom_error_validator),
-    ],
+    "dict[str, Json] | list[Json] | str | int | float | bool | None",
 )
 JsonMapping = Mapping[str, Json]
 QueryParams = MutableMapping[str, str | int | None]

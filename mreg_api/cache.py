@@ -1,3 +1,5 @@
+"""Caching utilities for mreg-api."""
+
 from __future__ import annotations
 
 import functools
@@ -26,24 +28,26 @@ logger = logging.getLogger(__name__)
 P = ParamSpec("P")
 T = TypeVar("T")
 
-_CACHE: MregCliCache | None = None
+_CACHE: MregApiCache | None = None
 """The global cache object. Instantiated by `configure()`."""
+
+CACHE_TAG = "mreg-api"
 
 
 @runtime_checkable
 class CacheLike(Protocol):
     """Interface for `diskcache.Cache`-like objects."""
 
-    def __len__(self) -> Any: ...
-    def clear(self, retry: bool = False) -> int: ...
-    def delete(self, key: str, retry: bool = False) -> bool: ...
+    def __len__(self) -> Any: ...  # noqa: D105
+    def clear(self, retry: bool = False) -> int: ...  # noqa: D102
+    def delete(self, key: str, retry: bool = False) -> bool: ...  # noqa: D102
     @property
-    def directory(self) -> str: ...
+    def directory(self) -> str: ...  # noqa: D102
     @property
-    def disk(self) -> Any: ...
-    def get(self, key: str, default: str | None = None) -> Any: ...
-    def evict(self, tag: str, retry: bool = False) -> int: ...
-    def memoize(
+    def disk(self) -> Any: ...  # noqa: D102
+    def get(self, key: str, default: str | None = None) -> Any: ...  # noqa: D102
+    def evict(self, tag: str, retry: bool = False) -> int: ...  # noqa: D102
+    def memoize(  # noqa: D102
         self,
         name: str | None = None,
         typed: bool = False,
@@ -51,7 +55,7 @@ class CacheLike(Protocol):
         tag: str | None = None,
         ignore: tuple[str, ...] = (),
     ) -> Any: ...
-    def set(
+    def set(  # noqa: D102
         self,
         key: str,
         value: Any,
@@ -60,9 +64,9 @@ class CacheLike(Protocol):
         tag: str | None = None,
         retry: bool = False,
     ) -> Literal[True]: ...
-    def stats(self, enable: bool = True, reset: bool = False) -> tuple[Any, Any]: ...
-    def touch(self, key: str, expire: int | float | None = None) -> bool: ...
-    def volume(self) -> int: ...
+    def stats(self, enable: bool = True, reset: bool = False) -> tuple[Any, Any]: ...  # noqa: D102
+    def touch(self, key: str, expire: int | float | None = None) -> bool: ...  # noqa: D102
+    def volume(self) -> int: ...  # noqa: D102
 
 
 class NullCache:
@@ -71,16 +75,16 @@ class NullCache:
     Exposes most of the same methods as `diskcache.Cache`.
     """
 
-    def __len__(self) -> int:
+    def __len__(self) -> int:  # noqa: D105
         return 0
 
     def memoize(
         self,
-        name: str | None = None,
-        typed: bool = False,
-        expire: int | float | None = None,
-        tag: str | None = None,
-        ignore: tuple[str, ...] = (),
+        name: str | None = None,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        typed: bool = False,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        expire: int | float | None = None,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        tag: str | None = None,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        ignore: tuple[str, ...] = (),  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
     ) -> Callable[[Callable[P, T]], Callable[P, T]]:
         """Returns a decorator that does nothing."""
 
@@ -89,44 +93,44 @@ class NullCache:
 
         return decorator
 
-    def clear(self, retry: bool = False) -> int:
+    def clear(self, retry: bool = False) -> int:  # noqa: ARG002, D102  # pyright: ignore[reportUnusedParameter]
         return 0
 
     @property
-    def directory(self) -> str:
+    def directory(self) -> str:  # noqa: D102
         return ""
 
     @property
-    def disk(self) -> Any:
+    def disk(self) -> Any:  # noqa: D102
         return self
 
-    def delete(self, key: str, retry: bool = False) -> bool:
+    def delete(self, key: str, retry: bool = False) -> bool:  # noqa: ARG002, D102  # pyright: ignore[reportUnusedParameter]
         return True
 
-    def evict(self, tag: str, retry: bool = False) -> int:
+    def evict(self, tag: str, retry: bool = False) -> int:  # noqa: ARG002, D102  # pyright: ignore[reportUnusedParameter]
         return 0
 
-    def get(self, key: str, default: str | None = None) -> str | None:
+    def get(self, key: str, default: str | None = None) -> str | None:  # noqa: ARG002, D102  # pyright: ignore[reportUnusedParameter]
         return default
 
-    def set(
+    def set(  # noqa: D102
         self,
-        key: str,
-        value: Any,
-        expire: int | float | None = None,
-        read: bool = False,
-        tag: str | None = None,
-        retry: bool = False,
+        key: str,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        value: Any,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        expire: int | float | None = None,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        read: bool = False,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        tag: str | None = None,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+        retry: bool = False,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
     ) -> Literal[True]:
         return True
 
-    def stats(self, enable: bool = True, reset: bool = False) -> tuple[int, int]:
+    def stats(self, enable: bool = True, reset: bool = False) -> tuple[int, int]:  # noqa: ARG002, D102  # pyright: ignore[reportUnusedParameter]  # pyright: ignore[reportUnusedParameter]
         return (0, 0)
 
-    def touch(self, key: str, expire: int | float | None = None) -> bool:
+    def touch(self, key: str, expire: int | float | None = None) -> bool:  # noqa: ARG002, D102  # pyright: ignore[reportUnusedParameter]
         return True
 
-    def volume(self) -> int:
+    def volume(self) -> int:  # noqa: D102
         return 0
 
 
@@ -141,7 +145,7 @@ class CacheInfo(BaseModel):
     directory: str
 
     @field_serializer("size")
-    def serialize_size(self, value: ByteSize) -> str:
+    def _serialize_size(self, value: ByteSize) -> str:
         return value.human_readable()
 
     def as_table_args(self) -> tuple[list[str], list[str], list[Self]]:
@@ -176,7 +180,7 @@ def configure(config: MregCliConfig) -> None:
         return
 
     cache = _create_cache(config)
-    _CACHE = MregCliCache(cache)  # pyright: ignore[reportConstantRedefinition]
+    _CACHE = MregApiCache(cache)  # pyright: ignore[reportConstantRedefinition]
 
     if not config.cache:
         logger.debug("Cache is disabled in configuration, not configuring cache.")
@@ -186,12 +190,12 @@ def configure(config: MregCliConfig) -> None:
     _CACHE.enable()
 
 
-def get_cache() -> MregCliCache:
+def get_cache() -> MregApiCache:
     """Get the global mreg-cli cache."""
     # return a temp cache if cache is not yet configured
     if _CACHE is None:
         logger.debug("Cache not yet configured, returning temporary NullCache.")
-        return MregCliCache(NullCache())
+        return MregApiCache(NullCache())
     return _CACHE
 
 
@@ -212,19 +216,20 @@ class StoredFunction:
 
 
 TO_MEMOIZE = [
-    MemoizedFunction(func="mreg_cli.utilities.api._do_get", tag="api"),
+    # MemoizedFunction(func="mreg_api.utilities.api._do_get", tag="api"),
 ]
 """List functions to memoize with a caching decorator (if enabled)."""
 
 
-class MregCliCache:
+class MregApiCache:
     """Wrapper around the mreg-cli cache."""
 
     def __init__(self, cache: CacheLike):
+        """Initialize the cache wrapper."""
         self.cache = cache
 
         self._original: dict[str, StoredFunction] = {}
-        """Original functions, before they were patched. Keys are the full module paths + symbol names."""
+        """Original functions, before they were patched. Keys are the full module paths + symbol names."""  # noqa: E501
 
     def get_info(self) -> CacheInfo:
         """Get information about the cache."""
@@ -265,9 +270,7 @@ class MregCliCache:
         self.cache.clear()
         self.cache.stats(reset=True)
 
-    def load_module_and_function(
-        self, func: MemoizedFunction
-    ) -> tuple[ModuleType, Callable[..., Any]]:
+    def load_module_and_function(self, func: MemoizedFunction) -> tuple[ModuleType, Callable[..., Any]]:
         """Load the module and function from a MemoizedFunction."""
         try:
             module, func_name = func.func.rsplit(".", 1)
@@ -322,9 +325,7 @@ class MregCliCache:
         # Store a copy of the original function before patching
         self.save_original_function(mod_path, mod, func)
 
-        self.patch_function(
-            mod, self.cache.memoize(expire=config.cache_ttl, tag=memfunc.tag)(func)
-        )
+        self.patch_function(mod, self.cache.memoize(expire=config.cache_ttl, tag=memfunc.tag)(func))
 
 
 def disable_cache(func: Callable[P, T]) -> Callable[P, T]:

@@ -23,7 +23,6 @@ from pydantic import GetCoreSchemaHandler
 from pydantic_core import core_schema
 from pydantic_extra_types.mac_address import MacAddress as PydanticMacAddress
 
-from mreg_api.config import MregCliConfig
 from mreg_api.exceptions import InputFailure
 from mreg_api.types import get_type_adapter
 
@@ -32,6 +31,8 @@ logger = logging.getLogger(__name__)
 
 class HostName(str):
     """Hostname string type."""
+
+    domain: str = "uio.no"  # Default domain if none provided
 
     @classmethod
     def parse(cls, obj: Any) -> HostName | None:
@@ -75,8 +76,7 @@ class HostName(str):
         if "." in value:
             return value
 
-        config = MregCliConfig()
-        domain = config.domain
+        domain = HostName.domain
         # Append domain name if in config and it does not end with it
         if domain and not value.endswith(domain):
             return f"{value}.{domain}"
