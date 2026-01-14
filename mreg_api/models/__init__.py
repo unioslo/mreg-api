@@ -44,6 +44,7 @@ from mreg_api.models.models import ServerVersion
 from mreg_api.models.models import Srv
 from mreg_api.models.models import TokenInfo
 from mreg_api.models.models import UserDjangoStatus
+from mreg_api.models.models import UserInfo
 from mreg_api.models.models import UserMregStatus
 from mreg_api.models.models import UserPermission
 from mreg_api.models.models import Zone
@@ -90,6 +91,7 @@ __all__ = [
     "SSHFP",
     "TokenInfo",
     "TXT",
+    "UserInfo",
     "UserDjangoStatus",
     "UserMregStatus",
     "UserPermission",
