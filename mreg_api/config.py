@@ -217,7 +217,7 @@ class MregCliConfig(BaseSettings):
     _sources: ClassVar[tuple[PydanticBaseSettingsSource, ...]] = tuple()
     """Settings sources that have been loaded."""
 
-    def __new__(cls, **kwargs: Any) -> Self:
+    def __new__(cls, **kwargs: Any) -> Self:  # noqa: ARG004
         """Create a new instance of the config or return the existing one."""
         if cls._instance is None:
             cls._reset_instance()  # clears state, triggers source loading
@@ -367,6 +367,4 @@ class MregCliConfig(BaseSettings):
             cli_var_val = str(states["cli"].get(key, UNSET_STR))
             env_var_val = str(states["env"].get(key, UNSET_STR))
             config_file_val = str(states["file"].get(key, UNSET_STR))
-            print(
-                row_format.format(key, active_line_val, cli_var_val, env_var_val, config_file_val)
-            )
+            print(row_format.format(key, active_line_val, cli_var_val, env_var_val, config_file_val))
