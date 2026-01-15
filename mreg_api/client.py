@@ -9,6 +9,7 @@ from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
 from typing import Literal
+from typing import NamedTuple
 from typing import TypeVar
 from typing import get_origin
 from typing import overload
@@ -16,6 +17,7 @@ from urllib.parse import urljoin
 from uuid import uuid4
 
 import httpx
+from httpx import Request
 from httpx import Response
 from pydantic import BaseModel
 from pydantic import TypeAdapter
@@ -67,12 +69,28 @@ class SingletonMeta(type):
     def __call__(cls: type[Any], *args: Any, **kwargs: Any):
         """Get the singleton instance of the class."""
         if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)
+            cls._instances[cls] = super().__call__(*args, **kwargs)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue] # TODO: fix typing for this
         return cls._instances[cls]
 
     def reset_instance(self) -> None:
         """Reset the singleton instance (useful for testing)."""
         del self._instances[self]
+
+
+class RequestRecord(NamedTuple):
+    """A complete record of an HTTP request and its response.
+
+    Captures all relevant details of an API call including the request
+    parameters, response data, and metadata like status code and URL.
+    """
+
+    method: str
+    request: Request
+    response: Response
+    url: str
+    status: int
+    data: QueryParams
+    json: JsonMapping
 
 
 class MregClient(metaclass=SingletonMeta):
@@ -127,7 +145,7 @@ class MregClient(metaclass=SingletonMeta):
         # State
         self._token: str | None = None
         # NOTE: add API for accessing this?
-        self.history: deque[Response] = deque(maxlen=history_size)
+        self.history: deque[RequestRecord] = deque(maxlen=history_size)
 
         # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
         HostName.domain = domain
@@ -179,6 +197,20 @@ class MregClient(metaclass=SingletonMeta):
 
         """
         return str(self.session.headers.get(Header.CORRELATION_ID, ""))
+
+    def _add_to_history(self, response: Response, params: QueryParams, data: JsonMapping) -> None:
+        """Add a request/response pair to the history log."""
+        self.history.append(
+            RequestRecord(
+                method=response.request.method,
+                request=response.request,
+                response=response,
+                url=str(response.request.url),
+                status=response.status_code,
+                data=params if params else {},
+                json=data if data else {},
+            )
+        )
 
     def login(self, username: str, password: str) -> str:
         """Authenticate with username and password.
@@ -333,7 +365,7 @@ class MregClient(metaclass=SingletonMeta):
 
         result = self.session.send(request)
         # Log response in response log
-        self.history.append(result)
+        self._add_to_history(result, params, data)
 
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:
