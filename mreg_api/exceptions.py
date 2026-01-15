@@ -54,6 +54,17 @@ class APIError(MregApiBaseError):
             return self.__cause__.response
         return None
 
+    @property
+    def parsed_error(self) -> MREGErrorResponse | None:
+        """Get the parsed MREG error response.
+
+        :returns: The parsed MREG error response or None if not available.
+        """
+        resp = self.response
+        if resp is not None:
+            return parse_mreg_error(resp)
+        return None
+
 
 class PostError(APIError):
     """Error class for failed creation."""
