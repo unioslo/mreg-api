@@ -32,6 +32,7 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import parse_mreg_error
+from mreg_api.models.fields import HostName
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
@@ -123,6 +124,9 @@ class MregClient(metaclass=SingletonMeta):
 
         # State
         self._token: str | None = None
+
+        # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
+        HostName.domain = domain
 
     def set_token(self, token: str) -> None:
         """Set the authorization token for API requests.
