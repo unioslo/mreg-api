@@ -3761,7 +3761,7 @@ class LDAPHealth(BaseModel, APIMixin):
         except GetError as e:
             if ignore_errors:
                 logger.error("Failed to fetch LDAP health: %s", e)
-                if e.response.status_code == 503:
+                if e.response and e.response.status_code == 503:
                     return cls(status="Down")
                 else:
                     return cls(status="Unknown")
