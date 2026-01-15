@@ -218,11 +218,13 @@ class InvalidNetwork(IPNetworkWarning):
 class NetworkOverlap(IPNetworkWarning):
     """Warning class for a networkthat overlaps with another network."""
 
-    pass
 
-
-class LoginFailedError(MregApiBaseError):
+class LoginFailedError(APIError):
     """Error class for login failure."""
+
+
+class InvalidAuthTokenError(LoginFailedError):
+    """Error class for invalid authentication token."""
 
 
 def fmt_error_code(code: str) -> str:

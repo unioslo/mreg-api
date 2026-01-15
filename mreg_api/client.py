@@ -24,6 +24,7 @@ from mreg_api.__about__ import __version__
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
+from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
@@ -220,32 +221,30 @@ class MregClient(metaclass=SingletonMeta):
         except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
-    def test_connection(self, *, fail: bool = True) -> bool:
-        """Test if the current token/connection is valid.
+    def test_auth(self) -> None:
+        """Test if the current authorization token is valid.
+
+        Does not handle connection errors.
 
         Args:
             fail: Whether to raise an exception on failure
 
         Raises:
-            APIError: If the connection test fails and fail=True
+            APIError: If the authorization test fails and fail=True
 
         Returns:
-            True if connection is valid, False otherwise
-
+            True if authorization is valid, False otherwise
         """
+        ret: Response | None = None
         try:
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
                 params={"page_size": 1},
                 timeout=5,
             )
-            if fail:
-                ret.raise_for_status()
-            return ret.is_success
-        except httpx.HTTPError as e:
-            if fail:
-                raise APIError(f"Connection test failed: {e}") from e
-            return False
+            ret.raise_for_status()
+        except httpx.HTTPStatusError as e:
+            raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
 
     def _strip_none(self, data: dict[str, Any]) -> dict[str, Any]:
         """Recursively strip None values from a dictionary."""
