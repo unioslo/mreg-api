@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections import deque
 from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
@@ -107,6 +108,7 @@ class MregClient(metaclass=SingletonMeta):
         cache: bool = True,
         cache_ttl: int = 300,
         follow_redirects: bool = False,
+        history_size: int | None = 100,
     ) -> None:
         """Initialize the client (only once for singleton)."""
         self.session = httpx.Client(
@@ -124,6 +126,8 @@ class MregClient(metaclass=SingletonMeta):
 
         # State
         self._token: str | None = None
+        # NOTE: add API for accessing this?
+        self.history: deque[Response] = deque(maxlen=history_size)
 
         # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
         HostName.domain = domain
@@ -328,6 +332,9 @@ class MregClient(metaclass=SingletonMeta):
         logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
 
         result = self.session.send(request)
+        # Log response in response log
+        self.history.append(result)
+
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:
         #     self.session.build_request(method=method, url=url, params=params, data=data or None)
