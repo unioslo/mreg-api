@@ -142,6 +142,11 @@ class MregClient(metaclass=SingletonMeta):
         """
         return self._token
 
+    def unset_token(self) -> None:
+        """Unset the current authorization token."""
+        self.session.headers.pop(Header.AUTH, None)
+        self._token = None
+
     def set_correlation_id(self, suffix: str) -> str:
         """Set correlation ID for request tracking.
 
