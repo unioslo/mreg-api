@@ -220,8 +220,14 @@ class MregClient(metaclass=SingletonMeta):
         except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
-    def test_connection(self) -> bool:
+    def test_connection(self, *, fail: bool = True) -> bool:
         """Test if the current token/connection is valid.
+
+        Args:
+            fail: Whether to raise an exception on failure
+
+        Raises:
+            APIError: If the connection test fails and fail=True
 
         Returns:
             True if connection is valid, False otherwise
@@ -233,8 +239,12 @@ class MregClient(metaclass=SingletonMeta):
                 params={"page_size": 1},
                 timeout=5,
             )
-            return ret.status_code != 401
-        except httpx.RequestError:
+            if fail:
+                ret.raise_for_status()
+            return ret.is_success
+        except httpx.HTTPError as e:
+            if fail:
+                raise APIError(f"Connection test failed: {e}") from e
             return False
 
     def _strip_none(self, data: dict[str, Any]) -> dict[str, Any]:
