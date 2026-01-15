@@ -28,7 +28,6 @@ class InternalError(MregApiBaseError):
 class APIError(MregApiBaseError):
     """Warning class for API errors."""
 
-    response: Response | None
     message: str
 
     def __init__(self, message: str, response: Response | None = None):
@@ -39,7 +38,21 @@ class APIError(MregApiBaseError):
         """
         super().__init__(message)
         self.message = message
-        self.response = response
+        self._response = response
+
+    @property
+    def response(self) -> Response | None:
+        """Get the response object associated with the error.
+
+        Uses the response from the cause if not set directly.
+
+        :returns: The response object or None if not set.
+        """
+        if self._response:
+            return self._response
+        if self.__cause__ and isinstance(self.__cause__, APIError):
+            return self.__cause__.response
+        return None
 
 
 class PostError(APIError):
