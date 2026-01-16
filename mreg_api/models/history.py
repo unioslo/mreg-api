@@ -14,7 +14,6 @@ from pydantic import field_validator
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.exceptions import InternalError
 from mreg_api.types import QueryParams
 
 
@@ -74,50 +73,6 @@ class HistoryItem(BaseModel):
             return json.loads(v)
         except json.JSONDecodeError as e:
             raise ValueError("Failed to parse history data as JSON") from e
-
-    def clean_timestamp(self) -> str:
-        """Clean up the timestamp for output."""
-        return self.timestamp.strftime("%Y-%m-%d %H:%M:%S")
-
-    def msg(self, _basename: str) -> str:
-        """Attempt to make a history item human readable."""
-        msg = ""
-        action = self.action
-        model = self.model
-        if action in ("add", "remove"):
-            if action == "add":
-                direction = "to"
-            elif action == "remove":
-                direction = "from"
-            else:
-                raise InternalError(f"Unhandled history entry: {action}")
-            rel = self.data["relation"][:-1]
-            cls = str(self.resource)
-            if "." in cls:
-                cls = cls[cls.rindex(".") + 1 :]
-            cls = cls.replace("HostPolicy_", "")
-            cls = cls.lower()
-            msg = f"{rel} {self.data['name']} {direction} {cls} {self.name}"
-        elif action == "create":
-            msg = ", ".join(f"{k} = '{v}'" for k, v in self.data.items())
-        elif action == "update":
-            if model in ("Ipaddress",):
-                msg = self.data["current_data"]["ipaddress"] + ", "
-            changes: list[str] = []
-            for key, newval in self.data["update"].items():
-                oldval = self.data["current_data"].get(key) or "not set"
-                newval = newval or "not set"
-                changes.append(f"{key}: {oldval} -> {newval}")
-            msg += ",".join(changes)
-        elif action == "destroy":
-            if model == "Host":
-                msg = "deleted " + self.name
-            else:
-                msg = ", ".join(f"{k} = '{v}'" for k, v in self.data.items())
-        else:
-            raise InternalError(f"Unhandled history entry: {action}")
-
-        return msg
 
     @classmethod
     def get(cls, name: str, resource: HistoryResource) -> list[Self]:
