@@ -2794,6 +2794,19 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         return self.patch(fields={"comment": comment})
 
+    def set_contact(self, contact: str) -> Host:
+        """DEPRECATED: Set the contact for the host.
+
+        Uses the old `contact` field to set a single contact.
+        Used for backwards compatibility.
+
+        :param contact: The contact to set. Should be a valid email, but we leave it to the
+                        server to validate the data.
+
+        :returns: A new Host object fetched from the API with the updated contact.
+        """
+        return self.patch(fields={"contact": contact})
+
     def set_contacts(self, contacts: list[str]) -> Host:
         """Set a new list of contacts for the host. Overwrites existing contacts.
 
