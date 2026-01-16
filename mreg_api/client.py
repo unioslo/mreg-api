@@ -89,8 +89,8 @@ class RequestRecord(NamedTuple):
     response: Response
     url: str
     status: int
-    data: QueryParams
-    json: JsonMapping
+    data: QueryParams | None
+    json: JsonMapping | None
 
 
 class MregClient(metaclass=SingletonMeta):
@@ -198,7 +198,9 @@ class MregClient(metaclass=SingletonMeta):
         """
         return str(self.session.headers.get(Header.CORRELATION_ID, ""))
 
-    def _add_to_history(self, response: Response, params: QueryParams, data: JsonMapping) -> None:
+    def _add_to_history(
+        self, response: Response, params: QueryParams | None, data: JsonMapping | None
+    ) -> None:
         """Add a request/response pair to the history log."""
         self.history.append(
             RequestRecord(
@@ -343,8 +345,10 @@ class MregClient(metaclass=SingletonMeta):
             APIError: If request fails
 
         """
-        if params is None:
-            params = {}
+        # Passing in an empty params dict causes the constructed request object
+        # to discard any query parameters in the path - we don't want that.
+        if params == {}:
+            params = None
 
         url = urljoin(self.url, path)
 
