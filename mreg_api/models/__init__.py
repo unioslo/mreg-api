@@ -24,6 +24,7 @@ from mreg_api.models.models import HostList
 from mreg_api.models.models import HostList2
 from mreg_api.models.models import HostPolicy
 from mreg_api.models.models import IPAddress
+from mreg_api.models.models import IPNetMode
 from mreg_api.models.models import Label
 from mreg_api.models.models import LDAPHealth
 from mreg_api.models.models import Library
@@ -68,6 +69,7 @@ __all__ = [
     "HostList2",
     "HostPolicy",
     "IPAddress",
+    "IPNetMode",
     "Label",
     "LDAPHealth",
     "Library",
