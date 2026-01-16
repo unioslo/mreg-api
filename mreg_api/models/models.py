@@ -1079,7 +1079,8 @@ class HostPolicy(FrozenModel, WithName):
             return datetime.combine(value, datetime.min.time())
         return value  # let pydantic throw the ValidationError
 
-    @computed_field  # noqa: A003
+    @computed_field
+    @property
     def created_at(self) -> datetime:
         """Creation time."""
         return self.created_at_tz_naive.replace(tzinfo=self.updated_at.tzinfo)
