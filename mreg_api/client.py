@@ -87,10 +87,21 @@ class RequestRecord(NamedTuple):
     method: str
     request: Request
     response: Response
-    url: str
     status: int
     data: QueryParams | None
     json: JsonMapping | None
+
+    @property
+    def path(self) -> str:
+        """Get the request path (URL without base)."""
+        return self.url.removeprefix(
+            self.response.request.url.scheme + "://" + self.response.request.url.host
+        )
+
+    @property
+    def url(self) -> str:
+        """Get the full request URL."""
+        return str(self.request.url)
 
 
 class MregClient(metaclass=SingletonMeta):
@@ -207,7 +218,6 @@ class MregClient(metaclass=SingletonMeta):
                 method=response.request.method,
                 request=response.request,
                 response=response,
-                url=str(response.request.url),
                 status=response.status_code,
                 data=params if params else {},
                 json=data if data else {},
