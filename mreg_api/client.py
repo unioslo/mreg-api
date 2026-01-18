@@ -95,9 +95,15 @@ class RequestRecord(NamedTuple):
     @property
     def path(self) -> str:
         """Get the request path (URL without base)."""
-        return self.url.removeprefix(
-            self.response.request.url.scheme + "://" + self.response.request.url.host
-        )
+        parts = [f"{self.response.request.url.scheme}://"]
+        host = self.response.request.url.host
+
+        # TODO: replace with regex or similar
+        if ":" in host and f":{self.response.request.url.port}" in host:
+            host = host.partition(":")[0]
+        parts.append(host)
+
+        return self.url.removeprefix("".join(parts))
 
     @property
     def url(self) -> str:
