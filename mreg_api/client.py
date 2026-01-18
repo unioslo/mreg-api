@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import re
 from collections import deque
+from collections.abc import Iterable
 from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
@@ -223,6 +224,19 @@ class MregClient(metaclass=SingletonMeta):
                 json=data if data else {},
             )
         )
+
+    def get_client_history(self) -> Iterable[RequestRecord]:
+        """Get the request/response history for this client.
+
+        Returns:
+            List of RequestRecord objects representing the history
+
+        """
+        return self.history
+
+    def clear_client_history(self) -> None:
+        """Clear the request/response history for this client."""
+        self.history.clear()
 
     def login(self, username: str, password: str) -> str:
         """Authenticate with username and password.
