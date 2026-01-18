@@ -227,8 +227,8 @@ class MregClient(metaclass=SingletonMeta):
                 request=response.request,
                 response=response,
                 status=response.status_code,
-                data=data or {},
-                json=json or {},
+                data=data,
+                json=json,
             )
         )
 
