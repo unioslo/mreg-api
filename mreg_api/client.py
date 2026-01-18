@@ -400,7 +400,7 @@ class MregClient(metaclass=SingletonMeta):
 
         result = self.session.send(request)
         # Log response in response log
-        self._add_to_history(result, params, json=data)
+        self._add_to_history(result, json=data)
 
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:
