@@ -95,13 +95,11 @@ class RequestRecord(NamedTuple):
     @property
     def path(self) -> str:
         """Get the request path (URL without base)."""
-        parts = [f"{self.response.request.url.scheme}://"]
-        host = self.response.request.url.host
+        # TODO: Make this less hacky! Can we get the path + query directly from httpx?
+        parts = [f"{self.response.request.url.scheme}://", self.response.request.url.host]
 
-        # TODO: replace with regex or similar
-        if ":" in host and f":{self.response.request.url.port}" in host:
-            host = host.partition(":")[0]
-        parts.append(host)
+        if (port_s := f":{self.response.request.url.port}") in self.url:
+            parts.append(port_s)
 
         return self.url.removeprefix("".join(parts))
 
