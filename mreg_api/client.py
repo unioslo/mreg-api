@@ -89,7 +89,7 @@ class RequestRecord(NamedTuple):
     request: Request
     response: Response
     status: int
-    data: QueryParams | None
+    data: JsonMapping | None
     json: JsonMapping | None
 
     @property
@@ -215,7 +215,10 @@ class MregClient(metaclass=SingletonMeta):
         return str(self.session.headers.get(Header.CORRELATION_ID, ""))
 
     def _add_to_history(
-        self, response: Response, params: QueryParams | None, data: JsonMapping | None
+        self,
+        response: Response,
+        data: JsonMapping | None = None,
+        json: JsonMapping | None = None,
     ) -> None:
         """Add a request/response pair to the history log."""
         self.history.append(
@@ -224,8 +227,8 @@ class MregClient(metaclass=SingletonMeta):
                 request=response.request,
                 response=response,
                 status=response.status_code,
-                data=params if params else {},
-                json=data if data else {},
+                data=data or {},
+                json=json or {},
             )
         )
 
@@ -397,7 +400,7 @@ class MregClient(metaclass=SingletonMeta):
 
         result = self.session.send(request)
         # Log response in response log
-        self._add_to_history(result, params, data)
+        self._add_to_history(result, params, json=data)
 
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:
