@@ -58,7 +58,7 @@ class APIError(MregApiBaseError):
         if self.response:
             parts = [
                 self.response.request.method,
-                f'"{self.response.request.url}"',
+                f'"{self.response.request.url}":',
                 f"{self.response.status_code}:",
                 f"{self.response.reason_phrase}",
             ]
