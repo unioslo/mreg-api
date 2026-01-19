@@ -61,7 +61,7 @@ class APIError(MregApiBaseError):
                 self.response.request.method,
                 f'"{self.response.request.url}:"',
                 f"{self.response.status_code}:",
-                f"{self.response.reason_phrase}",
+                f"{self.response.reason_phrase}:",
             ]
             return " ".join(parts)
         return ""
