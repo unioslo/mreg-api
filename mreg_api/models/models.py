@@ -43,7 +43,7 @@ from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
 from mreg_api.exceptions import InvalidIPv6Address
 from mreg_api.exceptions import InvalidNetwork
-from mreg_api.exceptions import IPNetworkWarning
+from mreg_api.exceptions import IPNetworkError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
@@ -129,7 +129,7 @@ class NetworkOrIP(BaseModel):
         :param value:The value to parse.
         :param mode: The mode to validate the input as.
         :returns: The parsed value as an IP address or network.
-        :raises IPNetworkWarning: If the value is not an IP address or network.
+        :raises IPNetworkError: If the value is not an IP address or network.
         """
         ipnet = cls.validate(value)
         funcmap: dict[IPNetMode, Callable[..., IP_AddressT | IP_NetworkT]] = {
@@ -1368,7 +1368,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         """IP network object for the network."""
         try:
             return NetworkOrIP.parse_or_raise(self.network, mode="network")
-        except IPNetworkWarning as e:
+        except IPNetworkError as e:
             logger.error("Invalid network address %s for network with ID %s", self.network, self.id)
             raise e
 

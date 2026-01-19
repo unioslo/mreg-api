@@ -36,7 +36,6 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
-from mreg_api.exceptions import parse_mreg_error
 from mreg_api.models.fields import HostName
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
@@ -274,9 +273,8 @@ class MregClient(metaclass=SingletonMeta):
             raise LoginFailedError(f"Connection failed: {e}") from e
 
         if not result.is_success:
-            err = parse_mreg_error(result)
-            msg = err.as_str() if err else result.text
-            raise LoginFailedError(msg)
+            # NOTE: Exception uses parsed API error message if possible
+            raise LoginFailedError(result.text)
 
         token = result.json().get("token")
         if not token:
@@ -334,26 +332,21 @@ class MregClient(metaclass=SingletonMeta):
                     new[key] = value
         return new
 
-    def _result_check(self, result: Response, operation_type: HTTPMethod, url: str) -> None:
+    def _check_response(self, response: Response, operation_type: HTTPMethod, url: str) -> None:
         """Check the result of a request and raise on error."""
-        if not result.is_success:
-            if err := parse_mreg_error(result):
-                res_text = err.as_json_str()
-            elif result.status_code == 404:
+        if not response.is_success:
+            if response.status_code == 404:
                 endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
-                res_text = (
+                msg = (
                     f"Endpoint not found: '{endpoint}'\n"
                     f"This may be because your library version ({__version__}) is:\n"
                     f"  - Too old: The endpoint has been removed from the server\n"
                     f"  - Too new: You're using a beta feature not yet available on the server"
                 )
             else:
-                res_text = result.text
-            message = (
-                f'{operation_type} "{url}": {result.status_code}: {result.reason_phrase}\n{res_text}'
-            )
+                msg = response.text
             cls = determine_http_error_class(operation_type)
-            raise cls(message, result)
+            raise cls(msg, response)
 
     def request(
         self,
@@ -428,7 +421,7 @@ class MregClient(metaclass=SingletonMeta):
         if result.status_code == 404 and ok404:
             return None
 
-        self._result_check(result, method, url)
+        self._check_response(result, method, url)
         return result
 
     @overload

@@ -1,9 +1,12 @@
-"""Exception classes for MREG API errors and warnings."""
+"""Exception classes for MREG API errors."""
 
 from __future__ import annotations
 
 import logging
+from functools import cached_property
 
+import httpx
+from httpx import Request
 from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
@@ -25,22 +28,76 @@ class InternalError(MregApiBaseError):
     pass
 
 
-# TODO: rename or consolidate to show that this error type requires
-# a request object to instantiate.
 class APIError(MregApiBaseError):
-    """Warning class for API errors."""
+    """Exception class for API errors.
 
-    message: str
+    Parses drf-standardized-errors errors from the MREG API if present in response.
+    """
 
-    def __init__(self, message: str, response: Response | None = None):
-        """Initialize an APIError warning.
+    def __init__(self, message: str, response: Response | None = None, *, show_api_errors: bool = True):
+        """Initialize an APIError exception.
 
-        :param message: The warning message.
+        :param message: The exception message.
         :param response: The response object that triggered the exception.
         """
         super().__init__(message)
-        self.message = message
         self._response = response
+        self.show_api_errors = show_api_errors
+
+    @cached_property
+    def errors(self) -> MREGErrorResponse | None:
+        """Get the parsed MREG errors from the response.
+
+        :returns: The MREGErrorResponse object or None if not available.
+        """
+        if self.response:
+            return parse_mreg_error(self.response)
+        return None
+
+    def _message_prefix(self) -> str:
+        """Prefix message with request info if available."""
+        if self.response:
+            parts = [
+                self.response.request.method,
+                f'"{self.response.request.url}:"',
+                f"{self.response.status_code}:",
+                f"{self.response.reason_phrase}",
+            ]
+            return " ".join(parts)
+        return ""
+
+    def _message_suffix(self) -> str:
+        """Suffix message with API error details if available and enabled."""
+        if self.show_api_errors:
+            if self.errors and (msg := self.errors.as_str()):
+                return msg
+            elif self.response and self.response.text:
+                return self.response.text
+        return str(self.args[0]) if self.args else ""
+
+    @property
+    def message(self) -> str:
+        """The full error message."""
+        return " ".join(part for part in (self._message_prefix(), self._message_suffix()) if part)
+
+    @property
+    def request(self) -> Request | None:
+        """Get the request that triggered the exception.
+
+        Uses the request from the cause if not set directly.
+        :returns: The request object or None if not set.
+        """
+        if self._response:
+            return self._response.request
+        # NOTE: do we want to recurse deeper here? Can we try to access the request
+        #       attribute as long as it exists, or do we risk infinite recursion?
+        if self.__cause__ and isinstance(self.__cause__, httpx.HTTPError):
+            try:
+                return self.__cause__.request
+            except RuntimeError:
+                # Request object not set on the cause
+                pass
+        return None
 
     @property
     def response(self) -> Response | None:
@@ -54,17 +111,6 @@ class APIError(MregApiBaseError):
             return self._response
         if self.__cause__ and isinstance(self.__cause__, APIError):
             return self.__cause__.response
-        return None
-
-    @property
-    def parsed_error(self) -> MREGErrorResponse | None:
-        """Get the parsed MREG error response.
-
-        :returns: The parsed MREG error response or None if not available.
-        """
-        resp = self.response
-        if resp is not None:
-            return parse_mreg_error(resp)
         return None
 
 
@@ -99,7 +145,11 @@ class UnexpectedDataError(APIError):
 
 
 class MregValidationError(MregApiBaseError):
-    """Error class for validation failures."""
+    """Validation error class for MREG API.
+
+    Stems from Pydantic ValidationError but adds context about
+    the API request that caused the validation to fail.
+    """
 
     def __init__(self, message: str, pydantic_error: ValidationError | None = None):
         """Initialize an MregValidationError.
@@ -151,93 +201,93 @@ class FileError(MregApiBaseError):
 
 
 class TooManyResults(MregApiBaseError):
-    """Warning class for too many results."""
+    """API returned too many results."""
 
     pass
 
 
 class NoHistoryFound(MregApiBaseError):
-    """Warning class for no history found."""
+    """No history found for resource."""
 
     pass
 
 
 class EntityNotFound(MregApiBaseError):
-    """Warning class for an entity that was not found."""
+    """No entity found when at least one was expected."""
 
     pass
 
 
 class EntityAlreadyExists(MregApiBaseError):
-    """Warning class for an entity that already exists."""
+    """Entity already exists when none was expected."""
 
     pass
 
 
 class MultipleEntitiesFound(MregApiBaseError):
-    """Warning class for multiple entities found."""
+    """Multiple entities found when only one was expected."""
 
     pass
 
 
 class EntityOwnershipMismatch(MregApiBaseError):
-    """Warning class for an entity that already exists but owned by someone else."""
+    """Entity already exists but is owned by someone else."""
 
     pass
 
 
 class InputFailure(MregApiBaseError, ValueError):
-    """Warning class for input failure."""
+    """Error class for input failure."""
 
     pass
 
 
 class ForceMissing(MregApiBaseError):
-    """Warning class for missing force flag."""
+    """Error class for missing force flag."""
 
     pass
 
 
-class IPNetworkWarning(ValueError, MregApiBaseError):
-    """Warning class for IP network/address warnings."""
+class IPNetworkError(ValueError, MregApiBaseError):
+    """Error class for IP network/address errors."""
 
     pass
 
 
-class InvalidIPAddress(IPNetworkWarning):
-    """Warning class for an entity that is not an IP address."""
+class InvalidIPAddress(IPNetworkError):
+    """Entity is not a valid IP address."""
 
     pass
 
 
-class InvalidIPv4Address(IPNetworkWarning):
-    """Warning class for an entity that is not an IPv4 address."""
+class InvalidIPv4Address(IPNetworkError):
+    """Entity is not a valid IPv4 address."""
 
     pass
 
 
-class InvalidIPv6Address(IPNetworkWarning):
-    """Warning class for an entity that is not an IPv6 address."""
+class InvalidIPv6Address(IPNetworkError):
+    """Entity is not a valid IPv6 address."""
 
     pass
 
 
-class InvalidNetwork(IPNetworkWarning):
-    """Warning class for an entity that is not a network."""
+class InvalidNetwork(IPNetworkError):
+    """Entity is not a valid network."""
 
     pass
 
 
-class NetworkOverlap(IPNetworkWarning):
-    """Warning class for a networkthat overlaps with another network."""
+class NetworkOverlap(IPNetworkError):
+    """Network overlaps with another network."""
 
 
 class LoginFailedError(APIError):
-    """Error class for login failure."""
+    """Login failed."""
 
 
 class InvalidAuthTokenError(LoginFailedError):
-    """Error class for invalid authentication token."""
+    """Invalid authentication token."""
 
 
 def fmt_error_code(code: str) -> str:
