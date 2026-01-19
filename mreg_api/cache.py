@@ -20,8 +20,6 @@ from pydantic import BaseModel
 from pydantic import ByteSize
 from pydantic import field_serializer
 
-from mreg_api.config import MregCliConfig
-
 logger = logging.getLogger(__name__)
 
 
