@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import logging
+import warnings
 from collections.abc import Iterable
 from datetime import date
 from datetime import datetime
@@ -26,6 +27,7 @@ from pydantic import Field
 from pydantic import ValidationError as PydanticValidationError
 from pydantic import computed_field
 from pydantic import field_validator
+from pydantic import model_validator
 from typing_extensions import Unpack
 
 from mreg_api.endpoints import Endpoint
@@ -2457,6 +2459,26 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     zone: int | None = None
 
     history_resource: ClassVar[HistoryResource] = HistoryResource.Host
+
+    @model_validator(mode="after")
+    def _set_deprecated_contact_field(self) -> Self:
+        """Set the contacts field from the deprecated contact field, if needed.
+
+        Ensures backwards compatibility with older server versions that do not
+        implement the `contacts` field.
+        """
+        if not self.contacts:
+            # Only enter context manager if we have no contacts field
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", DeprecationWarning)
+                if self.contact:
+                    # HACK: The field itself is immutable, but it always contains
+                    #       a list object that we can append to.
+                    dt = datetime.fromtimestamp(0, tz=self.created_at.tzinfo)  # tz-aware epoch time
+                    self.contacts.append(
+                        ContactEmail(id=0, email=self.contact, created_at=dt, updated_at=dt)
+                    )
+        return self
 
     @property
     def contact_emails(self) -> list[str]:
