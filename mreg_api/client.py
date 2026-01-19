@@ -375,6 +375,8 @@ class MregClient(metaclass=SingletonMeta):
         """
         # Passing in an empty params dict causes the constructed request object
         # to discard any query parameters in the path - we don't want that.
+        # When we are paginating, we have the full URL including query parameters
+        # which means we would lose them if we pass in an empty dict here.
         if params == {}:
             params = None
 
@@ -459,8 +461,6 @@ class MregClient(metaclass=SingletonMeta):
         Yes... Patching sucks when you have other modules that import scoped symbols
         into their own namespace.
         """
-        if params is None:
-            params = {}
         try:
             return self.request("GET", path, params=params, ok404=ok404)
         except GetError as e:
