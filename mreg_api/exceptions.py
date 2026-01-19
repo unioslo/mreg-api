@@ -34,7 +34,7 @@ class APIError(MregApiBaseError):
     Parses drf-standardized-errors errors from the MREG API if present in response.
     """
 
-    def __init__(self, message: str, response: Response | None = None, *, show_api_errors: bool = True):
+    def __init__(self, message: str, response: Response | None = None):
         """Initialize an APIError exception.
 
         :param message: The exception message.
@@ -42,7 +42,6 @@ class APIError(MregApiBaseError):
         """
         super().__init__(message)
         self._response = response
-        self.show_api_errors = show_api_errors
 
     @cached_property
     def errors(self) -> MREGErrorResponse | None:
@@ -66,19 +65,39 @@ class APIError(MregApiBaseError):
             return " ".join(parts)
         return ""
 
-    def _message_suffix(self) -> str:
-        """Suffix message with API error details if available and enabled."""
-        if self.show_api_errors:
-            if self.errors and (msg := self.errors.as_str()):
-                return msg
-            elif self.response and self.response.text:
-                return self.response.text
+    def formatted_message(self, *, json: bool = False) -> str:
+        """Get a formatted error message including error details.
+
+        Args:
+            json (bool, optional): Whether to include error details as JSON. Defaults to False.
+
+        Returns:
+            str: The formatted error message.
+        """
+        if json:
+            details = self.details_json
+        else:
+            details = self.details
+        return " ".join(part for part in (self._message_prefix(), details) if part)
+
+    @property
+    def details(self) -> str:
+        """Get the error details string."""
+        if self.errors and (msg := self.errors.as_str()):
+            return msg
+        elif self.response and self.response.text:
+            return self.response.text
         return str(self.args[0]) if self.args else ""
 
     @property
-    def message(self) -> str:
-        """The full error message."""
-        return " ".join(part for part in (self._message_prefix(), self._message_suffix()) if part)
+    def details_json(self) -> str:
+        """The error details as JSON string.
+
+        Falls back on regular details string if no structured errors are available.
+        """
+        if self.errors:
+            return self.errors.as_json_str()
+        return self.details
 
     @property
     def request(self) -> Request | None:

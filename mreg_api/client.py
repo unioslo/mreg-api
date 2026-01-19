@@ -28,6 +28,7 @@ from mreg_api.__about__ import __version__
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
+from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
@@ -460,7 +461,12 @@ class MregClient(metaclass=SingletonMeta):
         """
         if params is None:
             params = {}
-        return self.request("GET", path, params=params, ok404=ok404)
+        try:
+            return self.request("GET", path, params=params, ok404=ok404)
+        except GetError as e:
+            raise e
+        except APIError as e:
+            raise GetError(e.details, e.response) from e
 
     @overload
     def post(
@@ -490,8 +496,10 @@ class MregClient(metaclass=SingletonMeta):
         """Make a POST request."""
         try:
             return self.request("POST", path, params, ok404=ok404, **kwargs)
+        except PostError as e:
+            raise e
         except APIError as e:
-            raise PostError(e.message, e.response) from e
+            raise PostError(e.details, e.response) from e
 
     @overload
     def patch(
@@ -521,8 +529,10 @@ class MregClient(metaclass=SingletonMeta):
         """Make a PATCH request."""
         try:
             return self.request("PATCH", path, params, ok404=ok404, **kwargs)
+        except PatchError as e:
+            raise e
         except APIError as e:
-            raise PatchError(e.message, e.response) from e
+            raise PatchError(e.details, e.response) from e
 
     @overload
     def delete(
@@ -552,8 +562,10 @@ class MregClient(metaclass=SingletonMeta):
         """Make a DELETE request."""
         try:
             return self.request("DELETE", path, params, ok404=ok404, **kwargs)
+        except DeleteError as e:
+            raise e
         except APIError as e:
-            raise DeleteError(e.message, e.response) from e
+            raise DeleteError(e.details, e.response) from e
 
     def get_list(
         self,
