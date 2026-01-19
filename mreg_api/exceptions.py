@@ -60,7 +60,7 @@ class APIError(MregApiBaseError):
                 self.response.request.method,
                 f'"{self.response.request.url}:"',
                 f"{self.response.status_code}:",
-                f"{self.response.reason_phrase}:",
+                f"{self.response.reason_phrase}",
             ]
             return " ".join(parts)
         return ""
@@ -74,11 +74,12 @@ class APIError(MregApiBaseError):
         Returns:
             str: The formatted error message.
         """
+        prefix = self._message_prefix()
         if json:
             details = self.details_json
         else:
             details = self.details
-        return " ".join(part for part in (self._message_prefix(), details) if part)
+        return f"{prefix}\n{details}"
 
     @property
     def details(self) -> str:
