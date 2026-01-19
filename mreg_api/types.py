@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import ipaddress
 from collections.abc import Callable
-from enum import Enum
 from functools import lru_cache
 from typing import Any
 from typing import Literal
@@ -25,14 +24,16 @@ from typing_extensions import TypeAliasType
 CommandFunc = Callable[[argparse.Namespace], None]
 
 
-class LogLevel(str, Enum):
-    """Logging levels."""
-
-    DEBUG = "DEBUG"
-    INFO = "INFO"
-    WARNING = "WARNING"
-    ERROR = "ERROR"
-    CRITICAL = "CRITICAL"
+HTTPMethod: TypeAlias = Literal[
+    "GET",
+    "POST",
+    "PATCH",
+    "DELETE",
+    # NYI: not currently used methods
+    # "PUT",
+    # "HEAD",
+    # "OPTIONS",
+]
 
 
 class TimeInfo(TypedDict):

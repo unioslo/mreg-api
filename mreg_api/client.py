@@ -35,8 +35,10 @@ from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
+from mreg_api.exceptions import determine_http_error_class
 from mreg_api.exceptions import parse_mreg_error
 from mreg_api.models.fields import HostName
+from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
@@ -332,7 +334,7 @@ class MregClient(metaclass=SingletonMeta):
                     new[key] = value
         return new
 
-    def _result_check(self, result: Response, operation_type: str, url: str) -> None:
+    def _result_check(self, result: Response, operation_type: HTTPMethod, url: str) -> None:
         """Check the result of a request and raise on error."""
         if not result.is_success:
             if err := parse_mreg_error(result):
@@ -350,11 +352,12 @@ class MregClient(metaclass=SingletonMeta):
             message = (
                 f'{operation_type} "{url}": {result.status_code}: {result.reason_phrase}\n{res_text}'
             )
-            raise APIError(message, result)
+            cls = determine_http_error_class(operation_type)
+            raise cls(message, result)
 
     def request(
         self,
-        method: Literal["GET", "POST", "PATCH", "DELETE"],
+        method: HTTPMethod,
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,

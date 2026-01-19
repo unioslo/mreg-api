@@ -8,6 +8,8 @@ from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 
+from mreg_api.types import HTTPMethod
+
 logger = logging.getLogger(__name__)
 
 
@@ -317,3 +319,24 @@ def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     except ValidationError:
         logger.error("Failed to parse response text '%s' from %s", resp.text, resp.url)
     return None
+
+
+def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
+    """Get the appropriate exception class for a given HTTP method.
+
+    :param method: The HTTP method.
+    :returns: The exception class corresponding to the HTTP method.
+    """
+    if method == "GET":
+        return GetError
+    elif method == "POST":
+        return PostError
+    elif method == "PATCH":
+        return PatchError
+    elif method == "DELETE":
+        return DeleteError
+    else:
+        logger.warning(  # pyright: ignore[reportUnreachable]
+            "No specific exception class for HTTP method '%s', using generic APIError", method
+        )
+        return APIError
