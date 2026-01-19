@@ -53,35 +53,7 @@ class APIError(MregApiBaseError):
             return parse_mreg_error(self.response)
         return None
 
-    def _message_prefix(self) -> str:
-        """Prefix message with request info if available."""
-        if self.response:
-            parts = [
-                self.response.request.method,
-                f'"{self.response.request.url}":',
-                f"{self.response.status_code}:",
-                f"{self.response.reason_phrase}",
-            ]
-            return " ".join(parts)
-        return ""
-
-    def formatted_message(self, *, json: bool = False) -> str:
-        """Get a formatted error message including error details.
-
-        Args:
-            json (bool, optional): Whether to include error details as JSON. Defaults to False.
-
-        Returns:
-            str: The formatted error message.
-        """
-        prefix = self._message_prefix()
-        if json:
-            details = self.details_json
-        else:
-            details = self.details
-        return f"{prefix}\n{details}"
-
-    @property
+    @cached_property
     def details(self) -> str:
         """Get the error details string."""
         if self.errors and (msg := self.errors.as_str()):
@@ -90,7 +62,7 @@ class APIError(MregApiBaseError):
             return self.response.text
         return str(self.args[0]) if self.args else ""
 
-    @property
+    @cached_property
     def details_json(self) -> str:
         """The error details as JSON string.
 
@@ -132,6 +104,43 @@ class APIError(MregApiBaseError):
         if self.__cause__ and isinstance(self.__cause__, APIError):
             return self.__cause__.response
         return None
+
+    def _request_info_str(self) -> str | None:
+        """Prefix message with request info if available."""
+        if self.response:
+            parts = [
+                self.response.request.method,
+                f'"{self.response.request.url}":',
+                f"{self.response.status_code}:",
+                f"{self.response.reason_phrase}",
+            ]
+            return " ".join(parts)
+        return None
+
+    def formatted_message(self, *, json: bool = False) -> str:
+        """Get a formatted error message including error details.
+
+        Args:
+            json (bool, optional): Whether to include error details as JSON. Defaults to False.
+
+        Returns:
+            str: The formatted error message.
+        """
+        parts: list[str] = []
+
+        # Request info prefix
+        if request_info := self._request_info_str():
+            parts.append(request_info)
+
+        # Error details (JSON or plain text)
+        if json:
+            details = self.details_json
+        else:
+            details = self.details
+        if details:
+            parts.append(details)
+
+        return "\n".join(p.strip() for p in parts if p.strip())
 
 
 class PostError(APIError):
