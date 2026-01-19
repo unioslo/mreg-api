@@ -194,20 +194,8 @@ class MregValidationError(MregApiBaseError):
         return cls(err_msg, e)
 
 
-class FileError(MregApiBaseError):
-    """Error class for file errors."""
-
-    pass
-
-
 class TooManyResults(MregApiBaseError):
     """API returned too many results."""
-
-    pass
-
-
-class NoHistoryFound(MregApiBaseError):
-    """No history found for resource."""
 
     pass
 
@@ -276,10 +264,6 @@ class InvalidNetwork(IPNetworkError):
     """Entity is not a valid network."""
 
     pass
-
-
-class NetworkOverlap(IPNetworkError):
-    """Network overlaps with another network."""
 
 
 class LoginFailedError(APIError):
