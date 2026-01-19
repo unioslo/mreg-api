@@ -2,18 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-from mreg_api.exceptions import InputFailure
-
-
-def string_to_int(value: Any, error_tag: str) -> int:
-    """Convert a string to an integer."""
-    try:
-        return int(value)
-    except ValueError as e:
-        raise InputFailure("%s: Not a valid integer" % error_tag) from e
-
 
 def convert_wildcard_to_regex(param: str, arg: str, autoWildcards: bool = False) -> tuple[str, str]:
     """Convert wildcard filter "foo*bar*" to something DRF will understand.
@@ -52,12 +40,3 @@ def convert_wildcard_to_regex(param: str, arg: str, autoWildcards: bool = False)
         regex = "."
 
     return (f"{param}__regex", regex)
-
-
-def sizeof_fmt(num: float, suffix: str = "B"):
-    """Human readable file size."""
-    for unit in ("", "Ki", "Mi", "Gi", "Ti", "Pi", "Ei", "Zi"):
-        if abs(num) < 1024.0:
-            return f"{num:3.1f}{unit}{suffix}"
-        num /= 1024.0
-    return f"{num:.1f}Yi{suffix}"
