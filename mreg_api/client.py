@@ -184,10 +184,10 @@ class MregClient(metaclass=SingletonMeta):
             self._cache_config = cache
 
         self._cache: MregApiCache[Response] | None = None
-        # TODO: Get rid of _cache_enabled. Ideally, we can rely fully
+        # TODO: Get rid of is_cache_enabled. Ideally, we can rely fully
         # on whether or not self._cache exists to determine if caching
         # is enabled.
-        if self._cache_enabled:
+        if self.is_cache_enabled:
             self._cache = self._create_cache()
 
         # State
@@ -198,11 +198,12 @@ class MregClient(metaclass=SingletonMeta):
         HostName.domain = domain
 
     @property
-    def _cache_enabled(self) -> bool:
+    def is_cache_enabled(self) -> bool:
+        """GET response caching enabled status."""
         return self._cache_config.enabled
 
-    @_cache_enabled.setter
-    def _cache_enabled(self, value: bool) -> None:
+    @is_cache_enabled.setter
+    def is_cache_enabled(self, value: bool) -> None:
         self._cache_config.enabled = value
 
     def _get_cache_tag(self) -> str:
@@ -215,7 +216,7 @@ class MregClient(metaclass=SingletonMeta):
 
     def enable_cache(self) -> None:
         """Enable caching of GET responses for this client."""
-        self._cache_enabled = True
+        self.is_cache_enabled = True
         if self._cache is None:
             self._cache = self._create_cache()
 
@@ -227,14 +228,14 @@ class MregClient(metaclass=SingletonMeta):
 
     def disable_cache(self, *, clear: bool = True) -> None:
         """Disable caching of GET responses for this client."""
-        self._cache_enabled = False
+        self.is_cache_enabled = False
         if clear:
             self.clear_cache()
 
     @contextmanager
     def cache_enabled(self):
         """Context manager to temporarily enable caching."""
-        was_enabled = self._cache_enabled
+        was_enabled = self.is_cache_enabled
         if not was_enabled:
             self.enable_cache()
         try:
@@ -246,7 +247,7 @@ class MregClient(metaclass=SingletonMeta):
     @contextmanager
     def cache_disabled(self):
         """Context manager to temporarily disable caching."""
-        was_enabled = self._cache_enabled
+        was_enabled = self.is_cache_enabled
         if was_enabled:
             self.disable_cache(clear=False)
         try:
@@ -558,7 +559,7 @@ class MregClient(metaclass=SingletonMeta):
 
     def get(self, path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
         """Make a standard get request."""
-        if self._cache_enabled and self._cache is not None:
+        if self.is_cache_enabled and self._cache is not None:
             cache_key = self._make_cache_key(path, params, ok404)
 
             try:
