@@ -480,7 +480,7 @@ class APIMixin(ABC):
         if validate:
             # __init_subclass__ guarantees we inherit from BaseModel
             # but we can't signal this to the type checker, so we cast here.
-            validate_patched_model(cast(BaseModel, new_object), fields)
+            validate_patched_model(cast(BaseModel, new_object), fields)  # pyright: ignore[reportInvalidCast] # we know what we are doing here (...?!)
 
         return new_object
 
