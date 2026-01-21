@@ -20,7 +20,8 @@ logger = logging.getLogger(__name__)
 P = ParamSpec("P")
 T = TypeVar("T")
 
-CACHE_TAG = "mreg-api"
+DEFAULT_CACHE_TAG = "mreg-api"
+DEFAULT_CACHE_TTL = 300  # seconds
 
 
 class CacheInfo(BaseModel):
@@ -46,27 +47,35 @@ class CacheInfo(BaseModel):
         )
 
 
-def create_cache(ttl: int, tag: str, item_type: type[T]) -> MregApiCache[T] | None:
+def create_cache(config: CacheConfig, item_type: type[T]) -> MregApiCache[T] | None:
     """Create the global mreg-cli cache.
 
     Falls back to a no-op cache object if the diskcache cache cannot be created.
     """
     try:
-        return MregApiCache[item_type](Cache(), ttl=ttl, tag=tag)
+        return MregApiCache[item_type](Cache(), config=config)
     except Exception as e:
         logger.exception("Failed to create cache: %s", e)
         return None
+
+
+class CacheConfig(BaseModel):
+    """Configuration for the mreg-api cache."""
+
+    enabled: bool = True
+    ttl: int = DEFAULT_CACHE_TTL
+    tag: str = DEFAULT_CACHE_TAG
+    directory: str | None = None
 
 
 @final
 class MregApiCache(Generic[T]):
     """Wrapper around the mreg-cli cache."""
 
-    def __init__(self, cache: Cache, ttl: int, tag: str = CACHE_TAG) -> None:
+    def __init__(self, cache: Cache, config: CacheConfig) -> None:
         """Initialize the cache wrapper."""
         self.cache = cache
-        self.ttl = ttl
-        self.tag = tag
+        self.config = config
 
     def get_info(self) -> CacheInfo:
         """Get information about the cache.
@@ -82,13 +91,13 @@ class MregApiCache(Generic[T]):
             misses=misses,  # pyright: ignore[reportArgumentType]
             items=len(self.cache),  # pyright: ignore[reportArgumentType]
             directory=self.cache.directory,
-            ttl=self.ttl,
+            ttl=self.config.ttl,
         )
 
     def set(self, key: str, value: T | None, expire: int | None = None) -> None:
         """Set a value in the cache."""
         try:
-            self.cache.set(key, value, expire=expire or self.ttl, tag=self.tag)
+            self.cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
         except Exception as e:
             logger.exception("Failed to set cache key %s: %s", key, e)
 
@@ -105,7 +114,7 @@ class MregApiCache(Generic[T]):
     def clear(self) -> None:
         """Clear the cache and reset statistics."""
         try:
-            items = self.cache.evict(self.tag)
-            logger.info("Cleared %d items from cache with tag %s", items, self.tag)
+            items = self.cache.evict(self.config.tag)
+            logger.info("Cleared %d items from cache with tag %s", items, self.config.tag)
         except Exception as e:
-            logger.exception("Failed to clear cache for tag %s: %s", self.tag, e)
+            logger.exception("Failed to clear cache for tag %s: %s", self.config.tag, e)

@@ -6,7 +6,7 @@ import functools
 import logging
 import re
 from collections import deque
-from collections.abc import Iterable
+from contextlib import contextmanager
 from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
@@ -28,6 +28,8 @@ from pydantic import TypeAdapter
 from pydantic import field_validator
 
 from mreg_api.__about__ import __version__
+from mreg_api.cache import CacheConfig
+from mreg_api.cache import CacheInfo
 from mreg_api.cache import MregApiCache
 from mreg_api.cache import create_cache
 from mreg_api.endpoints import Endpoint
@@ -160,13 +162,12 @@ class MregClient(metaclass=SingletonMeta):
         domain: str = "uio.no",
         user: str | None = None,
         timeout: int = 20,
-        cache: bool = False,
-        cache_ttl: int = 300,
+        cache: CacheConfig | bool = False,
         follow_redirects: bool = False,
         history_size: int | None = 100,
     ) -> None:
         """Initialize the client (only once for singleton)."""
-        self.session = httpx.Client(
+        self.session: httpx.Client = httpx.Client(
             headers={"User-Agent": f"mreg-api-{__version__}"},
             follow_redirects=follow_redirects,
         )
@@ -176,10 +177,15 @@ class MregClient(metaclass=SingletonMeta):
         self.timeout: int = timeout
         self.user: str | None = user
 
-        self._cache_enabled: bool = cache
-        self._cache_ttl: int = cache_ttl
-        self._cache_tag: str = self._get_cache_tag()
+        if isinstance(cache, bool):
+            self._cache_config: CacheConfig = CacheConfig(enabled=cache)
+        else:
+            self._cache_config = cache
+
         self._cache: MregApiCache[Response] | None = None
+        # TODO: Get rid of _cache_enabled. Ideally, we can rely fully
+        # on whether or not self._cache exists to determine if caching
+        # is enabled.
         if self._cache_enabled:
             self._cache = self._create_cache()
 
@@ -190,13 +196,21 @@ class MregClient(metaclass=SingletonMeta):
         # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
         HostName.domain = domain
 
+    @property
+    def _cache_enabled(self) -> bool:
+        return self._cache_config.enabled
+
+    @_cache_enabled.setter
+    def _cache_enabled(self, value: bool) -> None:
+        self._cache_config.enabled = value
+
     def _get_cache_tag(self) -> str:
         """Get the cache tag for this client."""
         return f"mreg_api_client_cache_{self.url.replace('://', '_').replace('/', '_')}"
 
     def _create_cache(self) -> MregApiCache[Response] | None:
         """Get the cache wrapper if caching is enabled."""
-        return create_cache(ttl=self._cache_ttl, tag=self._cache_tag, item_type=Response)
+        return create_cache(self._cache_config, Response)
 
     def enable_cache(self) -> None:
         """Enable caching of GET responses for this client."""
@@ -214,7 +228,41 @@ class MregClient(metaclass=SingletonMeta):
         self._cache_enabled = False
         if clear:
             self.clear_cache()
-        self._cache = None
+
+    @contextmanager
+    def cache_enabled(self):
+        """Context manager to temporarily enable caching."""
+        was_enabled = self._cache_enabled
+        if not was_enabled:
+            self.enable_cache()
+        try:
+            yield
+        finally:
+            if not was_enabled:
+                self.disable_cache()
+
+    @contextmanager
+    def cache_disabled(self):
+        """Context manager to temporarily disable caching."""
+        was_enabled = self._cache_enabled
+        if was_enabled:
+            self.disable_cache(clear=False)
+        try:
+            yield
+        finally:
+            if was_enabled:
+                self.enable_cache()
+
+    def get_cache_stats(self) -> CacheInfo | None:
+        """Get statistics about the client's cache.
+
+        Returns:
+            CacheInfo object or None if caching is disabled
+
+        """
+        if self._cache:
+            return self._cache.get_info()
+        return None
 
     def set_token(self, token: str) -> None:
         """Set the authorization token for API requests.
@@ -282,7 +330,7 @@ class MregClient(metaclass=SingletonMeta):
             )
         )
 
-    def get_client_history(self) -> Iterable[RequestRecord]:
+    def get_client_history(self) -> deque[RequestRecord]:
         """Get the request/response history for this client.
 
         Returns:

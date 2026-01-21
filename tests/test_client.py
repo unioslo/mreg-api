@@ -141,3 +141,138 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
 
     hosts_post_mutation = Host.get_list()
     assert len(hosts_post_mutation) == 2
+
+
+def test_client_cache_contextmanager_disabled(httpserver: HTTPServer) -> None:
+    client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=True)
+    assert client._cache is not None
+
+    # Do some stuff that gets cached
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+    )
+    hosts1 = Host.get_list()
+    assert len(client.get_client_history()) == 1
+
+    # Perform same fetches within the context manager - should bypass cache
+    with client.cache_disabled():
+        httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+            [
+                {
+                    "id": 1,
+                    "name": "host1.example.com",
+                    "ipaddresses": [],
+                    "comment": "My comment",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "id": 2,
+                    "name": "host2.example.com",
+                    "ipaddresses": [],
+                    "comment": "My other comment",
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "updated_at": "2025-01-01T00:00:00Z",
+                },
+            ]
+        )
+        hosts2 = Host.get_list()
+        assert len(client.get_client_history()) == 2
+
+        assert len(hosts1) == 1
+        assert len(hosts2) == 2
+
+    # Fetching outside the context manager should use the cache again
+    stats_pre = client.get_cache_stats()
+    assert stats_pre is not None
+
+    hosts3 = Host.get_list()
+    assert len(client.get_client_history()) == 2  # History unchanged
+    assert len(hosts3) == len(hosts1) == 1
+
+    # Compare cache stats
+    stats_post = client.get_cache_stats()
+    assert stats_post is not None
+
+    assert stats_post.hits == stats_pre.hits + 1
+    assert stats_post.misses == stats_pre.misses
+
+
+def test_client_cache_contextmanager_enabled(httpserver: HTTPServer) -> None:
+    client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=False)
+    assert client._cache is None
+
+    with client.cache_enabled():
+        httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+            [
+                {
+                    "id": 1,
+                    "name": "host1.example.com",
+                    "ipaddresses": [],
+                    "comment": "My comment",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                }
+            ]
+        )
+        hosts1 = Host.get_list()
+        assert len(client.get_client_history()) == 1
+
+        httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+            [
+                {
+                    "id": 1,
+                    "name": "host1.example.com",
+                    "ipaddresses": [],
+                    "comment": "My comment",
+                    "created_at": "2024-01-01T00:00:00Z",
+                    "updated_at": "2024-01-01T00:00:00Z",
+                },
+                {
+                    "id": 2,
+                    "name": "host2.example.com",
+                    "ipaddresses": [],
+                    "comment": "My other comment",
+                    "created_at": "2025-01-01T00:00:00Z",
+                    "updated_at": "2025-01-01T00:00:00Z",
+                },
+            ]
+        )
+        # Second fetch should hit the cache - not the new handler
+        hosts2 = Host.get_list()
+        assert len(client.get_client_history()) == 1
+        assert len(hosts1) == len(hosts2) == 1
+
+    # Fetching outside the context manager should hit the server again
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "id": 2,
+                "name": "host2.example.com",
+                "ipaddresses": [],
+                "comment": "My other comment",
+                "created_at": "2025-01-01T00:00:00Z",
+                "updated_at": "2025-01-01T00:00:00Z",
+            },
+        ]
+    )
+    hosts3 = Host.get_list()
+    assert len(client.get_client_history()) == 2
+    assert len(hosts3) == 2
