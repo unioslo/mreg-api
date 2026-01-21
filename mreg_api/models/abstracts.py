@@ -518,9 +518,12 @@ class APIMixin(ABC):
         response = client.post(cls.endpoint(), params=None, ok404=False, **params)
 
         if response and response.is_success:
-            location = response.headers.get("Location")
-            if location and fetch_after_create:
-                return client.get_typed(location, cls)
+            # NOTE: Headers.__getitem__ returns a str, while
+            # Headers.get returns Any. Hence, check -> access.
+            if "Location" in response.headers:
+                location = response.headers["Location"]
+                if fetch_after_create:
+                    return client.get_typed(location, cls)
             # else:
             # Lots of endpoints don't give locations on creation,
             # so we can't fetch the object, but it's not an error...
