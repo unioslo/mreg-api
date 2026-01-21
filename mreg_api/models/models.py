@@ -6,7 +6,6 @@ import ipaddress
 import logging
 import warnings
 from abc import ABC
-from collections.abc import Iterable
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -3308,22 +3307,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hash((self.id, self.name))
 
 
-class HostList2(list[T]):
-    """List of hosts that may be CNAMEs or PTRs."""
-
-    def __init__(self, iterable: Iterable[T], is_cname: bool = False, is_ptr: bool = False) -> None:
-        """Initialize a list of hosts.
-
-        Args:
-            iterable (Iterable[T]): The iterable to initialize with.
-            is_cname (bool, optional): Hosts are cnames. Defaults to False.
-            is_ptr (bool, optional): Hosts are ptrs. Defaults to False.
-        """
-        super().__init__(iterable)
-        self.is_ptr = is_ptr
-        self.is_cname = is_cname
-
-
 class HostList(FrozenModel):
     """Model for a list of hosts.
 
@@ -3331,8 +3314,8 @@ class HostList(FrozenModel):
     """
 
     results: list[Host]
-    is_ptr: bool = False
-    is_cname: bool = False
+    is_ptr: bool = False  # FIXME: unused
+    is_cname: bool = False  # FIXME: unused
 
     @classmethod
     def endpoint(cls) -> Endpoint:
