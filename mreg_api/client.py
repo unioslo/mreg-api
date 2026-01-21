@@ -256,7 +256,7 @@ class MregClient(metaclass=SingletonMeta):
             if was_enabled:
                 self.enable_cache()
 
-    def get_cache_stats(self) -> CacheInfo | None:
+    def get_cache_info(self) -> CacheInfo | None:
         """Get statistics about the client's cache.
 
         Returns:

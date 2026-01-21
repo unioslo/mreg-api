@@ -194,19 +194,19 @@ def test_client_cache_contextmanager_disabled(httpserver: HTTPServer) -> None:
         assert len(hosts2) == 2
 
     # Fetching outside the context manager should use the cache again
-    stats_pre = client.get_cache_stats()
-    assert stats_pre is not None
+    info_pre = client.get_cache_info()
+    assert info_pre is not None
 
     hosts3 = Host.get_list()
     assert len(client.get_client_history()) == 2  # History unchanged
     assert len(hosts3) == len(hosts1) == 1
 
-    # Compare cache stats
-    stats_post = client.get_cache_stats()
-    assert stats_post is not None
+    # Compare cache info
+    info_post = client.get_cache_info()
+    assert info_post is not None
 
-    assert stats_post.hits == stats_pre.hits + 1
-    assert stats_post.misses == stats_pre.misses
+    assert info_post.hits == info_pre.hits + 1
+    assert info_post.misses == info_pre.misses
 
 
 def test_client_cache_contextmanager_enabled(httpserver: HTTPServer) -> None:
