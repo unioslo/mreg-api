@@ -25,6 +25,8 @@ from pydantic import TypeAdapter
 from pydantic import field_validator
 
 from mreg_api.__about__ import __version__
+from mreg_api.cache import MregApiCache
+from mreg_api.cache import create_cache
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
@@ -141,7 +143,7 @@ class MregClient(metaclass=SingletonMeta):
         domain: str = "uio.no",
         user: str | None = None,
         timeout: int = 20,
-        cache: bool = True,
+        cache: bool = False,
         cache_ttl: int = 300,
         follow_redirects: bool = False,
         history_size: int | None = 100,
@@ -152,21 +154,45 @@ class MregClient(metaclass=SingletonMeta):
             follow_redirects=follow_redirects,
         )
 
-        self.url = url
-        self.domain = domain
-        self.timeout = timeout
-        self.user = user
+        self.url: str = url
+        self.domain: str = domain
+        self.timeout: int = timeout
+        self.user: str | None = user
 
-        self.cache = cache
-        self.cache_ttl = cache_ttl
+        self._cache_enabled: bool = cache
+        self._cache_ttl: int = cache_ttl
+        self._cache_tag: str = self._get_cache_tag()
+        self._cache: MregApiCache[Response] | None = None
+        if self._cache_enabled:
+            self._cache = self._create_cache()
 
         # State
         self._token: str | None = None
-        # NOTE: add API for accessing this?
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
 
         # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
         HostName.domain = domain
+
+    def _get_cache_tag(self) -> str:
+        """Get the cache tag for this client."""
+        return f"mreg_api_client_cache_{self.url.replace('://', '_').replace('/', '_')}"
+
+    def _create_cache(self) -> MregApiCache[Response] | None:
+        """Get the cache wrapper if caching is enabled."""
+        return create_cache(ttl=self._cache_ttl, tag=self._cache_tag, item_type=Response)
+
+    def enable_cache(self) -> None:
+        """Enable caching of GET responses for this client."""
+        self._cache_enabled = True
+        if self._cache is None:
+            self._cache = self._create_cache()
+
+    def disable_cache(self, *, clear: bool = True) -> None:
+        """Disable caching of GET responses for this client."""
+        self._cache_enabled = False
+        if clear and self._cache:
+            self._cache.clear()
+        self._cache = None
 
     def set_token(self, token: str) -> None:
         """Set the authorization token for API requests.
@@ -427,6 +453,23 @@ class MregClient(metaclass=SingletonMeta):
         self._check_response(result, method, url)
         return result
 
+    def _make_cache_key(self, path: str, params: QueryParams | None) -> str:
+        """Create a unique cache key from request path and parameters.
+
+        Args:
+            path: API endpoint path
+            params: Query parameters dict
+
+        Returns:
+            A deterministic string key for caching
+        """
+        if params:
+            # Sort params for consistent key generation
+            sorted_params = sorted((k, str(v)) for k, v in params.items())
+            param_str = "&".join(f"{k}={v}" for k, v in sorted_params)
+            return f"{path}?{param_str}"
+        return path
+
     @overload
     def get(self, path: str, params: QueryParams | None, ok404: Literal[True]) -> Response | None: ...
 
@@ -441,26 +484,16 @@ class MregClient(metaclass=SingletonMeta):
 
     def get(self, path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
         """Make a standard get request."""
+        if self._cache_enabled and self._cache is not None:
+            cache_key = self._make_cache_key(path, params)
+            if (cached := self._cache.get(cache_key)) is not None:
+                return cached
+            ret = self._do_get(path, params, ok404)
+            self._cache.cache.set(cache_key, ret)
+            return ret
         return self._do_get(path, params, ok404)
 
-    def _do_get(
-        self, path: str, params: QueryParams | None = None, ok404: bool = False
-    ) -> Response | None:
-        """Perform a GET request.
-
-        Separated out from get(), so that we can patch this function with a memoized version
-        without affecting other modules that do `from mreg_api.utilities.api import get`, as
-        they would then operate on the unpatched version instead of the modified one,
-        since their `get` symbol differs from the `get` symbol in this module
-        in a scenario where `get` itself is patched _after_ it is imported elsewhere.
-
-        The caching module can modify this function instead of `get`,
-        allowing other modules to be oblivious of the caching behavior, and freely
-        import `get` into their namespaces.
-
-        Yes... Patching sucks when you have other modules that import scoped symbols
-        into their own namespace.
-        """
+    def _do_get(self, path: str, params: QueryParams | None, ok404: bool = False) -> Response | None:
         try:
             return self.request("GET", path, params=params, ok404=ok404)
         except GetError as e:
