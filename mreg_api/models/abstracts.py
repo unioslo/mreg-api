@@ -80,7 +80,7 @@ def validate_patched_model(model: BaseModel, fields: dict[str, Any]) -> None:
 
         # Ensure patched value is the one we tried to set
         validator = validators.get(
-            type(nval),  # type: ignore # dict.get call with unknown type (Any) is fine
+            type(nval),  # pyright:ignore[reportUnknownArgumentType, reportAny] # dict.get call with unknown type (Any) is fine
             _validate_default,
         )
         if not validator(nval, value):
