@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from typing import Generic
 from typing import ParamSpec
-from typing import Self
 from typing import TypeVar
 from typing import cast
 from typing import final
@@ -43,14 +42,6 @@ class CacheInfo(BaseModel):
     @field_serializer("size")
     def _serialize_size(self, value: ByteSize) -> str:
         return value.human_readable()
-
-    def as_table_args(self) -> tuple[list[str], list[str], list[Self]]:
-        """Get a tuple of string arguments for table display."""
-        return (
-            ["Items", "Hits", "Misses", "Size", "TTL", "Directory"],
-            ["items", "hits", "misses", "size", "ttl", "directory"],
-            [self],
-        )
 
 
 def create_cache(config: CacheConfig, item_type: type[T]) -> MregApiCache[T] | None:
