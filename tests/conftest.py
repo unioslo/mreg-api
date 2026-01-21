@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+from pytest_httpserver import HTTPServer
 
 from mreg_api.client import MregClient
 
@@ -12,3 +13,9 @@ def reset_instance_after_test() -> None:
         MregClient.reset_instance()
     except KeyError:
         pass
+
+
+@pytest.fixture
+def client(httpserver: HTTPServer) -> MregClient:
+    """Get an MregClient instance for the current httpserver context."""
+    return MregClient(url=httpserver.url_for(""), domain="example.com")
