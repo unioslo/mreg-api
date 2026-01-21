@@ -125,10 +125,11 @@ class MregApiCache(Generic[T]):
         # so we cannot properly type hint the return value here.
         return cast(T | None, value)
 
-    def clear(self) -> None:
+    def clear(self) -> int:
         """Clear the cache and reset statistics."""
         try:
-            items = self.cache.evict(self.config.tag)
-            logger.info("Cleared %d items from cache with tag %s", items, self.config.tag)
+            n_items = self.cache.evict(self.config.tag)
+            logger.info("Cleared %d items from cache with tag %s", n_items, self.config.tag)
+            return n_items
         except Exception as e:
             raise CacheError(f"Failed to clear cache: {e}") from e

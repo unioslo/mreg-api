@@ -219,10 +219,11 @@ class MregClient(metaclass=SingletonMeta):
         if self._cache is None:
             self._cache = self._create_cache()
 
-    def clear_cache(self) -> None:
+    def clear_cache(self) -> int:
         """Clear the client's GET response cache."""
         if self._cache:
-            self._cache.clear()
+            return self._cache.clear()
+        return 0
 
     def disable_cache(self, *, clear: bool = True) -> None:
         """Disable caching of GET responses for this client."""
