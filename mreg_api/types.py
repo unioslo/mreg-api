@@ -5,11 +5,12 @@ from __future__ import annotations
 import argparse
 import ipaddress
 from collections.abc import Callable
+from collections.abc import Mapping
+from collections.abc import MutableMapping
+from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any
 from typing import Literal
-from typing import Mapping
-from typing import MutableMapping
 from typing import TypeAlias
 from typing import TypedDict
 from typing import TypeVar
@@ -85,10 +86,10 @@ def json_custom_error_validator(
 
 Json = TypeAliasType(
     "Json",
-    dict[str, "Json"] | list["Json"] | str | int | float | bool | None,
+    dict[str, "Json"] | Sequence["Json"] | str | int | float | bool | None,
 )
 JsonMapping = Mapping[str, Json]
-QueryParams = MutableMapping[str, str | int | None]
+QueryParams = MutableMapping[str, str | int | float | bool | None]
 
 
 T = TypeVar("T")
