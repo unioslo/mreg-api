@@ -19,13 +19,9 @@ logger = logging.getLogger(__name__)
 class MregApiBaseError(Exception):
     """Base exception class for MREG API exceptions."""
 
-    pass
-
 
 class InternalError(MregApiBaseError):
     """Error class for internal errors."""
-
-    pass
 
 
 class APIError(MregApiBaseError):
@@ -146,31 +142,21 @@ class APIError(MregApiBaseError):
 class PostError(APIError):
     """Error class for failed creation."""
 
-    pass
-
 
 class PatchError(APIError):
     """Error class for failed patching."""
-
-    pass
 
 
 class DeleteError(APIError):
     """Error class for failed deletion."""
 
-    pass
-
 
 class GetError(APIError):
     """Error class for failed retrieval."""
 
-    pass
-
 
 class UnexpectedDataError(APIError):
     """Error class for unexpected API data."""
-
-    pass
 
 
 class MregValidationError(MregApiBaseError):
@@ -226,73 +212,49 @@ class MregValidationError(MregApiBaseError):
 class TooManyResults(MregApiBaseError):
     """API returned too many results."""
 
-    pass
-
 
 class EntityNotFound(MregApiBaseError):
     """No entity found when at least one was expected."""
-
-    pass
 
 
 class EntityAlreadyExists(MregApiBaseError):
     """Entity already exists when none was expected."""
 
-    pass
-
 
 class MultipleEntitiesFound(MregApiBaseError):
     """Multiple entities found when only one was expected."""
-
-    pass
 
 
 class EntityOwnershipMismatch(MregApiBaseError):
     """Entity already exists but is owned by someone else."""
 
-    pass
-
 
 class InputFailure(MregApiBaseError, ValueError):
     """Error class for input failure."""
-
-    pass
 
 
 class ForceMissing(MregApiBaseError):
     """Error class for missing force flag."""
 
-    pass
-
 
 class IPNetworkError(ValueError, MregApiBaseError):
     """Error class for IP network/address errors."""
-
-    pass
 
 
 class InvalidIPAddress(IPNetworkError):
     """Entity is not a valid IP address."""
 
-    pass
-
 
 class InvalidIPv4Address(IPNetworkError):
     """Entity is not a valid IPv4 address."""
-
-    pass
 
 
 class InvalidIPv6Address(IPNetworkError):
     """Entity is not a valid IPv6 address."""
 
-    pass
-
 
 class InvalidNetwork(IPNetworkError):
     """Entity is not a valid network."""
-
-    pass
 
 
 class LoginFailedError(APIError):
@@ -301,6 +263,14 @@ class LoginFailedError(APIError):
 
 class InvalidAuthTokenError(LoginFailedError):
     """Invalid authentication token."""
+
+
+class CacheError(MregApiBaseError):
+    """Error related to caching."""
+
+
+class CacheMiss(CacheError):
+    """Cache miss error."""
 
 
 def fmt_error_code(code: str) -> str:

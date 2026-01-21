@@ -7,12 +7,16 @@ from typing import Generic
 from typing import ParamSpec
 from typing import Self
 from typing import TypeVar
+from typing import cast
 from typing import final
 
 from diskcache import Cache
 from pydantic import BaseModel
 from pydantic import ByteSize
 from pydantic import field_serializer
+
+from mreg_api.exceptions import CacheError
+from mreg_api.exceptions import CacheMiss
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +26,8 @@ T = TypeVar("T")
 
 DEFAULT_CACHE_TAG = "mreg-api"
 DEFAULT_CACHE_TTL = 300  # seconds
+
+_CACHE_MISS = object()
 
 
 class CacheInfo(BaseModel):
@@ -99,17 +105,25 @@ class MregApiCache(Generic[T]):
         try:
             self.cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
         except Exception as e:
-            logger.exception("Failed to set cache key %s: %s", key, e)
+            raise CacheError(f"Failed to set cache key {key}: {e}") from e
 
     def get(self, key: str) -> T | None:
-        """Get a value from the cache."""
+        """Get a value from the cache.
+
+        Raises:
+            CacheMiss: If the key is not found in the cache.
+        """
+        # Use sentinel to distinguish between None and missing key
+        try:
+            value = self.cache.get(key, default=_CACHE_MISS)  # pyright: ignore[reportReturnType, reportUnknownVariableType]
+        except Exception as e:
+            raise CacheError(f"Failed to get cache key {key}: {e}") from e
+
+        if value is _CACHE_MISS:
+            raise CacheMiss(f"Cache miss for key: {key}")
         # NOTE: diskcache.Cache.get has poor type annotations
         # so we cannot properly type hint the return value here.
-        try:
-            return self.cache.get(key, default=None)  # pyright: ignore[reportReturnType, reportUnknownVariableType]
-        except Exception as e:
-            logger.exception("Failed to get cache key %s: %s", key, e)
-            return None
+        return cast(T | None, value)
 
     def clear(self) -> None:
         """Clear the cache and reset statistics."""
@@ -117,4 +131,4 @@ class MregApiCache(Generic[T]):
             items = self.cache.evict(self.config.tag)
             logger.info("Cleared %d items from cache with tag %s", items, self.config.tag)
         except Exception as e:
-            logger.exception("Failed to clear cache for tag %s: %s", self.config.tag, e)
+            raise CacheError(f"Failed to clear cache: {e}") from e

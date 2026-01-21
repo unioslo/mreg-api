@@ -34,6 +34,7 @@ from mreg_api.cache import MregApiCache
 from mreg_api.cache import create_cache
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
+from mreg_api.exceptions import CacheMiss
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InvalidAuthTokenError
@@ -523,22 +524,24 @@ class MregClient(metaclass=SingletonMeta):
         self._check_response(result, method, url)
         return result
 
-    def _make_cache_key(self, path: str, params: QueryParams | None) -> str:
+    def _make_cache_key(self, path: str, params: QueryParams | None, ok404: bool) -> str:
         """Create a unique cache key from request path and parameters.
 
         Args:
             path: API endpoint path
             params: Query parameters dict
+            ok404: ok404 parameter
 
         Returns:
             A deterministic string key for caching
         """
+        parts = [path, f"ok404={ok404}"]
         if params:
             # Sort params for consistent key generation
             sorted_params = sorted((k, str(v)) for k, v in params.items())
             param_str = "&".join(f"{k}={v}" for k, v in sorted_params)
-            return f"{path}?{param_str}"
-        return path
+            parts.append(param_str)
+        return "?".join(parts)
 
     @overload
     def get(self, path: str, params: QueryParams | None, ok404: Literal[True]) -> Response | None: ...
@@ -555,9 +558,13 @@ class MregClient(metaclass=SingletonMeta):
     def get(self, path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
         """Make a standard get request."""
         if self._cache_enabled and self._cache is not None:
-            cache_key = self._make_cache_key(path, params)
-            if (cached := self._cache.get(cache_key)) is not None:
-                return cached
+            cache_key = self._make_cache_key(path, params, ok404)
+
+            try:
+                return self._cache.get(cache_key)
+            except CacheMiss:
+                logger.debug("Cache miss for key: %s", cache_key)
+
             ret = self._do_get(path, params, ok404)
             self._cache.set(cache_key, ret)
             return ret

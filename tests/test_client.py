@@ -52,6 +52,7 @@ def test_client_caching(httpserver: HTTPServer) -> None:
     assert hosts1 == hosts2
 
     # Using client directly to access endpoint
+    client.clear_cache()
     init_endpoint()
 
     # First fetch - should hit the server
@@ -63,6 +64,7 @@ def test_client_caching(httpserver: HTTPServer) -> None:
     assert "No handler found" in exc_info.value.response.text
     assert exc_info.value.response.status_code == snapshot(500)
 
+    # We know the endpoint doesn't work, so this is certain to go via the cache
     resp2 = client.get(str(Host.endpoint()), params=None, ok404=False)
 
     assert resp.content == resp2.content
