@@ -229,3 +229,6 @@ convention = "google"
 
 [tool.setuptools_scm]
 version_file = "mreg_api/_version.py"
+
+[tool.pyright]
+reportUnusedCallResult = "information"
