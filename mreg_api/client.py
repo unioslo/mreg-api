@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import logging
 import re
 from collections import deque
@@ -9,8 +10,10 @@ from collections.abc import Iterable
 from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
+from typing import Callable
 from typing import Literal
 from typing import NamedTuple
+from typing import ParamSpec
 from typing import TypeVar
 from typing import get_origin
 from typing import overload
@@ -54,6 +57,7 @@ last_request_method: ContextVar[str | None] = ContextVar("last_request_method", 
 
 
 T = TypeVar("T")
+P = ParamSpec("P")
 
 JsonMappingValidator = TypeAdapter(JsonMapping)
 
@@ -111,6 +115,19 @@ class RequestRecord(NamedTuple):
     def url(self) -> str:
         """Get the full request URL."""
         return str(self.request.url)
+
+
+def invalidate_cache(func: Callable[P, T]) -> Callable[P, T]:
+    """Decorator that clears the cache after a successful mutating request."""
+
+    @functools.wraps(func)
+    def wrapper(self: MregClient, *args: P.args, **kwargs: P.kwargs) -> T:
+        result = func(self, *args, **kwargs)
+        # Clear cache after successful mutation (if it exists)
+        self.clear_cache()
+        return result
+
+    return wrapper  # pyright: ignore[reportReturnType]
 
 
 class MregClient(metaclass=SingletonMeta):
@@ -187,11 +204,16 @@ class MregClient(metaclass=SingletonMeta):
         if self._cache is None:
             self._cache = self._create_cache()
 
+    def clear_cache(self) -> None:
+        """Clear the client's GET response cache."""
+        if self._cache:
+            self._cache.clear()
+
     def disable_cache(self, *, clear: bool = True) -> None:
         """Disable caching of GET responses for this client."""
         self._cache_enabled = False
-        if clear and self._cache:
-            self._cache.clear()
+        if clear:
+            self.clear_cache()
         self._cache = None
 
     def set_token(self, token: str) -> None:
@@ -489,7 +511,7 @@ class MregClient(metaclass=SingletonMeta):
             if (cached := self._cache.get(cache_key)) is not None:
                 return cached
             ret = self._do_get(path, params, ok404)
-            self._cache.cache.set(cache_key, ret)
+            self._cache.set(cache_key, ret)
             return ret
         return self._do_get(path, params, ok404)
 
@@ -519,6 +541,7 @@ class MregClient(metaclass=SingletonMeta):
     @overload
     def post(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
 
+    @invalidate_cache
     def post(
         self,
         path: str,
@@ -552,6 +575,7 @@ class MregClient(metaclass=SingletonMeta):
     @overload
     def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
 
+    @invalidate_cache
     def patch(
         self,
         path: str,
@@ -585,6 +609,7 @@ class MregClient(metaclass=SingletonMeta):
     @overload
     def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
 
+    @invalidate_cache
     def delete(
         self,
         path: str,

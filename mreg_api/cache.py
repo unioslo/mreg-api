@@ -85,10 +85,10 @@ class MregApiCache(Generic[T]):
             ttl=self.ttl,
         )
 
-    def set(self, key: str, value: T, expire: int | None = None) -> None:
+    def set(self, key: str, value: T | None, expire: int | None = None) -> None:
         """Set a value in the cache."""
         try:
-            self.cache.set(key, value, expire=expire or self.ttl)
+            self.cache.set(key, value, expire=expire or self.ttl, tag=self.tag)
         except Exception as e:
             logger.exception("Failed to set cache key %s: %s", key, e)
 

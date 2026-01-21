@@ -78,3 +78,66 @@ def test_client_caching(httpserver: HTTPServer) -> None:
             }
         ]
     )
+
+
+@pytest.mark.parametrize("method", ["POST", "PATCH", "DELETE"])
+def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str) -> None:
+    client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=True)
+    assert client._cache is not None
+
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+    )
+
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method=method).respond_with_json(
+        {"detail": "Mutation successful"}
+    )
+
+    hosts_pre_mutation = Host.get_list()
+    assert len(hosts_pre_mutation) == 1
+
+    # Assert we can access the cached data
+    hosts_pre_mutation_cached = Host.get_list()
+    assert len(hosts_pre_mutation_cached) == 1
+
+    # We don't care about the mutation response or respecting what it would actually do
+    if method == "POST":
+        client.post("/api/v1/hosts/", params={"name": "newhost.example.com"})
+    elif method == "PATCH":
+        client.patch("/api/v1/hosts/", params={"comment": "Updated comment"})
+    elif method == "DELETE":
+        client.delete("/api/v1/hosts/")
+
+    # Pretend response has changed after mutation
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "id": 2,
+                "name": "host2.example.com",
+                "ipaddresses": [],
+                "comment": "My other comment",
+                "created_at": "2025-01-01T00:00:00Z",
+                "updated_at": "2025-01-01T00:00:00Z",
+            },
+        ]
+    )
+
+    hosts_post_mutation = Host.get_list()
+    assert len(hosts_post_mutation) == 2
