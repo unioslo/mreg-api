@@ -5,6 +5,7 @@ from __future__ import annotations
 import ipaddress
 import logging
 import warnings
+from abc import ABC
 from collections.abc import Iterable
 from datetime import date
 from datetime import datetime
@@ -1032,7 +1033,7 @@ class ReverseZoneDelegation(Delegation, APIMixin):
         return True
 
 
-class HostPolicy(FrozenModel, WithName):
+class HostPolicy(FrozenModel, WithName, ABC):
     """Base model for Host Policy objects.
 
     Note:
