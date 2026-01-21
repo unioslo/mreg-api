@@ -214,10 +214,16 @@ class MregClient(metaclass=SingletonMeta):
         """Get the cache wrapper if caching is enabled."""
         return create_cache(self._cache_config, Response)
 
-    def enable_cache(self) -> None:
+    def enable_cache(self, config: CacheConfig | None = None) -> None:
         """Enable caching of GET responses for this client."""
         self.is_cache_enabled = True
-        if self._cache is None:
+
+        # Set new config if passed in
+        if config is not None:
+            self._cache_config = config
+
+        # Re-configure cache if config was passed in or it doesn't exist
+        if self._cache is None or config is not None:
             self._cache = self._create_cache()
 
     def clear_cache(self) -> int:
