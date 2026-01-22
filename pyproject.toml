@@ -232,3 +232,4 @@ version_file = "mreg_api/_version.py"
 
 [tool.pyright]
 reportUnusedCallResult = "information"
+reportImportCycles = "information"
