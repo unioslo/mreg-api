@@ -408,11 +408,8 @@ class MregClient(metaclass=SingletonMeta):
 
         Does not handle connection errors.
 
-        Args:
-            fail: Whether to raise an exception on failure
-
         Raises:
-            APIError: If the authorization test fails and fail=True
+            APIError: If the authorization test fails
 
         Returns:
             True if authorization is valid, False otherwise
