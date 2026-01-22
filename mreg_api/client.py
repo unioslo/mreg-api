@@ -373,7 +373,7 @@ class MregClient(metaclass=SingletonMeta):
         logger.info("Authenticating %s @ %s", username, token_url)
 
         try:
-            result = httpx.post(
+            response = httpx.post(
                 token_url,
                 data={"username": username, "password": password},
                 timeout=self.timeout,
@@ -381,13 +381,13 @@ class MregClient(metaclass=SingletonMeta):
         except httpx.RequestError as e:
             raise LoginFailedError(f"Connection failed: {e}") from e
 
-        if not result.is_success:
+        if not response.is_success:
             # NOTE: Exception uses parsed API error message if possible
-            raise LoginFailedError(result.text)
+            raise LoginFailedError(response.text, response)
 
-        token = result.json().get("token")
+        token = response.json().get("token")
         if not token:
-            raise LoginFailedError("No token received from server")
+            raise LoginFailedError("No token received from server", response)
         token = str(token)
         self.set_token(token)
 
