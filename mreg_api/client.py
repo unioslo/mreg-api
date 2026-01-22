@@ -11,6 +11,7 @@ from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
 from typing import Callable
+from typing import Concatenate
 from typing import Literal
 from typing import NamedTuple
 from typing import ParamSpec
@@ -120,7 +121,9 @@ class RequestRecord(NamedTuple):
         return str(self.request.url)
 
 
-def invalidate_cache(func: Callable[P, T]) -> Callable[P, T]:
+def invalidate_cache(
+    func: Callable[Concatenate[MregClient, P], T],
+) -> Callable[Concatenate[MregClient, P], T]:
     """Decorator that clears the cache after a successful mutating request."""
 
     @functools.wraps(func)
@@ -130,7 +133,7 @@ def invalidate_cache(func: Callable[P, T]) -> Callable[P, T]:
         self.clear_cache()
         return result
 
-    return wrapper  # pyright: ignore[reportReturnType]
+    return wrapper
 
 
 class MregClient(metaclass=SingletonMeta):
