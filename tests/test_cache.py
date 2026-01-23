@@ -1,6 +1,10 @@
 from __future__ import annotations
 
+import logging
+from unittest.mock import patch
+
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api import CacheConfig
 from mreg_api.cache import MregApiCache
@@ -57,3 +61,46 @@ def test_cache_disable() -> None:
     assert cache.is_enabled
     value = cache.get("test_key")
     assert value == "test_value"
+
+
+def test_cache_readonly_fs_without_directory_arg(caplog: pytest.LogCaptureFixture) -> None:
+    """Test cache instantiation with no directory argument on read-only filesystem(uses tmpdir)."""
+    caplog.set_level(logging.WARNING)
+    with patch("tempfile.mkdtemp") as mock_mkdtemp:
+        mock_mkdtemp.side_effect = PermissionError("Read-only directory")
+        cache = MregApiCache.new(CacheConfig(enable=True, directory=None))
+
+        # Tempdir creation failed, cache should be disabled
+        assert caplog.record_tuples == snapshot(
+            [
+                (
+                    "mreg_api.cache",
+                    30,
+                    "Failed to create diskcache.Cache: Read-only directory. Cache will be disabled.",
+                )
+            ]
+        )
+        assert not cache.is_enabled
+        assert cache._cache is None  # pyright: ignore[reportPrivateUsage]
+
+
+def test_cache_readonly_fs_with_directory_arg(caplog: pytest.LogCaptureFixture) -> None:
+    """Test cache instantiation with no directory argument on read-only filesystem."""
+    caplog.set_level(logging.WARNING)
+    with patch("os.makedirs") as mock_makedirs:
+        # Mock both directory strategies
+        mock_makedirs.side_effect = PermissionError("Read-only directory")
+        cache = MregApiCache.new(CacheConfig(enable=True, directory="/tmp/mreg_api_cache_test"))
+
+        # Creation of specified directory failed, cache should be disabled
+        assert caplog.record_tuples == snapshot(
+            [
+                (
+                    "mreg_api.cache",
+                    30,
+                    'Failed to create diskcache.Cache: [Errno None] Cache directory "/tmp/mreg_api_cache_test" does not exist and could not be created. Cache will be disabled.',
+                )
+            ]
+        )
+        assert not cache.is_enabled
+        assert cache._cache is None  # pyright: ignore[reportPrivateUsage]

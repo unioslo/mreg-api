@@ -57,6 +57,7 @@ def _create_cache(config: CacheConfig) -> Cache | None:
         diskcache.Cache instance, or None if creation failed.
     """
     if not config.enable:
+        logger.debug("Cache is disabled in config, not creating cache.")
         return None
 
     try:
