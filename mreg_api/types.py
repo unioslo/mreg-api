@@ -16,10 +16,6 @@ from typing import TypedDict
 from typing import TypeVar
 
 from pydantic import TypeAdapter
-from pydantic import ValidationError
-from pydantic import ValidationInfo
-from pydantic import ValidatorFunctionWrapHandler
-from pydantic_core import PydanticCustomError
 from typing_extensions import TypeAliasType
 
 CommandFunc = Callable[[argparse.Namespace], None]
@@ -66,22 +62,6 @@ IP_AddressT = ipaddress.IPv4Address | ipaddress.IPv6Address
 IP_NetworkT = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 IP_networkTV = TypeVar("IP_networkTV", ipaddress.IPv4Network, ipaddress.IPv6Network)
-
-
-# Source: https://docs.pydantic.dev/2.7/concepts/types/#named-recursive-types
-def json_custom_error_validator(
-    value: Any, handler: ValidatorFunctionWrapHandler, _info: ValidationInfo
-) -> Any:
-    """Simplify the error message to avoid a gross error stemming from
-    exhaustive checking of all union options.
-    """  # noqa: D205
-    try:
-        return handler(value)
-    except ValidationError:
-        raise PydanticCustomError(
-            "invalid_json",
-            "Input is not valid json",
-        ) from None
 
 
 Json = TypeAliasType(
