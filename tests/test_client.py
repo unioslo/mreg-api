@@ -150,7 +150,7 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
     assert len(hosts_post_mutation) == 2
 
 
-def test_client_cache_contextmanager_disabled(httpserver: HTTPServer) -> None:
+def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=True)
     assert client._cache is not None
 
@@ -171,7 +171,7 @@ def test_client_cache_contextmanager_disabled(httpserver: HTTPServer) -> None:
     assert len(client.get_client_history()) == 1
 
     # Perform same fetches within the context manager - should bypass cache
-    with client.cache_disabled():
+    with client.caching(enable=False):
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
             [
                 {
@@ -214,11 +214,11 @@ def test_client_cache_contextmanager_disabled(httpserver: HTTPServer) -> None:
     assert info_post.misses == info_pre.misses
 
 
-def test_client_cache_contextmanager_enabled(httpserver: HTTPServer) -> None:
+def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
     client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=False)
     assert client._cache is None
 
-    with client.cache_enabled():
+    with client.caching(enable=True):
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
             [
                 {

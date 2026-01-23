@@ -187,9 +187,9 @@ class MregClient(metaclass=SingletonMeta):
             self._cache_config = cache
 
         self._cache: MregApiCache[Response] | None = None
-        # TODO: Get rid of is_cache_enabled. Ideally, we can rely fully
-        # on whether or not self._cache exists to determine if caching
-        # is enabled.
+        # TODO: Get rid of is_cache_enabled. Ideally, we have better heuristics
+        # for this. Either via the presence of a cache object, or some setting
+        # on the cache object itself we can easily check.
         if self.is_cache_enabled:
             self._cache = self._create_cache()
 
@@ -242,28 +242,38 @@ class MregClient(metaclass=SingletonMeta):
             self.clear_cache()
 
     @contextmanager
-    def cache_enabled(self):
-        """Context manager to temporarily enable caching."""
-        was_enabled = self.is_cache_enabled
-        if not was_enabled:
-            self.enable_cache()
-        try:
-            yield
-        finally:
-            if not was_enabled:
-                self.disable_cache()
+    def caching(self, enable: bool = True):
+        """Context manager to temporarily enable or disable caching.
 
-    @contextmanager
-    def cache_disabled(self):
-        """Context manager to temporarily disable caching."""
+        Args:
+            enable: If True, enable caching within the context.
+                    If False, disable caching within the context.
+
+        Example:
+            >>> with client.caching(enable=True):
+            ...     # caching is enabled here
+            ...     pass
+            >>> with client.caching(enable=False):
+            ...     # caching is disabled here
+            ...     pass
+        """
         was_enabled = self.is_cache_enabled
-        if was_enabled:
-            self.disable_cache(clear=False)
+        changed = enable != was_enabled
+
+        if changed:
+            if enable:
+                self.enable_cache()
+            else:
+                self.disable_cache(clear=False)
+
         try:
             yield
         finally:
-            if was_enabled:
-                self.enable_cache()
+            if changed:
+                if was_enabled:
+                    self.enable_cache()
+                else:
+                    self.disable_cache()
 
     def get_cache_info(self) -> CacheInfo | None:
         """Get statistics about the client's cache.
