@@ -44,57 +44,127 @@ class CacheInfo(BaseModel):
         return value.human_readable()
 
 
-def create_cache(config: CacheConfig, item_type: type[T]) -> MregApiCache[T] | None:
-    """Create the global mreg-cli cache.
+def _create_cache(config: CacheConfig) -> Cache | None:
+    """Create a diskcache.Cache based on the provided configuration.
 
-    Falls back to a no-op cache object if the diskcache cache cannot be created.
+    If the diskcache.Cache cannot be created (e.g., filesystem access denied),
+    returns None.
+
+    Args:
+        config: Cache configuration.
+
+    Returns:
+        diskcache.Cache instance, or None if creation failed.
     """
+    if not config.enable:
+        return None
+
     try:
-        return MregApiCache[item_type](Cache(), config=config)
+        return Cache(directory=config.directory, timeout=config.timeout)
     except Exception as e:
-        logger.exception("Failed to create cache: %s", e)
+        logger.warning("Failed to create diskcache.Cache: %s. Cache will be disabled.", e)
         return None
 
 
 class CacheConfig(BaseModel):
     """Configuration for the mreg-api cache."""
 
-    enabled: bool = True
-    ttl: int = DEFAULT_CACHE_TTL
-    tag: str = DEFAULT_CACHE_TAG
+    enable: bool = True
+    ttl: int = 300
+    tag: str = "mreg-api"
+    timeout: int = 60
     directory: str | None = None
 
 
 @final
 class MregApiCache(Generic[T]):
-    """Wrapper around the mreg-cli cache."""
+    """Wrapper around the mreg-api cache.
 
-    def __init__(self, cache: Cache, config: CacheConfig) -> None:
-        """Initialize the cache wrapper."""
-        self.cache = cache
+    This class can operate in two modes:
+    1. Enabled: When a valid diskcache.Cache is provided
+    2. Disabled: When cache is None (no-op mode, all operations are safe to call)
+
+    The disabled mode allows callers to use the cache interface without null checks.
+    """
+
+    def __init__(self, cache: Cache | None, config: CacheConfig) -> None:
+        """Initialize the cache wrapper.
+
+        Args:
+            cache: The underlying diskcache.Cache instance, or None for disabled mode.
+            config: Configuration for cache behavior.
+        """
+        # NOTE: VERY IMPORTANT!!
+        # _NEVER_ do `if self._cache` checks, as diskcache.Cache implements __bool__
+        # to check if the cache is non-empty, which is NOT what we want anywhere.
+        self._cache = cache
         self.config = config
 
-    def get_info(self) -> CacheInfo:
+    @property
+    def has_backend(self) -> bool:
+        """Return True if an underlying cache backend is available."""
+        return self._cache is not None
+
+    @property
+    def is_enabled(self) -> bool:
+        """Return True if cache is operational (has backend and is enabled in config)."""
+        return self.has_backend and self.config.enable
+
+    @classmethod
+    def new(cls, config: CacheConfig) -> MregApiCache[T]:
+        """Create a new MregApiCache instance based on the provided configuration.
+
+        Args:
+            config: Cache configuration.
+
+        Returns:
+            MregApiCache instance (may be in disabled mode if creation failed).
+        """
+        cache = _create_cache(config)
+        return cls(cache, config=config)
+
+    def enable(self) -> None:
+        """Enable the cache."""
+        self.config.enable = True
+        # We have no cache backend yet, try to create one
+        if self._cache is None:
+            self._cache = _create_cache(self.config)
+
+    def disable(self) -> None:
+        """Disable the cache."""
+        self.config.enable = False
+
+    def get_info(self) -> CacheInfo | None:
         """Get information about the cache.
 
-        Raises:
-            ValueError: If the cache statistics cannot be retrieved.
+        Returns:
+            CacheInfo object with cache statistics, or None if cache is disabled.
         """
-        hits, misses = self.cache.stats()
+        # No cache object exists.
+        # We can return stats for disabled cache as long as we have a backend.
+        if self._cache is None:
+            return None
+
+        hits, misses = self._cache.stats()
 
         return CacheInfo(
-            size=self.cache.volume(),  # pyright: ignore[reportAny]
+            size=self._cache.volume(),  # pyright: ignore[reportAny]
             hits=hits,  # pyright: ignore[reportArgumentType]
             misses=misses,  # pyright: ignore[reportArgumentType]
-            items=len(self.cache),  # pyright: ignore[reportArgumentType]
-            directory=self.cache.directory,
+            items=len(self._cache),  # pyright: ignore[reportArgumentType]
+            directory=self._cache.directory,
             ttl=self.config.ttl,
         )
 
     def set(self, key: str, value: T | None, expire: int | None = None) -> None:
-        """Set a value in the cache."""
+        """Set a value in the cache.
+
+        No-op if cache is disabled.
+        """
+        if not self.is_enabled or self._cache is None:
+            return
         try:
-            self.cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
+            self._cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
         except Exception as e:
             raise CacheError(f"Failed to set cache key {key}: {e}") from e
 
@@ -102,11 +172,14 @@ class MregApiCache(Generic[T]):
         """Get a value from the cache.
 
         Raises:
-            CacheMiss: If the key is not found in the cache.
+            CacheMiss: If the key is not found in the cache or cache is disabled.
         """
+        if not self.is_enabled or self._cache is None:
+            raise CacheMiss(f"Cache disabled, key: {key}")
+
         # Use sentinel to distinguish between None and missing key
         try:
-            value = self.cache.get(key, default=_CACHE_MISS)  # pyright: ignore[reportReturnType, reportUnknownVariableType]
+            value = self._cache.get(key, default=_CACHE_MISS)  # pyright: ignore[reportReturnType, reportUnknownVariableType]
         except Exception as e:
             raise CacheError(f"Failed to get cache key {key}: {e}") from e
 
@@ -117,9 +190,14 @@ class MregApiCache(Generic[T]):
         return cast(T | None, value)
 
     def clear(self) -> int:
-        """Clear the cache and reset statistics."""
+        """Clear the cache and reset statistics.
+
+        Returns 0 if cache is disabled.
+        """
+        if not self.is_enabled or self._cache is None:
+            return 0
         try:
-            n_items = self.cache.evict(self.config.tag)
+            n_items = self._cache.evict(self.config.tag)
             logger.info("Cleared %d items from cache with tag %s", n_items, self.config.tag)
             return n_items
         except Exception as e:

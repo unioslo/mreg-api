@@ -29,7 +29,7 @@ def test_client_reset_instance() -> None:
 
 def test_client_caching(httpserver: HTTPServer) -> None:
     client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=True)
-    assert client._cache is not None
+    assert client.cache.is_enabled
 
     def init_endpoint() -> None:
         httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_json(
@@ -90,7 +90,7 @@ def test_client_caching(httpserver: HTTPServer) -> None:
 @pytest.mark.parametrize("method", ["POST", "PATCH", "DELETE"])
 def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str) -> None:
     client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=True)
-    assert client._cache is not None
+    assert client.cache.is_enabled
 
     httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
         [
@@ -152,7 +152,7 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
 
 def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=True)
-    assert client._cache is not None
+    assert client.cache.is_enabled
 
     # Do some stuff that gets cached
     httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
@@ -216,7 +216,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
 
 def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
     client = MregClient(url=httpserver.url_for(""), domain="example.com", cache=False)
-    assert client._cache is None
+    assert not client.cache.is_enabled
 
     with client.caching(enable=True):
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(

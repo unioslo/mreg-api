@@ -32,7 +32,6 @@ from mreg_api.__about__ import __version__
 from mreg_api.cache import CacheConfig
 from mreg_api.cache import CacheInfo
 from mreg_api.cache import MregApiCache
-from mreg_api.cache import create_cache
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
@@ -182,16 +181,10 @@ class MregClient(metaclass=SingletonMeta):
         self.user: str | None = user
 
         if isinstance(cache, bool):
-            self._cache_config: CacheConfig = CacheConfig(enabled=cache)
+            _cache_config: CacheConfig = CacheConfig(enable=cache)
         else:
-            self._cache_config = cache
-
-        self._cache: MregApiCache[Response] | None = None
-        # TODO: Get rid of is_cache_enabled. Ideally, we have better heuristics
-        # for this. Either via the presence of a cache object, or some setting
-        # on the cache object itself we can easily check.
-        if self.is_cache_enabled:
-            self._cache = self._create_cache()
+            _cache_config = cache
+        self.cache: MregApiCache[Response] = self._create_cache(_cache_config)
 
         # State
         self._token: str | None = None
@@ -200,46 +193,39 @@ class MregClient(metaclass=SingletonMeta):
         # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
         HostName.domain = domain
 
-    @property
-    def is_cache_enabled(self) -> bool:
-        """GET response caching enabled status."""
-        return self._cache_config.enabled
-
-    @is_cache_enabled.setter
-    def is_cache_enabled(self, value: bool) -> None:
-        self._cache_config.enabled = value
-
     def _get_cache_tag(self) -> str:
         """Get the cache tag for this client."""
         return f"mreg_api_client_cache_{self.url.replace('://', '_').replace('/', '_')}"
 
-    def _create_cache(self) -> MregApiCache[Response] | None:
-        """Get the cache wrapper if caching is enabled."""
-        return create_cache(self._cache_config, Response)
+    def _create_cache(self, config: CacheConfig) -> MregApiCache[Response]:
+        """Create the cache wrapper."""
+        return MregApiCache[Response].new(config)
 
     def enable_cache(self, config: CacheConfig | None = None) -> None:
-        """Enable caching of GET responses for this client."""
-        self.is_cache_enabled = True
+        """Enable caching of GET responses for this client.
 
-        # Set new config if passed in
+        If a new config is provided, the cache is recreated with that config.
+        Otherwise, just enables caching on the existing cache.
+        """
         if config is not None:
-            self._cache_config = config
+            # Recreate cache with new config
+            self.cache = self._create_cache(config)
+        else:
+            self.cache.enable()
 
-        # Re-configure cache if config was passed in or it doesn't exist
-        if self._cache is None or config is not None:
-            self._cache = self._create_cache()
+    def disable_cache(self, *, clear: bool = True) -> None:
+        """Disable caching of GET responses for this client.
+
+        :param clear: If True, clear the existing cache data.
+                      If False, leave the cache data intact.
+        """
+        if clear:
+            self.clear_cache()
+        self.cache.disable()
 
     def clear_cache(self) -> int:
         """Clear the client's GET response cache."""
-        if self._cache:
-            return self._cache.clear()
-        return 0
-
-    def disable_cache(self, *, clear: bool = True) -> None:
-        """Disable caching of GET responses for this client."""
-        self.is_cache_enabled = False
-        if clear:
-            self.clear_cache()
+        return self.cache.clear()
 
     @contextmanager
     def caching(self, enable: bool = True):
@@ -257,10 +243,9 @@ class MregClient(metaclass=SingletonMeta):
             ...     # caching is disabled here
             ...     pass
         """
-        was_enabled = self.is_cache_enabled
-        changed = enable != was_enabled
+        was_enabled = self.cache.is_enabled
 
-        if changed:
+        if enable != was_enabled:
             if enable:
                 self.enable_cache()
             else:
@@ -269,11 +254,11 @@ class MregClient(metaclass=SingletonMeta):
         try:
             yield
         finally:
-            if changed:
+            if enable != was_enabled:
                 if was_enabled:
                     self.enable_cache()
                 else:
-                    self.disable_cache()
+                    self.disable_cache(clear=False)
 
     def get_cache_info(self) -> CacheInfo | None:
         """Get statistics about the client's cache.
@@ -282,9 +267,7 @@ class MregClient(metaclass=SingletonMeta):
             CacheInfo object or None if caching is disabled
 
         """
-        if self._cache:
-            return self._cache.get_info()
-        return None
+        return self.cache.get_info()
 
     def set_token(self, token: str) -> None:
         """Set the authorization token for API requests.
@@ -575,16 +558,16 @@ class MregClient(metaclass=SingletonMeta):
 
     def get(self, path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
         """Make a standard get request."""
-        if self.is_cache_enabled and self._cache is not None:
+        if self.cache.is_enabled:
             cache_key = self._make_cache_key(path, params, ok404)
 
             try:
-                return self._cache.get(cache_key)
+                return self.cache.get(cache_key)
             except CacheMiss:
                 logger.debug("Cache miss for key: %s", cache_key)
 
             ret = self._do_get(path, params, ok404)
-            self._cache.set(cache_key, ret)
+            self.cache.set(cache_key, ret)
             return ret
         return self._do_get(path, params, ok404)
 
