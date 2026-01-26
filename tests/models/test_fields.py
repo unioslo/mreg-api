@@ -9,6 +9,7 @@ from mreg_api.exceptions import InputFailure
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
+from mreg_api.models.fields import hostname_domain
 
 
 @pytest.mark.parametrize(
@@ -38,7 +39,7 @@ from mreg_api.models.fields import NameList
     ],
 )
 def test_valid_hostname(hostname: str) -> None:
-    HostName.domain = "example.com"  # Set domain for wildcard validation
+    hostname_domain.set("example.com")
     res = HostName.parse_or_raise(hostname)
     assert res
 

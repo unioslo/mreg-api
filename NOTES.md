@@ -28,9 +28,7 @@ Token needs to be retrieved from the client (`MregClient.get_token()`) and saved
 
 ## HostName validation
 
-HostName validation has been decoupled from MregCliConfig. Currently, a new class variable `HostName.domain` is used to provide a default domain when parsing hostnames. This can be set by the CLI after reading configuration.
-
-It is not a very elegant solution, so we should consider other approaches.
+HostName validation has been decoupled from MregCliConfig. The domain used for wildcard hostname validation is now stored in a context var named `hostname_domain` in `mreg_api.models.fields`. This variable is automatically set upon client initialization to the domain used in the client.
 
 # Mreg API
 
