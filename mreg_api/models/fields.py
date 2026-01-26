@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import re
+from contextvars import ContextVar
 from typing import Annotated
 from typing import Any
 
@@ -28,11 +29,13 @@ from mreg_api.types import get_type_adapter
 
 logger = logging.getLogger(__name__)
 
+# Context variable for hostname domain - used during validation to append
+# the default domain to hostnames without domains. Set by MregClient on initialization.
+hostname_domain: ContextVar[str] = ContextVar("hostname_domain", default="uio.no")
+
 
 class HostName(str):
     """Hostname string type."""
-
-    domain: str = "uio.no"  # Default domain if none provided
 
     @classmethod
     def parse(cls, obj: Any) -> HostName | None:
@@ -76,7 +79,7 @@ class HostName(str):
         if "." in value:
             return value
 
-        domain = HostName.domain
+        domain = hostname_domain.get()
         # Append domain name if in config and it does not end with it
         if domain and not value.endswith(domain):
             return f"{value}.{domain}"

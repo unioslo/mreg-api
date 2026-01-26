@@ -12,6 +12,7 @@ from enum import StrEnum
 from typing import Any
 from typing import Callable
 from typing import Concatenate
+from typing import Generator
 from typing import Literal
 from typing import NamedTuple
 from typing import ParamSpec
@@ -45,7 +46,7 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
-from mreg_api.models.fields import HostName
+from mreg_api.models.fields import hostname_domain
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
@@ -190,8 +191,43 @@ class MregClient(metaclass=SingletonMeta):
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
 
-        # FIXME: SUPER JANKY TO SET A CLASS VAR HERE!
-        HostName.domain = domain
+        # Set the hostname domain context for validation
+        hostname_domain.set(domain)
+
+    def set_domain(self, domain: str) -> None:
+        """Set the default domain for hostname validation.
+
+        This permanently changes the domain used for hostname validation
+        until `reset_domain` is called or `set_domain` is called again.
+        For temporary changes, use the `domain_override` context manager.
+
+        Args:
+            domain: The default domain to append to short hostnames.
+        """
+        hostname_domain.set(domain)
+
+    def reset_domain(self) -> None:
+        """Reset the hostname domain to the value from client initialization."""
+        hostname_domain.set(self.domain)
+
+    @contextmanager
+    def domain_override(self, domain: str) -> Generator[None, None, None]:
+        """Temporarily override the hostname domain within a context.
+
+        Args:
+            domain: The domain to use within the context.
+
+        Example:
+            >>> with client.domain_override("example.com"):
+            ...     # hostname validation uses example.com here
+            ...     pass
+            >>> # hostname validation uses the original domain again
+        """
+        token = hostname_domain.set(domain)
+        try:
+            yield
+        finally:
+            hostname_domain.reset(token)
 
     def _get_cache_tag(self) -> str:
         """Get the cache tag for this client."""
