@@ -434,7 +434,11 @@ def test_client_get_list_paginated_invalid(
     )
     with pytest.raises(MregValidationError) as exc_info:
         client.get_list("/test_client_get_list_paginated_invalid")
-    assert "did not return valid paginated JSON" in exc_info.exconly()
+    exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
+    assert (
+        "Failed to validate paginated JSON response from GET <server_url>/test_client_get_list_paginated_invalid"
+        in exc_msg
+    )
 
 
 def test_client_get_list_non_paginated(httpserver: HTTPServer, client: MregClient) -> None:
@@ -466,7 +470,14 @@ def test_client_get_list_non_paginated_non_array(httpserver: HTTPServer, client:
     )
     with pytest.raises(MregValidationError) as exc_info:
         client.get_list("/test_client_get_list_non_paginated_non_array")
-    assert "did not return a valid JSON" in exc_info.exconly()
+    exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
+    assert exc_msg == snapshot("""\
+mreg_api.exceptions.MregValidationError: Failed to validate JSON list response from GET <server_url>/test_client_get_list_non_paginated_non_array
+  Input: {'not': 'an array'}
+  Errors:
+    Field: \n\
+    Reason: Input should be a valid array\
+""")
 
 
 def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:
@@ -479,7 +490,14 @@ def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, clie
     )
     with pytest.raises(MregValidationError) as exc_info:
         client.get_list("/test_client_get_list_non_paginated_invalid_json")
-    assert "did not return a valid JSON" in exc_info.exconly()
+    exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
+    assert exc_msg == snapshot("""\
+mreg_api.exceptions.MregValidationError: Failed to validate JSON list response from GET <server_url>/test_client_get_list_non_paginated_invalid_json
+  Input: [{'key': 'value'}, 'foo',]
+  Errors:
+    Field: \n\
+    Reason: Invalid JSON: key must be a string at line 1 column 3\
+""")
 
 
 def test_client_get_list_unique_paginated(httpserver: HTTPServer, client: MregClient) -> None:
@@ -582,6 +600,32 @@ def test_client_get_list_unique_non_paginated_no_result(
     ).respond_with_json([])
     resp = client.get_list_unique("/test_client_get_list_unique_non_paginated_no_result", params={})
     assert resp is None
+
+
+def test_client_get_list_unique_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:
+    """get_list_unique with multiple unique results is an error."""
+    httpserver.expect_oneshot_request(
+        "/test_client_get_list_unique_paginated_too_many_results"
+    ).respond_with_json(
+        {
+            # Invalid result: expected list containing a single dict
+            "results": ["invalid_not_a_dict"],
+            "count": 1,
+            "next": None,
+            "previous": None,
+        }
+    )
+    with pytest.raises(MregValidationError) as exc_info:
+        client.get_list_unique("/test_client_get_list_unique_paginated_too_many_results", params={})
+
+    exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
+    assert exc_msg == snapshot("""\
+mreg_api.exceptions.MregValidationError: Failed to validate JSON mapping response from GET <server_url>/test_client_get_list_unique_paginated_too_many_results
+  Input: invalid_not_a_dict
+  Errors:
+    Field: \n\
+    Reason: Input should be a valid dictionary\
+""")
 
 
 def test_client_set_domain() -> None:

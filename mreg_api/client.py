@@ -27,6 +27,7 @@ from httpx import Request
 from httpx import Response
 from pydantic import BaseModel
 from pydantic import TypeAdapter
+from pydantic import ValidationError
 from pydantic import field_validator
 
 from mreg_api.__about__ import __version__
@@ -810,8 +811,8 @@ class MregClient(metaclass=SingletonMeta):
             return None
         try:
             return JsonMappingValidator.validate_python(ret)
-        except ValueError as e:
-            raise MregValidationError(f"Failed to validate response from {path}: {e}") from e
+        except ValidationError as e:
+            raise MregValidationError.from_pydantic(e, "JSON mapping") from e
 
     @overload
     def get_list_generic(
@@ -958,8 +959,8 @@ def validate_list_response(response: Response) -> list[Json]:
     try:
         return ListResponse.validate_json(response.text)
     # NOTE: ValueError catches custom Pydantic errors too
-    except ValueError as e:
-        raise MregValidationError(f"{response.url} did not return a valid JSON array") from e
+    except ValidationError as e:
+        raise MregValidationError.from_pydantic(e, "JSON list") from e
 
 
 def validate_paginated_response(response: Response) -> PaginatedResponse:
@@ -971,5 +972,5 @@ def validate_paginated_response(response: Response) -> PaginatedResponse:
     """
     try:
         return PaginatedResponse.from_response(response)
-    except ValueError as e:
-        raise MregValidationError(f"{response.url} did not return valid paginated JSON") from e
+    except ValidationError as e:
+        raise MregValidationError.from_pydantic(e, "paginated JSON") from e

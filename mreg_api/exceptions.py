@@ -175,10 +175,11 @@ class MregValidationError(MregApiBaseError):
         self.pydantic_error = pydantic_error
 
     @classmethod
-    def from_pydantic(cls, e: ValidationError) -> MregValidationError:
+    def from_pydantic(cls, e: ValidationError, context: str | None = None) -> MregValidationError:
         """Create an MregValidationError from a Pydantic MregValidationError.
 
         :param e: The Pydantic MregValidationError.
+        :param context: What was being validated (e.g., "JSON", "string", "object").
         :returns: The created MregValidationError.
         """
         from mreg_api.client import last_request_method  # noqa: PLC0415
@@ -187,7 +188,9 @@ class MregValidationError(MregApiBaseError):
         # Display a title containing the HTTP method and URL if available
         method = last_request_method.get()
         url = last_request_url.get()
-        msg = f"Failed to validate {e.title}"
+
+        ctx = context or e.title
+        msg = f"Failed to validate {ctx}"
         if url and method:
             msg += f" response from {method.upper()} {url}"
 
