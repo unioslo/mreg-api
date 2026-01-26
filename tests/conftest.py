@@ -10,12 +10,15 @@ from mreg_api.models.fields import hostname_domain
 
 
 @pytest.fixture(autouse=True, scope="function")
-def reset_instance_after_test() -> None:
+def reset_instance_after_test() -> Generator[None, None, None]:
     """Reset MregClient singleton instance after each test."""
     try:
-        MregClient.reset_instance()
-    except KeyError:
-        pass
+        yield
+    finally:
+        try:
+            MregClient.reset_instance()
+        except KeyError:
+            pass
 
 
 @pytest.fixture(autouse=True, scope="function")
