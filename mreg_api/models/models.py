@@ -3839,3 +3839,9 @@ class HealthInfo(BaseModel):
             heartbeat=HeartbeatHealth.fetch(),
             ldap=LDAPHealth.fetch(),
         )
+
+
+class TokenAuth(FrozenModel):
+    """Model for token authentication response."""
+
+    token: str

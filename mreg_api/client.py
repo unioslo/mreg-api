@@ -48,6 +48,7 @@ from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.models.fields import hostname_domain
+from mreg_api.models.models import TokenAuth
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
@@ -194,6 +195,17 @@ class MregClient(metaclass=SingletonMeta):
 
         # IMPORTANT (DO NOT REMOVE!): set the domain name for hostname validation
         self.set_domain(self._domain)
+        self._reset_contextvars()
+
+    def __del__(self) -> None:
+        """Cleanup on deletion."""
+        self._reset_contextvars()
+        self.session.close()
+
+    def _reset_contextvars(self) -> None:
+        """Reset context variables used for request tracking."""
+        _ = last_request_url.set(None)
+        _ = last_request_method.set(None)
 
     def set_domain(self, domain: str) -> None:
         """Set the default domain for hostname validation.
@@ -421,10 +433,13 @@ class MregClient(metaclass=SingletonMeta):
             # NOTE: Exception uses parsed API error message if possible
             raise LoginFailedError(response.text, response)
 
-        token = response.json().get("token")
-        if not token:
-            raise LoginFailedError("No token received from server", response)
-        token = str(token)
+        if not (json_str := response.text):
+            raise LoginFailedError("No token received from server")
+        try:
+            token = TokenAuth.model_validate_json(json_str).token
+        except ValidationError as e:
+            raise LoginFailedError(f"Failed to parse authentication token: {e}") from e
+
         self.set_token(token)
 
         logger.info("Authentication successful for %s", username)
