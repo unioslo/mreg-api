@@ -177,7 +177,7 @@ class MregClient(metaclass=SingletonMeta):
         )
 
         self.url: str = url
-        self.domain: str = domain
+        self._domain: str = domain  # Store initial domain for reset
         self.timeout: int = timeout
         self.user: str | None = user
 
@@ -191,31 +191,35 @@ class MregClient(metaclass=SingletonMeta):
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
 
-        # Set the hostname domain context for validation
-        hostname_domain.set(domain)
+        # IMPORTANT (DO NOT REMOVE!): set the domain name for hostname validation
+        self.set_domain(self._domain)
 
     def set_domain(self, domain: str) -> None:
         """Set the default domain for hostname validation.
 
-        This permanently changes the domain used for hostname validation
-        until `reset_domain` is called or `set_domain` is called again.
-        For temporary changes, use the `domain_override` context manager.
-
         Args:
-            domain: The default domain to append to short hostnames.
+            domain (str): The domain to set for hostname validation.
         """
-        hostname_domain.set(domain)
+        _ = hostname_domain.set(domain)
 
     def reset_domain(self) -> None:
         """Reset the hostname domain to the value from client initialization."""
-        hostname_domain.set(self.domain)
+        _ = hostname_domain.set(self._domain)
+
+    def get_domain(self) -> str:
+        """Get the current hostname domain used for validation.
+
+        Returns:
+            The current hostname domain.
+        """
+        return hostname_domain.get()
 
     @contextmanager
     def domain_override(self, domain: str) -> Generator[None, None, None]:
-        """Temporarily override the hostname domain within a context.
+        """Temporarily override the hostname domain.
 
         Args:
-            domain: The domain to use within the context.
+            domain (str): The domain to use within the context.
 
         Example:
             >>> with client.domain_override("example.com"):
@@ -223,6 +227,8 @@ class MregClient(metaclass=SingletonMeta):
             ...     pass
             >>> # hostname validation uses the original domain again
         """
+        # Save token to support nested contexts purely for correctness reasons.
+        # It's unclear why one would ever want to use nested domain overrides.
         token = hostname_domain.set(domain)
         try:
             yield
