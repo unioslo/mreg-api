@@ -6,6 +6,7 @@ import functools
 import logging
 import re
 from collections import deque
+from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from contextvars import Token
@@ -13,7 +14,6 @@ from enum import StrEnum
 from typing import Any
 from typing import Callable
 from typing import Concatenate
-from typing import Generator
 from typing import Literal
 from typing import NamedTuple
 from typing import ParamSpec
