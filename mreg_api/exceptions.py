@@ -37,7 +37,7 @@ class APIError(MregApiBaseError):
         :param response: The response object that triggered the exception.
         """
         super().__init__(message)
-        self._response = response
+        self._response: Response | None = response
 
     @cached_property
     def errors(self) -> MREGErrorResponse | None:
@@ -51,22 +51,19 @@ class APIError(MregApiBaseError):
 
     @cached_property
     def details(self) -> str:
-        """Get the error details string."""
+        """Error details from response as plain text."""
         if self.errors and (msg := self.errors.as_str()):
             return msg
-        elif self.response and self.response.text:
+        if self.response and self.response.text:
             return self.response.text
-        return str(self.args[0]) if self.args else ""
+        return ""
 
     @cached_property
-    def details_json(self) -> str:
-        """The error details as JSON string.
-
-        Falls back on regular details string if no structured errors are available.
-        """
-        if self.errors:
-            return self.errors.as_json_str()
-        return self.details
+    def details_json(self) -> str | None:
+        """The error details as JSON string."""
+        if self.errors and (msg := self.errors.as_json_str()):
+            return msg
+        return None
 
     @property
     def request(self) -> Request | None:
@@ -128,13 +125,13 @@ class APIError(MregApiBaseError):
         if request_info := self._request_info_str():
             parts.append(request_info)
 
-        # Error details (JSON or plain text)
-        if json:
-            details = self.details_json
-        else:
-            details = self.details
-        if details:
+        # Error details (JSON or plain text), falling back to exception message
+        if json and (details := self.details_json):
             parts.append(details)
+        elif details := self.details:
+            parts.append(details)
+        elif self.args:
+            parts.append(str(self.args[0]))
 
         return "\n".join(p.strip() for p in parts if p.strip())
 
