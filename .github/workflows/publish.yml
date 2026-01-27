@@ -18,11 +18,15 @@ jobs:
 
         steps:
             - uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Fetch all history to verify tag is on main
 
-            # https://docs.github.com/en/actions/writing-workflows/choosing-what-your-workflow-does/accessing-contextual-information-about-workflow-runs#determining-when-to-use-contexts
-            - name: Exit if not on main branch
-              if: ${{ github.ref != 'refs/heads/main' }}
-              run: exit -1
+            - name: Exit if tag is not on main branch
+              run: |
+                  if ! git branch -r --contains HEAD | grep -q 'origin/main'; then
+                    echo "Error: Tagged commit is not on the main branch"
+                    exit 1
+                  fi
 
             - name: Install uv
               uses: astral-sh/setup-uv@v2
