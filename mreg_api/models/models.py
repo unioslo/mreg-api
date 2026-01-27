@@ -1800,25 +1800,26 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         """Return the endpoint for the class."""
         return Endpoint.NetworkCommunity
 
+    @property
     def endpoint_with_id(self) -> str:
         """Return the endpoint with the community ID."""
         return self.endpoint().with_params(self.network_address, self.id)
-
-    @property
-    def network_address(self) -> str:
-        """Return the network object for the community."""
-        return Network.get_by_field_or_raise("id", str(self.network)).network
 
     @property
     def hosts_endpoint(self) -> str:
         """Return the endpoint with policy and community IDs."""
         return Endpoint.NetworkCommunityHosts.with_params(self.network_address, self.id)
 
+    @property
+    def network_address(self) -> str:
+        """Return the network object for the community."""
+        return Network.get_by_field_or_raise("id", str(self.network)).network
+
     def refetch(self) -> Self:
         """Refetch the community object."""
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        return MregClient().get_typed(self.endpoint_with_id(), self.__class__)
+        return MregClient().get_typed(self.endpoint_with_id, self.__class__)
 
     def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
         """Patch the community.
@@ -1830,7 +1831,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         try:
-            MregClient().patch(self.endpoint_with_id(), **fields)
+            MregClient().patch(self.endpoint_with_id, **fields)
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
@@ -1842,7 +1843,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         """Delete the community."""
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().delete(self.endpoint_with_id())
+        resp = MregClient().delete(self.endpoint_with_id)
         return resp.is_success if resp else False
 
     def get_hosts(self) -> list[Host]:
