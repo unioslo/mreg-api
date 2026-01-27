@@ -2474,7 +2474,9 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                 if self.contact:
                     # HACK: The field itself is immutable, but it always contains
                     #       a list object that we can append to.
-                    dt = datetime.fromtimestamp(0, tz=self.created_at.tzinfo)  # tz-aware epoch time
+                    dt = datetime(
+                        1970, 1, 1, 0, 0, 0, tzinfo=self.created_at.tzinfo
+                    )  # tz-aware epoch time
                     self.contacts.append(
                         ContactEmail(id=0, email=self.contact, created_at=dt, updated_at=dt)
                     )

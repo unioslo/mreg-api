@@ -42,8 +42,8 @@ def test_host_contacts_compatibility() -> None:
     assert host.contacts == snapshot(
         [
             ContactEmail(
-                created_at=datetime.datetime(1970, 1, 1, 1, 0),
-                updated_at=datetime.datetime(1970, 1, 1, 1, 0),
+                created_at=datetime.datetime(1970, 1, 1, 0, 0),
+                updated_at=datetime.datetime(1970, 1, 1, 0, 0),
                 id=0,
                 email="test-contact@example.com",
             )
