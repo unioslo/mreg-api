@@ -637,21 +637,21 @@ class MregClient(metaclass=SingletonMeta):
 
     @overload
     def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Any
+        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
     ) -> Response | None: ...
 
     @overload
     def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Any
+        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
     ) -> Response: ...
 
     @overload
     def post(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Any
+        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
     ) -> Response: ...
 
     @overload
-    def post(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
+    def post(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
 
     @invalidate_cache
     def post(
@@ -659,7 +659,7 @@ class MregClient(metaclass=SingletonMeta):
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **kwargs: Any,
+        **kwargs: Json,
     ) -> Response | None:
         """Make a POST request."""
         try:
@@ -671,21 +671,21 @@ class MregClient(metaclass=SingletonMeta):
 
     @overload
     def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Any
+        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
     ) -> Response | None: ...
 
     @overload
     def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Any
+        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
     ) -> Response: ...
 
     @overload
     def patch(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Any
+        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
     ) -> Response: ...
 
     @overload
-    def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
+    def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
 
     @invalidate_cache
     def patch(
@@ -693,7 +693,7 @@ class MregClient(metaclass=SingletonMeta):
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **kwargs: Any,
+        **kwargs: Json,
     ) -> Response | None:
         """Make a PATCH request."""
         try:
@@ -705,21 +705,21 @@ class MregClient(metaclass=SingletonMeta):
 
     @overload
     def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Any
+        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
     ) -> Response | None: ...
 
     @overload
     def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Any
+        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
     ) -> Response: ...
 
     @overload
     def delete(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Any
+        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
     ) -> Response: ...
 
     @overload
-    def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Any) -> Response: ...
+    def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
 
     @invalidate_cache
     def delete(
@@ -727,7 +727,7 @@ class MregClient(metaclass=SingletonMeta):
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **kwargs: Any,
+        **kwargs: Json,
     ) -> Response | None:
         """Make a DELETE request."""
         try:
