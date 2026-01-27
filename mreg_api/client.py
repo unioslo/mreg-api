@@ -552,6 +552,9 @@ class MregClient(metaclass=SingletonMeta):
 
         request = self.session.build_request(method=method, url=url, params=params, json=data or None)
         logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
+        # Update context variables for error reporting
+        last_request_url.set(str(request.url))
+        last_request_method.set(method)
 
         result = self.session.send(request)
         # Log response in response log
@@ -560,10 +563,6 @@ class MregClient(metaclass=SingletonMeta):
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:
         #     self.session.build_request(method=method, url=url, params=params, data=data or None)
-
-        # Update context variables for error reporting
-        last_request_url.set(str(request.url))
-        last_request_method.set(method)
 
         # Log response
         request_id = result.headers.get(Header.REQUEST_ID, "?")
