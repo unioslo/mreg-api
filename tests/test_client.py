@@ -660,11 +660,6 @@ def test_client_reset_domain() -> None:
     client.reset_domain()
     assert client.get_domain() == snapshot("example.com")
 
-    # trigger destructor (reverts to default)
-    del client
-    MregClient.reset_instance()
-    assert hostname_domain.get() == snapshot("uio.no")  # default domain
-
 
 def test_client_reset_domain_after_multiple_set_domain() -> None:
     """reset_domain always restores to the initialization value, not the previous value."""

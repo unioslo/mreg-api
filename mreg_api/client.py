@@ -200,7 +200,6 @@ class MregClient(metaclass=SingletonMeta):
         """Cleanup on deletion."""
         self._reset_contextvars()
         self.session.close()
-        _ = hostname_domain.reset(self._original_domain_token)
 
     def _reset_contextvars(self) -> None:
         """Reset context variables used for request tracking."""
