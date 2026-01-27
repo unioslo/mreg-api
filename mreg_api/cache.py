@@ -88,6 +88,15 @@ class MregApiCache(Generic[T]):
     The disabled mode allows callers to use the cache interface without null checks.
     """
 
+    _cache: Cache | None
+    """The underlying diskcache.Cache instance, or None if disabled.
+
+    Warning:
+        NEVER use `if self._cache` checks! diskcache.Cache implements `__bool__`
+        to check if the cache is non-empty, not whether it exists. Always use
+        `if self._cache is None` instead.
+    """
+
     def __init__(self, cache: Cache | None, config: CacheConfig) -> None:
         """Initialize the cache wrapper.
 
@@ -95,9 +104,6 @@ class MregApiCache(Generic[T]):
             cache: The underlying diskcache.Cache instance, or None for disabled mode.
             config: Configuration for cache behavior.
         """
-        # NOTE: VERY IMPORTANT!!
-        # _NEVER_ do `if self._cache` checks, as diskcache.Cache implements __bool__
-        # to check if the cache is non-empty, which is NOT what we want anywhere.
         self._cache = cache
         self.config = config
 
