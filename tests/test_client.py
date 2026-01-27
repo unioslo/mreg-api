@@ -642,15 +642,28 @@ def test_client_set_domain() -> None:
 
 def test_client_reset_domain() -> None:
     """reset_domain restores the hostname domain to the value from initialization."""
+    assert hostname_domain.get() == snapshot("uio.no")  # default domain
+
     client = MregClient(url="http://example.com", domain="example.com")
     assert hostname_domain.get() == "example.com"
 
+    # Set another domain
     client.set_domain("other.org")
-    assert client.get_domain() == "other.org"
+    assert hostname_domain.get() == "other.org"
 
+    # Reset to original
     client.reset_domain()
-    assert client.get_domain() == "example.com"
-    assert HostName.validate_hostname("myhost") == "myhost.example.com"
+    assert client.get_domain() == snapshot("example.com")
+
+    # Can be called multiple times (also in destructor)
+    client.reset_domain()
+    client.reset_domain()
+    assert client.get_domain() == snapshot("example.com")
+
+    # trigger destructor (reverts to default)
+    del client
+    MregClient.reset_instance()
+    assert hostname_domain.get() == snapshot("uio.no")  # default domain
 
 
 def test_client_reset_domain_after_multiple_set_domain() -> None:

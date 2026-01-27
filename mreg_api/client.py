@@ -8,6 +8,7 @@ import re
 from collections import deque
 from contextlib import contextmanager
 from contextvars import ContextVar
+from contextvars import Token
 from enum import StrEnum
 from typing import Any
 from typing import Callable
@@ -189,31 +190,30 @@ class MregClient(metaclass=SingletonMeta):
             _cache_config = cache
         self.cache: MregApiCache[Response] = self._create_cache(_cache_config)
 
-        # State
+        # State setup/reset
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
-
-        # IMPORTANT (DO NOT REMOVE!): set the domain name for hostname validation
-        self.set_domain(self._domain)
+        self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
 
     def __del__(self) -> None:
         """Cleanup on deletion."""
         self._reset_contextvars()
         self.session.close()
+        _ = hostname_domain.reset(self._original_domain_token)
 
     def _reset_contextvars(self) -> None:
         """Reset context variables used for request tracking."""
         _ = last_request_url.set(None)
         _ = last_request_method.set(None)
 
-    def set_domain(self, domain: str) -> None:
+    def set_domain(self, domain: str) -> Token[str]:
         """Set the default domain for hostname validation.
 
         Args:
             domain (str): The domain to set for hostname validation.
         """
-        _ = hostname_domain.set(domain)
+        return hostname_domain.set(domain)
 
     def reset_domain(self) -> None:
         """Reset the hostname domain to the value from client initialization."""
