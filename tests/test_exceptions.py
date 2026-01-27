@@ -102,7 +102,7 @@ Failed to validate Host response from GET http://localhost:12345/hosts/foobar
 
 def test_validation_error_no_request() -> None:
     """Test a validation error that did not originate from an API request."""
-    assert last_request_url.get() is None
+    last_request_url.set(None)  # Ensure no last request URL is set
 
     with pytest.raises(PydanticValidationError) as exc_info:
         Host.model_validate({"name": "test"})  # Missing required fields
