@@ -3678,10 +3678,10 @@ class ServerLibraries(BaseModel):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         try:
-            response = MregClient().get(cls.endpoint())
+            response = MregClient().get_typed(cls.endpoint(), dict[str, str])
             libraries: list[Library] = []
 
-            for name, version in response.json().items():
+            for name, version in response.items():
                 libraries.append(Library(name=name, version=version))
             return cls(libraries=libraries)
         except Exception as e:
