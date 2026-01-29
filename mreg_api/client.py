@@ -509,7 +509,7 @@ class MregClient(metaclass=SingletonMeta):
             response = httpx.post(
                 token_url,
                 data={"username": username, "password": password},
-                timeout=self.timeout,
+                timeout=self._timeout,
             )
         except httpx.RequestError as e:
             raise LoginFailedError(f"Connection failed: {e}") from e
@@ -535,7 +535,7 @@ class MregClient(metaclass=SingletonMeta):
         """Logout from MREG (invalidate token on server)."""
         path = urljoin(self.url, Endpoint.TokenLogout)
         try:
-            self.session.post(path, timeout=self.timeout)
+            self.session.post(path, timeout=self._timeout)
         except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
@@ -555,7 +555,7 @@ class MregClient(metaclass=SingletonMeta):
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
                 params={"page_size": 1},
-                timeout=5,
+                timeout=self._timeout,
             )
             ret.raise_for_status()
         except httpx.HTTPStatusError as e:
