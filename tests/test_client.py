@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import datetime
 from typing import Any
 
 import pytest
@@ -7,6 +8,7 @@ from inline_snapshot import snapshot
 from pytest_httpserver import HTTPServer
 from werkzeug import Response
 
+from mreg_api import models
 from mreg_api.client import MregClient
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
@@ -718,3 +720,72 @@ def test_client_domain_override_after_set_domain() -> None:
     # reset_domain should still restore to original initialization value
     client.reset_domain()
     assert client.get_domain() == "example.com"
+
+
+def test_client_model_composition(client: MregClient, httpserver: HTTPServer) -> None:
+    """MregClient has models composed as attributes for easy access."""
+    assert hasattr(client, "host")
+    assert client.host is Host
+
+    # Test that we can use the composed model to make requests
+    httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+    )
+
+    assert client.host.get_list() == snapshot(
+        [
+            Host(
+                created_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                updated_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                id=1,
+                name="host1.example.com",
+                ipaddresses=[],
+                comment="My comment",
+            )
+        ]
+    )
+
+
+def _to_snake_case(name: str) -> str:
+    special_cases: dict[str, str] = {
+        "BacnetID": "bacnet_id",
+        "CNAME": "cname",
+        "HInfo": "hinfo",
+        "IPAddress": "ip_address",
+        "LDAPHealth": "ldap_health",
+        "MX": "mx",
+        "NAPTR": "naptr",
+        "PTR_override": "ptr_override",
+        "SSHFP": "sshfp",
+        "TXT": "txt",
+    }
+    if name in special_cases:
+        return special_cases[name]
+    return "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
+
+
+def _client_models() -> list[type]:
+    client_models: list[type] = []
+    for model in models.__all__:
+        model_obj = getattr(models, model)
+        # All models with a get or fetch method should be accessible via the client
+        if any(hasattr(model_obj, attr) for attr in ["get", "fetch"]):
+            client_models.append(model_obj)
+    return client_models
+
+
+@pytest.mark.parametrize("model", _client_models())
+def test_client_model_composition_dynamic(model: type, client: MregClient) -> None:
+    """Ensure all models with get/fetch are accessible via client attributes."""
+    attr_name = _to_snake_case(model.__name__)
+    assert hasattr(client, attr_name)
+    assert getattr(client, attr_name) is model

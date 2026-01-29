@@ -48,6 +48,46 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
+from mreg_api.models import CNAME
+from mreg_api.models import MX
+from mreg_api.models import NAPTR
+from mreg_api.models import SSHFP
+from mreg_api.models import TXT
+from mreg_api.models import Atom
+from mreg_api.models import BacnetID
+from mreg_api.models import Community
+from mreg_api.models import Delegation
+from mreg_api.models import ExcludedRange
+from mreg_api.models import ForwardZone
+from mreg_api.models import ForwardZoneDelegation
+from mreg_api.models import HealthInfo
+from mreg_api.models import HeartbeatHealth
+from mreg_api.models import HInfo
+from mreg_api.models import Host
+from mreg_api.models import HostCommunity
+from mreg_api.models import HostGroup
+from mreg_api.models import HostList
+from mreg_api.models import HostPolicy
+from mreg_api.models import IPAddress
+from mreg_api.models import Label
+from mreg_api.models import LDAPHealth
+from mreg_api.models import Location
+from mreg_api.models import NameServer
+from mreg_api.models import Network
+from mreg_api.models import NetworkOrIP
+from mreg_api.models import NetworkPolicy
+from mreg_api.models import NetworkPolicyAttribute
+from mreg_api.models import NetworkPolicyAttributeValue
+from mreg_api.models import Permission
+from mreg_api.models import PTR_override
+from mreg_api.models import ReverseZone
+from mreg_api.models import ReverseZoneDelegation
+from mreg_api.models import Role
+from mreg_api.models import ServerLibraries
+from mreg_api.models import ServerVersion
+from mreg_api.models import Srv
+from mreg_api.models import UserInfo
+from mreg_api.models import Zone
 from mreg_api.models.fields import hostname_domain
 from mreg_api.models.models import TokenAuth
 from mreg_api.types import HTTPMethod
@@ -165,6 +205,48 @@ class MregClient(metaclass=SingletonMeta):
         >>> from mreg_api.models import Host
         >>> Host.get_by_any_means("example.uio.no")
     """
+
+    # Compose models on client for easy access
+    atom: type[Atom] = Atom
+    bacnet_id: type[BacnetID] = BacnetID
+    cname: type[CNAME] = CNAME
+    community: type[Community] = Community
+    delegation: type[Delegation] = Delegation
+    excluded_range: type[ExcludedRange] = ExcludedRange
+    forward_zone: type[ForwardZone] = ForwardZone
+    forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation
+    hinfo: type[HInfo] = HInfo
+    host: type[Host] = Host
+    host_community: type[HostCommunity] = HostCommunity
+    host_group: type[HostGroup] = HostGroup
+    host_list: type[HostList] = HostList
+    host_policy: type[HostPolicy] = HostPolicy
+    ip_address: type[IPAddress] = IPAddress
+    label: type[Label] = Label
+    location: type[Location] = Location
+    mx: type[MX] = MX
+    name_server: type[NameServer] = NameServer
+    naptr: type[NAPTR] = NAPTR
+    network: type[Network] = Network
+    network_or_ip: type[NetworkOrIP] = NetworkOrIP
+    network_policy: type[NetworkPolicy] = NetworkPolicy
+    network_policy_attribute: type[NetworkPolicyAttribute] = NetworkPolicyAttribute
+    network_policy_attribute_value: type[NetworkPolicyAttributeValue] = NetworkPolicyAttributeValue
+    permission: type[Permission] = Permission
+    ptr_override: type[PTR_override] = PTR_override
+    reverse_zone: type[ReverseZone] = ReverseZone
+    reverse_zone_delegation: type[ReverseZoneDelegation] = ReverseZoneDelegation
+    role: type[Role] = Role
+    srv: type[Srv] = Srv
+    sshfp: type[SSHFP] = SSHFP
+    txt: type[TXT] = TXT
+    zone: type[Zone] = Zone
+    health_info: type[HealthInfo] = HealthInfo
+    heartbeat_health: type[HeartbeatHealth] = HeartbeatHealth
+    ldap_health: type[LDAPHealth] = LDAPHealth
+    server_libraries: type[ServerLibraries] = ServerLibraries
+    server_version: type[ServerVersion] = ServerVersion
+    user_info: type[UserInfo] = UserInfo
 
     def __init__(
         self,
