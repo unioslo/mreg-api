@@ -253,7 +253,7 @@ class MregClient(metaclass=SingletonMeta):
         url: str = "https://mreg.uio.no",
         domain: str = "uio.no",
         user: str | None = None,
-        timeout: int = 20,
+        timeout: int = 60,
         cache: CacheConfig | bool = False,
         follow_redirects: bool = False,
         history_size: int | None = 100,
@@ -262,11 +262,12 @@ class MregClient(metaclass=SingletonMeta):
         self.session: httpx.Client = httpx.Client(
             headers={"User-Agent": f"mreg-api-{__version__}"},
             follow_redirects=follow_redirects,
+            timeout=timeout,
         )
 
         self.url: str = url
         self._domain: str = domain  # Store initial domain for reset
-        self.timeout: int = timeout
+        self._timeout: int = timeout
         self.user: str | None = user
 
         if isinstance(cache, bool):
