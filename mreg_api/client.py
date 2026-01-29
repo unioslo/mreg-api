@@ -90,7 +90,10 @@ class SingletonMeta(type):
 
     def reset_instance(self) -> None:
         """Reset the singleton instance (useful for testing)."""
-        del self._instances[self]
+        try:
+            del self._instances[self]
+        except KeyError:
+            pass
 
 
 class RequestRecord(NamedTuple):

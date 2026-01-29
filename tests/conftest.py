@@ -19,7 +19,7 @@ def reset_instance_after_test() -> Generator[None, None, None]:
             # FIXME: Can we force the destructor to be called?
             # MregClient()._reset_contextvars()  # pyright: ignore[reportPrivateUsage]
             MregClient.reset_instance()
-        except KeyError:
+        except Exception:
             pass
 
 
