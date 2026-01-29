@@ -300,7 +300,7 @@ class WithHost(BaseModel):
 class WithZone(BaseModel, APIMixin):
     """Model for an object that has a zone element."""
 
-    zone: int
+    zone: int | None = None
 
     def resolve_zone(self) -> ForwardZone | None:
         """Resolve the zone ID to a (Forward)Zone object.
@@ -309,8 +309,10 @@ class WithZone(BaseModel, APIMixin):
         -----
             - This method will call the API to resolve the zone ID to a Zone object.
             - This assumes that there is a zone attribute in the object.
-
         """
+        if self.zone is None:
+            return None
+
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         data = MregClient().get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
