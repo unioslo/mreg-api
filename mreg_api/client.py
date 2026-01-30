@@ -256,6 +256,7 @@ class MregClient(metaclass=SingletonMeta):
         timeout: int | float | None = 60,
         cache: CacheConfig | bool = False,
         follow_redirects: bool = False,
+        page_size: int | None = None,
         history_size: int | None = 100,
     ) -> None:
         """Initialize the client (only once for singleton)."""
@@ -267,7 +268,7 @@ class MregClient(metaclass=SingletonMeta):
 
         self.url: str = url
         self._domain: str = domain  # Store initial domain for reset
-        self._timeout: int = timeout
+        self._page_size: int | None = page_size
         self.user: str | None = user
 
         if isinstance(cache, bool):
@@ -310,10 +311,6 @@ class MregClient(metaclass=SingletonMeta):
         """
         return hostname_domain.set(domain)
 
-    def reset_domain(self) -> None:
-        """Reset the hostname domain to the value from client initialization."""
-        _ = hostname_domain.set(self._domain)
-
     def get_domain(self) -> str:
         """Get the current hostname domain used for validation.
 
@@ -321,6 +318,10 @@ class MregClient(metaclass=SingletonMeta):
             The current hostname domain.
         """
         return hostname_domain.get()
+
+    def reset_domain(self) -> None:
+        """Reset the hostname domain to the value from client initialization."""
+        _ = hostname_domain.set(self._domain)
 
     @contextmanager
     def domain_override(self, domain: str) -> Generator[None, None, None]:
@@ -624,12 +625,16 @@ class MregClient(metaclass=SingletonMeta):
             APIError: If request fails
 
         """
-        # Passing in an empty params dict causes the constructed request object
-        # to discard any query parameters in the path - we don't want that.
-        # When we are paginating, we have the full URL including query parameters
-        # which means we would lose them if we pass in an empty dict here.
-        if params == {}:
+        # Ensure that we never pass in params when we are paginating,
+        # as that would overwrite the query parameters in the URL.
+        if "?" in path:
             params = None
+        else:
+            params = params or {}
+            # Add default params if we are passing in params
+            if self._page_size:
+                # Add page_size to params if set and not paginating
+                _ = params.setdefault("page_size", self._page_size)
 
         url = urljoin(self.url, path)
 
@@ -643,10 +648,10 @@ class MregClient(metaclass=SingletonMeta):
         if data and method != "PATCH":
             data = self._strip_none(data)
 
-        # Select the appropriate session method
-
+        # Construct the request object
         request = self.session.build_request(method=method, url=url, params=params, json=data or None)
         logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
+
         # Update context variables for error reporting
         last_request_url.set(str(request.url))
         last_request_method.set(method)
