@@ -2,23 +2,16 @@
 
 from __future__ import annotations
 
-import argparse
 import ipaddress
-from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import MutableMapping
 from functools import lru_cache
-from typing import Any
 from typing import Literal
 from typing import TypeAlias
-from typing import TypedDict
 from typing import TypeVar
 
 from pydantic import TypeAdapter
 from pydantic.types import JsonValue
-
-CommandFunc = Callable[[argparse.Namespace], None]
-
 
 HTTPMethod: TypeAlias = Literal[
     "GET",
@@ -32,35 +25,8 @@ HTTPMethod: TypeAlias = Literal[
 ]
 
 
-class TimeInfo(TypedDict):
-    """Type definition for time-related information in the recording entry."""
-
-    timestamp: str
-    timestamp_as_epoch: int
-    runtime_in_ms: int
-
-
-# TODO: remove if we don't need it in this package
-class RecordingEntry(TypedDict):
-    """Type definition for a recording entry."""
-
-    command: str
-    command_filter: str | None
-    command_filter_negate: bool
-    command_issued: str
-    ok: list[str]
-    warning: list[str]
-    error: list[str]
-    output: list[str]
-    api_requests: list[dict[str, Any]]
-    time: TimeInfo | None
-
-
-IP_Version: TypeAlias = Literal[4, 6]
 IP_AddressT = ipaddress.IPv4Address | ipaddress.IPv6Address
 IP_NetworkT = ipaddress.IPv4Network | ipaddress.IPv6Network
-
-IP_networkTV = TypeVar("IP_networkTV", ipaddress.IPv4Network, ipaddress.IPv6Network)
 
 Json = JsonValue
 JsonMapping = Mapping[str, Json]
