@@ -3,18 +3,19 @@
 from __future__ import annotations
 
 import datetime
-import json
 from enum import Enum
 from typing import Any
 from typing import Self
 
 from pydantic import BaseModel
 from pydantic import Field
+from pydantic import ValidationError
 from pydantic import field_validator
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.types import QueryParams
+from mreg_api.types import parse_json_mapping_string
 
 
 class HistoryResource(str, Enum):
@@ -66,12 +67,12 @@ class HistoryItem(BaseModel):
 
     @field_validator("data", mode="before")
     def parse_json_data(cls, v: Any) -> Any:
-        """Ensure that non-dict values are treated as JSON."""
+        """Parse the data field as JSON if it's a string."""
         if isinstance(v, dict):
             return v  # pyright: ignore[reportUnknownVariableType]
         try:
-            return json.loads(v)
-        except json.JSONDecodeError as e:
+            return parse_json_mapping_string(v)
+        except ValidationError as e:
             raise ValueError("Failed to parse history data as JSON") from e
 
     @classmethod
