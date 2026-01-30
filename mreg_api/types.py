@@ -7,7 +7,6 @@ import ipaddress
 from collections.abc import Callable
 from collections.abc import Mapping
 from collections.abc import MutableMapping
-from collections.abc import Sequence
 from functools import lru_cache
 from typing import Any
 from typing import Literal
@@ -16,7 +15,7 @@ from typing import TypedDict
 from typing import TypeVar
 
 from pydantic import TypeAdapter
-from typing_extensions import TypeAliasType
+from pydantic.types import JsonValue
 
 CommandFunc = Callable[[argparse.Namespace], None]
 
@@ -63,11 +62,7 @@ IP_NetworkT = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 IP_networkTV = TypeVar("IP_networkTV", ipaddress.IPv4Network, ipaddress.IPv6Network)
 
-
-Json = TypeAliasType(
-    "Json",
-    dict[str, "Json"] | Sequence["Json"] | str | int | float | bool | None,
-)
+Json = JsonValue
 JsonMapping = Mapping[str, Json]
 QueryParams = MutableMapping[str, str | int | float | bool | None]
 
@@ -84,3 +79,25 @@ def get_type_adapter(t: type[T]) -> TypeAdapter[T]:
 
     """
     return TypeAdapter(t)
+
+
+def parse_json_string(json_string: str) -> Json:
+    """Parse a JSON string into a Python object.
+
+    :param json_string: The JSON string to parse.
+    :returns: The parsed Python object.
+
+    """
+    adapter = get_type_adapter(Json)
+    return adapter.validate_json(json_string)
+
+
+def parse_json_mapping_string(json_string: str) -> JsonMapping:
+    """Parse a JSON string into a Python mapping.
+
+    :param json_string: The JSON string to parse.
+    :returns: The parsed Python mapping.
+
+    """
+    adapter = get_type_adapter(JsonMapping)
+    return adapter.validate_json(json_string)
