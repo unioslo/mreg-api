@@ -253,7 +253,7 @@ class MregClient(metaclass=SingletonMeta):
         url: str = "https://mreg.uio.no",
         domain: str = "uio.no",
         user: str | None = None,
-        timeout: int = 60,
+        timeout: int | float | None = 60,
         cache: CacheConfig | bool = False,
         follow_redirects: bool = False,
         history_size: int | None = 100,
@@ -281,6 +281,16 @@ class MregClient(metaclass=SingletonMeta):
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
         self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
+
+    @property
+    def timeout(self) -> float | None:
+        """Get the current timeout setting."""
+        return self.session.timeout.read
+
+    @timeout.setter
+    def timeout(self, value: int | float | None) -> None:
+        """Set the timeout for requests."""
+        self.session.timeout = value
 
     def __del__(self) -> None:
         """Cleanup on deletion."""
@@ -509,7 +519,7 @@ class MregClient(metaclass=SingletonMeta):
             response = httpx.post(
                 token_url,
                 data={"username": username, "password": password},
-                timeout=self._timeout,
+                timeout=self.timeout,
             )
         except httpx.RequestError as e:
             raise LoginFailedError(f"Connection failed: {e}") from e
@@ -535,7 +545,7 @@ class MregClient(metaclass=SingletonMeta):
         """Logout from MREG (invalidate token on server)."""
         path = urljoin(self.url, Endpoint.TokenLogout)
         try:
-            self.session.post(path, timeout=self._timeout)
+            self.session.post(path, timeout=self.timeout)
         except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
@@ -555,7 +565,7 @@ class MregClient(metaclass=SingletonMeta):
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
                 params={"page_size": 1},
-                timeout=self._timeout,
+                timeout=self.timeout,
             )
             ret.raise_for_status()
         except httpx.HTTPStatusError as e:
