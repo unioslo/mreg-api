@@ -5,13 +5,14 @@ from __future__ import annotations
 import ipaddress
 from collections.abc import Mapping
 from collections.abc import MutableMapping
+from collections.abc import Sequence
 from functools import lru_cache
+from typing import TYPE_CHECKING
 from typing import Literal
 from typing import TypeAlias
 from typing import TypeVar
 
 from pydantic import TypeAdapter
-from pydantic.types import JsonValue
 
 HTTPMethod: TypeAlias = Literal[
     "GET",
@@ -28,7 +29,26 @@ HTTPMethod: TypeAlias = Literal[
 IP_AddressT = ipaddress.IPv4Address | ipaddress.IPv6Address
 IP_NetworkT = ipaddress.IPv4Network | ipaddress.IPv6Network
 
-Json = JsonValue
+
+if TYPE_CHECKING:
+    from typing import Union
+
+    # NOTE: Json ported from Pydantic here, but with Sequence and Mapping
+    #       instead of list and dict
+    Json: TypeAlias = Union[
+        Sequence["Json"],
+        Mapping[str, "Json"],
+        str,
+        bool,
+        int,
+        float,
+        None,
+    ]
+else:
+    from pydantic import JsonValue
+
+    Json = JsonValue
+
 JsonMapping = Mapping[str, Json]
 QueryParams = MutableMapping[str, str | int | float | bool | None]
 
