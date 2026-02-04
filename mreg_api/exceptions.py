@@ -354,22 +354,22 @@ def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     return None
 
 
+ERROR_MAPPING: dict[HTTPMethod, type[APIError]] = {
+    "GET": GetError,
+    "POST": PostError,
+    "PATCH": PatchError,
+    "DELETE": DeleteError,
+}
+
+
 def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
     """Get the appropriate exception class for a given HTTP method.
 
     :param method: The HTTP method.
     :returns: The exception class corresponding to the HTTP method.
     """
-    if method == "GET":
-        return GetError
-    elif method == "POST":
-        return PostError
-    elif method == "PATCH":
-        return PatchError
-    elif method == "DELETE":
-        return DeleteError
-    else:
-        logger.warning(  # pyright: ignore[reportUnreachable]
-            "No specific exception class for HTTP method '%s', using generic APIError", method
-        )
-        return APIError
+    if t := ERROR_MAPPING.get(method):
+        return t
+    # NOTE: should be unreachable
+    logger.warning("No specific exception class for HTTP method '%s', using generic APIError", method)
+    return APIError
