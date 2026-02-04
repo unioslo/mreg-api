@@ -426,6 +426,42 @@ class APIMixin(ABC):
             return None
         return cls(**obj_dict)
 
+    @classmethod
+    def get_first(cls) -> Self | None:
+        """Get the first object from the list.
+
+        :raises EntityNotFound: If no items are found.
+        :returns: The first item from the list.
+        """
+        try:
+            return cls.get_first_or_raise()
+        except EntityNotFound:
+            return None
+
+    @classmethod
+    def get_first_or_raise(cls) -> Self:
+        """Get the first object from the list.
+
+        :raises EntityNotFound: If no items are found.
+        :returns: The first item from the list.
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        obj = MregClient().get_first(cls.endpoint())
+        if not obj:
+            raise EntityNotFound("No items found.")
+        return cls(**obj)
+
+    @classmethod
+    def get_count(cls) -> int:
+        """Get the count of items from the list.
+
+        :returns: The count of items.
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_count(cls.endpoint())
+
     def refetch(self) -> Self:
         """Fetch an updated version of the object.
 

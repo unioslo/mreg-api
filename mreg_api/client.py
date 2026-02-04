@@ -928,6 +928,32 @@ class MregClient(metaclass=SingletonMeta):
         except ValidationError as e:
             raise MregValidationError.from_pydantic(e, "JSON mapping") from e
 
+    def get_first(self, path: str) -> JsonMapping | None:
+        """Get the first item from a list endpoint."""
+        response = self.get(path, {"page_size": 1})
+
+        # Non-paginated results, return them directly
+        if "count" not in response.text:
+            content = validate_list_response(response)
+        else:
+            resp = validate_paginated_response(response)
+            content = resp.results
+        if not content:
+            return None
+        return JsonMappingValidator.validate_python(content[0])
+
+    def get_count(self, path: str) -> int:
+        """Get the count of items from a list endpoint.
+
+        WARNING: will fail for endpoints that do not implement pagination
+                 via a `count` field.
+
+        :returns: The count of items.
+        """
+        response = self.get(path, params={"page_size": 1})
+        resp = validate_paginated_response(response)
+        return resp.count
+
     @overload
     def get_list_generic(
         self,
