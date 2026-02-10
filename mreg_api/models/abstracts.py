@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 from abc import ABC
 from abc import abstractmethod
 from datetime import datetime
@@ -61,6 +62,37 @@ def get_model_aliases(model: BaseModel) -> dict[str, str]:
         for alias in aliases:
             fields[alias] = field_name
     return fields
+
+
+def manager_only(func: Callable[..., Any]) -> Callable[..., Any]:
+    """Allow classmethod calls only from a client manager."""
+
+    @functools.wraps(func)
+    def wrapper(cls: type[Any], *args: Any, **kwargs: Any) -> Any:
+        manager_call = kwargs.pop("_manager", False)
+        client = args[0] if args else kwargs.get("client")
+        if client is None:
+            if not manager_call:
+                raise RuntimeError(
+                    "Direct classmethod usage is not supported. "
+                    "Use a client manager, e.g. client.host().get_by_id(...)."
+                )
+            return func(cls, *args, **kwargs)
+
+        depth = client._manager_call_depth
+        if not manager_call and depth == 0:
+            raise RuntimeError(
+                "Direct classmethod usage is not supported. "
+                "Use a client manager, e.g. client.host().get_by_id(...)."
+            )
+
+        client._manager_call_depth = depth + 1
+        try:
+            return func(cls, *args, **kwargs)
+        finally:
+            client._manager_call_depth = depth
+
+    return wrapper
 
 
 def validate_patched_model(model: BaseModel, fields: dict[str, Any]) -> None:
@@ -165,16 +197,17 @@ class APIMixin(ABC):
         if BaseModel not in cls.__mro__:
             raise TypeError(f"{cls.__name__} must be applied on classes inheriting from BaseModel.")
 
-    def _require_client(self, client: "ClientProtocol | None") -> "ClientProtocol":
-        if client is not None:
-            if self._get_client() is None:
-                self._set_client(client)
-            return client
+    def bind(self, client: "ClientProtocol") -> Self:
+        """Bind this object to a client instance."""
+        self._set_client(client)
+        return self
+
+    def _require_client(self) -> "ClientProtocol":
         client = self._get_client()
         if client is None:
             raise RuntimeError(
                 f"{self.__class__.__name__} instance is not bound to a client. "
-                "Fetch it via a client manager or pass a client explicitly."
+                "Fetch it via a client manager or bind it explicitly."
             )
         return client
 
@@ -193,6 +226,7 @@ class APIMixin(ABC):
         raise NotImplementedError("You must define an endpoint.")
 
     @classmethod
+    @manager_only
     def get(cls, client: "ClientProtocol", _id: int) -> Self | None:
         """Get an object.
 
@@ -205,6 +239,7 @@ class APIMixin(ABC):
         return cls.get_by_id(client, _id)
 
     @classmethod
+    @manager_only
     def get_list_by_id(cls, client: "ClientProtocol", _id: int) -> list[Self]:
         """Get a list of objects by their ID.
 
@@ -223,6 +258,7 @@ class APIMixin(ABC):
         return client._bind_client(ret)
 
     @classmethod
+    @manager_only
     def get_by_id(cls, client: "ClientProtocol", _id: int) -> Self | None:
         """Get an object by its ID.
 
@@ -250,6 +286,7 @@ class APIMixin(ABC):
         return client._bind_client(obj)
 
     @classmethod
+    @manager_only
     def get_by_field(cls, client: "ClientProtocol", field: str, value: str | int) -> Self | None:
         """Get an object by a field.
 
@@ -286,6 +323,7 @@ class APIMixin(ABC):
         return client._bind_client(obj)
 
     @classmethod
+    @manager_only
     def get_by_field_or_raise(
         cls,
         client: "ClientProtocol",
@@ -313,6 +351,7 @@ class APIMixin(ABC):
         return obj
 
     @classmethod
+    @manager_only
     def get_by_field_and_raise(
         cls,
         client: "ClientProtocol",
@@ -340,6 +379,7 @@ class APIMixin(ABC):
         return None
 
     @classmethod
+    @manager_only
     def get_list(
         cls, client: "ClientProtocol", params: QueryParams | None = None, limit: int | None = None
     ) -> list[Self]:
@@ -355,6 +395,7 @@ class APIMixin(ABC):
         return client.get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
 
     @classmethod
+    @manager_only
     def get_by_query(
         cls,
         client: "ClientProtocol",
@@ -375,6 +416,7 @@ class APIMixin(ABC):
         return cls.get_list(client, params=query, limit=limit)
 
     @classmethod
+    @manager_only
     def get_list_by_field(
         cls,
         client: "ClientProtocol",
@@ -396,6 +438,7 @@ class APIMixin(ABC):
         return cls.get_by_query(client, query=query, ordering=ordering, limit=limit)
 
     @classmethod
+    @manager_only
     def get_by_query_unique_or_raise(
         cls,
         client: "ClientProtocol",
@@ -421,6 +464,7 @@ class APIMixin(ABC):
         return obj
 
     @classmethod
+    @manager_only
     def get_by_query_unique_and_raise(
         cls,
         client: "ClientProtocol",
@@ -446,6 +490,7 @@ class APIMixin(ABC):
         return None
 
     @classmethod
+    @manager_only
     def get_by_query_unique(cls, client: "ClientProtocol", data: QueryParams) -> Self | None:
         """Get an object with the given data.
 
@@ -459,6 +504,7 @@ class APIMixin(ABC):
         return client._bind_client(obj)
 
     @classmethod
+    @manager_only
     def get_first(cls, client: "ClientProtocol") -> Self | None:
         """Get the first object from the list.
 
@@ -471,6 +517,7 @@ class APIMixin(ABC):
             return None
 
     @classmethod
+    @manager_only
     def get_first_or_raise(cls, client: "ClientProtocol") -> Self:
         """Get the first object from the list.
 
@@ -484,6 +531,7 @@ class APIMixin(ABC):
         return client._bind_client(result)
 
     @classmethod
+    @manager_only
     def get_count(cls, client: "ClientProtocol") -> int:
         """Get the count of items from the list.
 
@@ -491,7 +539,7 @@ class APIMixin(ABC):
         """
         return client.get_count(cls.endpoint())
 
-    def refetch(self, client: "ClientProtocol | None" = None) -> Self:
+    def refetch(self) -> Self:
         """Fetch an updated version of the object.
 
         Note that the caller (self) of this method will remain unchanged and can contain
@@ -518,8 +566,8 @@ class APIMixin(ABC):
         else:
             lookup = getattr(self, identifier)
 
-        client = self._require_client(client)
-        obj = self.__class__.get_by_id(client, lookup)
+        client = self._require_client()
+        obj = self.__class__.get_by_id(client, lookup, _manager=True)
         if not obj:
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
 
@@ -529,7 +577,6 @@ class APIMixin(ABC):
         self,
         fields: dict[str, Any],
         validate: bool = True,
-        client: "ClientProtocol | None" = None,
     ) -> Self:
         """Patch the object with the given values.
 
@@ -544,9 +591,9 @@ class APIMixin(ABC):
         :returns: The object refetched from the server.
 
         """
-        client = self._require_client(client)
+        client = self._require_client()
         _ = client.patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
-        new_object = self.refetch(client)
+        new_object = self.refetch()
 
         if validate:
             # __init_subclass__ guarantees we inherit from BaseModel
@@ -555,12 +602,12 @@ class APIMixin(ABC):
 
         return new_object
 
-    def delete(self, client: "ClientProtocol | None" = None) -> bool:
+    def delete(self) -> bool:
         """Delete the object.
 
         :returns: True if the object was deleted, False otherwise.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         response = client.delete(self.endpoint().with_id(self.id_for_endpoint()))
 
         if response and response.is_success:
@@ -569,6 +616,7 @@ class APIMixin(ABC):
         return False
 
     @classmethod
+    @manager_only
     def create(
         cls, client: "ClientProtocol", params: JsonMapping, fetch_after_create: bool = True
     ) -> Self | None:

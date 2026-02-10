@@ -52,6 +52,7 @@ from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.abstracts import FrozenModel
 from mreg_api.models.abstracts import FrozenModelWithTimestamps
+from mreg_api.models.abstracts import manager_only
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
@@ -279,7 +280,7 @@ class WithHost(BaseModel, APIMixin):
 
     host: int
 
-    def resolve_host(self, client: "ClientProtocol | None" = None) -> Host | None:
+    def resolve_host(self) -> Host | None:
         """Resolve the host ID to a Host object.
 
         Notes:
@@ -288,7 +289,7 @@ class WithHost(BaseModel, APIMixin):
             - This assumes that there is a host attribute in the object.
 
         """
-        client = self._require_client(client)
+        client = self._require_client()
 
         data = client.get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
 
@@ -303,7 +304,7 @@ class WithZone(BaseModel, APIMixin):
 
     zone: int | None = None
 
-    def resolve_zone(self, client: "ClientProtocol | None" = None) -> ForwardZone | None:
+    def resolve_zone(self) -> ForwardZone | None:
         """Resolve the zone ID to a (Forward)Zone object.
 
         Notes:
@@ -314,7 +315,7 @@ class WithZone(BaseModel, APIMixin):
         if self.zone is None:
             return None
 
-        client = self._require_client(client)
+        client = self._require_client()
 
         data = client.get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
 
@@ -400,6 +401,7 @@ class WithName(BaseModel, APIMixin):
         return name.lower() if cls.__name_lowercase__ else name
 
     @classmethod
+    @manager_only
     def get_by_name(cls, client: "ClientProtocol", name: str) -> Self | None:
         """Get a resource by name.
 
@@ -409,6 +411,7 @@ class WithName(BaseModel, APIMixin):
         return cls.get_by_field(client, cls.__name_field__, cls._case_name(name))
 
     @classmethod
+    @manager_only
     def get_by_name_and_raise(cls, client: "ClientProtocol", name: str) -> None:
         """Get a resource by name, raising EntityAlreadyExists if found.
 
@@ -418,6 +421,7 @@ class WithName(BaseModel, APIMixin):
         return cls.get_by_field_and_raise(client, cls.__name_field__, cls._case_name(name))
 
     @classmethod
+    @manager_only
     def get_by_name_or_raise(cls, client: "ClientProtocol", name: str) -> Self:
         """Get a resource by name, raising EntityNotFound if not found.
 
@@ -428,6 +432,7 @@ class WithName(BaseModel, APIMixin):
         return cls.get_by_field_or_raise(client, cls.__name_field__, cls._case_name(name))
 
     @classmethod
+    @manager_only
     def get_list_by_name_regex(cls, client: "ClientProtocol", name: str) -> list[Self]:
         """Get multiple resources by a name regex.
 
@@ -473,6 +478,7 @@ class WithHistory(BaseModel, APIMixin):
         return super().__init_subclass__(**kwargs)
 
     @classmethod
+    @manager_only
     def get_history(cls, client: "ClientProtocol", name: str) -> list[HistoryItem]:
         """Get the history for the object."""
         return HistoryItem.get(client, name, cls.history_resource)
@@ -513,14 +519,14 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
         """Return the endpoint for the class."""
         return Endpoint.PermissionNetgroupRegex
 
-    def add_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
+    def add_label(self, label_name: str) -> Self:
         """Add a label to the permission.
 
         :param label_name: The name of the label to add.
         :returns: The updated Permission object.
         """
-        client = self._require_client(client)
-        label = Label.get_by_name_or_raise(client, label_name)
+        client = self._require_client()
+        label = Label.get_by_name_or_raise(client, label_name, _manager=True)
         if label.id in self.labels:
             raise EntityAlreadyExists(f"The permission already has the label {label_name!r}")
 
@@ -528,14 +534,14 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
         label_ids.append(label.id)
         return self.patch({"labels": label_ids})
 
-    def remove_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
+    def remove_label(self, label_name: str) -> Self:
         """Remove a label from the permission.
 
         :param label_name: The name of the label to remove.
         :returns: The updated Permission object.
         """
-        client = self._require_client(client)
-        label = Label.get_by_name_or_raise(client, label_name)
+        client = self._require_client()
+        label = Label.get_by_name_or_raise(client, label_name, _manager=True)
         if label.id not in self.labels:
             raise EntityNotFound(f"The permission does not have the label {label_name!r}")
 
@@ -614,6 +620,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         return ForwardZone
 
     @classmethod
+    @manager_only
     def verify_nameservers(
         cls, client: "ClientProtocol", nameservers: list[str], force: bool = False
     ) -> None:
@@ -636,6 +643,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             raise ForceMissing("\n".join(errors))
 
     @classmethod
+    @manager_only
     def create_zone(
         cls,
         client: "ClientProtocol",
@@ -657,6 +665,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         return zone_t.create(client, {"name": name, "email": email, "primary_ns": primary_ns})
 
     @classmethod
+    @manager_only
     def get_zone(cls, client: "ClientProtocol", name: str) -> ForwardZone | ReverseZone | None:
         """Get a zone by name.
 
@@ -667,6 +676,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         return zone_t.get_by_name(client, name)
 
     @classmethod
+    @manager_only
     def get_zone_or_raise(cls, client: "ClientProtocol", name: str) -> ForwardZone | ReverseZone:
         """Get a zone by name, and raise if not found.
 
@@ -677,6 +687,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         return zone_t.get_by_name_or_raise(client, name)
 
     @classmethod
+    @manager_only
     def get_zone_and_raise(cls, client: "ClientProtocol", name: str) -> None:
         """Get a zone by name, and raise if found.
 
@@ -685,40 +696,40 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         zone_t = cls.type_by_name(name)
         return zone_t.get_by_name_and_raise(client, name)
 
-    def get_subzones(self, client: "ClientProtocol | None" = None) -> list[Self]:
+    def get_subzones(self) -> list[Self]:
         """Get subzones of the zone, excluding self.
 
         :returns: A list of subzones.
         """
-        client = self._require_client(client)
-        zones = self.get_list_by_field(client, "name__endswith", f".{self.name}")
+        client = self._require_client()
+        zones = self.get_list_by_field(client, "name__endswith", f".{self.name}", _manager=True)
         return [zone for zone in zones if zone.name != self.name]
 
-    def ensure_deletable(self, client: "ClientProtocol | None" = None) -> None:
+    def ensure_deletable(self) -> None:
         """Ensure the zone can be deleted. Raises exception if not.
 
         :raises DeleteError: If zone has entries or subzones.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         # XXX: Not a fool proof check, as e.g. SRVs are not hosts. (yet.. ?)
-        hosts = Host.get_list_by_field(client, "zone", self.id)
+        hosts = Host.get_list_by_field(client, "zone", self.id, _manager=True)
         if hosts:
             raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
 
-        zones = self.get_subzones(client)
+        zones = self.get_subzones()
         if zones:
             names = ", ".join(zone.name for zone in zones)
             raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
 
-    def delete_zone(self, force: bool, client: "ClientProtocol | None" = None) -> bool:
+    def delete_zone(self, force: bool) -> bool:
         """Delete the zone.
 
         :param force: Whether to force the deletion.
         :returns: True if the deletion was successful.
         """
         if not force:
-            self.ensure_deletable(client)
-        return self.delete(client)
+            self.ensure_deletable()
+        return self.delete()
 
     def update_soa(
         self,
@@ -761,7 +772,6 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         comment: str,
         force: bool = False,
         fetch_after_create: bool = True,
-        client: "ClientProtocol | None" = None,
     ) -> Delegation | None:
         """Create a delegation for the zone.
 
@@ -771,19 +781,19 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Force creation if ns/zone doesn't exist.
         :returns: The created delegation object.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         self.ensure_delegation_in_zone(delegation)
-        self.verify_nameservers(client, nameservers, force=force)
+        self.verify_nameservers(client, nameservers, force=force, _manager=True)
 
         if not force:
             # Ensure delegated zone exists and is same type as parent zone
-            delegated_zone = Zone.get_zone(client, delegation)
+            delegated_zone = Zone.get_zone(client, delegation, _manager=True)
             if not delegated_zone:
                 raise InputFailure(f"Zone {delegation!r} does not exist. Must force.")
             if delegated_zone.is_reverse() != self.is_reverse():
                 raise InputFailure(f"Delegation '{delegation}' is not a {self.__class__.__name__} zone")
 
-        self.get_delegation_and_raise(delegation, client=client)
+        self.get_delegation_and_raise(delegation)
 
         cls = Delegation.type_by_zone(self)
         try:
@@ -801,18 +811,16 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             raise e
 
         if fetch_after_create:
-            return self.get_delegation_or_raise(delegation, client=client)
+            return self.get_delegation_or_raise(delegation)
         return None
 
-    def get_delegation(
-        self, name: str, client: "ClientProtocol | None" = None
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+    def get_delegation(self, name: str) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
         """Get a delegation for the zone by name.
 
         :param name: The name of the delegation to get.
         :returns: The delegation object if found.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         self.ensure_delegation_in_zone(name)
         cls = Delegation.type_by_zone(self)
         resp = client.get(cls.endpoint_with_id(self, name), ok404=True)
@@ -821,9 +829,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         delegation = cls.model_validate_json(resp.text)
         return client._bind_client(delegation)
 
-    def get_delegation_or_raise(
-        self, name: str, client: "ClientProtocol | None" = None
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
+    def get_delegation_or_raise(self, name: str) -> ForwardZoneDelegation | ReverseZoneDelegation:
         """Get a delegation for the zone by name, raising EntityNotFound if not found.
 
         :param zone: The zone to search in.
@@ -831,58 +837,52 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :returns: The delegation object.
         :raises EntityNotFound: If the delegation is not found.
         """
-        delegation = self.get_delegation(name, client=client)
+        delegation = self.get_delegation(name)
         if not delegation:
             raise EntityNotFound(f"Could not find delegation {name!r} in zone {name!r}")
         return delegation
 
-    def get_delegation_and_raise(self, name: str, client: "ClientProtocol | None" = None) -> None:
+    def get_delegation_and_raise(self, name: str) -> None:
         """Get a delegation for the zone by name, raising EntityAlreadyExists if found.
 
         :param zone: The zone to search in.
         :param name: The name of the delegation to get.
         :raises EntityAlreadyExists: If the delegation is found.
         """
-        delegation = self.get_delegation(name, client=client)
+        delegation = self.get_delegation(name)
         if delegation:
             raise EntityAlreadyExists(f"Zone {self.name!r} already has a delegation named {name!r}")
 
-    def get_delegations(
-        self, client: "ClientProtocol | None" = None
-    ) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
+    def get_delegations(self) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """Get all delegations for a zone.
 
-        :param zone: The zone to search in.
-        :param name: The name of the delegation to get.
-        :returns: The delegation object.
+        :returns: The delegations for this zone.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         cls = Delegation.type_by_zone(self)
         return client.get_typed(cls.endpoint().with_params(self.name), list[cls])
 
-    def delete_delegation(self, name: str, client: "ClientProtocol | None" = None) -> bool:
+    def delete_delegation(self, name: str) -> bool:
         """Delete a delegation from the zone.
 
         :param delegation: The name of the delegation.
         :returns: True if the deletion was successful.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         # Check if delegation exists
         self.ensure_delegation_in_zone(name)  # check name
-        delegation = self.get_delegation_or_raise(name, client=client)
+        delegation = self.get_delegation_or_raise(name)
         resp = client.delete(delegation.endpoint_with_id(self, name))
         return resp.is_success if resp else False
 
-    def set_delegation_comment(
-        self, name: str, comment: str, client: "ClientProtocol | None" = None
-    ) -> None:
+    def set_delegation_comment(self, name: str, comment: str) -> None:
         """Set the comment for a delegation.
 
         :param name: The name of the delegation.
         :param comment: The comment to set.
         """
-        client = self._require_client(client)
-        delegation = self.get_delegation_or_raise(name, client=client)
+        client = self._require_client()
+        delegation = self.get_delegation_or_raise(name)
         try:
             _ = client.patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
         except PatchError as e:
@@ -903,7 +903,6 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         self,
         nameservers: list[str],
         force: bool = False,
-        client: "ClientProtocol | None" = None,
     ) -> None:
         """Update the nameservers of the zone.
 
@@ -911,8 +910,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Whether to force the update.
         :returns: True if the update was successful.
         """
-        client = self._require_client(client)
-        self.verify_nameservers(client, nameservers, force=force)
+        client = self._require_client()
+        self.verify_nameservers(client, nameservers, force=force, _manager=True)
         path = self.endpoint_nameservers().with_params(self.name)
         try:
             _ = client.patch(path, primary_ns=nameservers)
@@ -939,6 +938,7 @@ class ForwardZone(Zone, WithName, APIMixin):
         return Endpoint.ForwardZonesNameservers
 
     @classmethod
+    @manager_only
     def get_from_hostname(
         cls, client: "ClientProtocol", hostname: HostName
     ) -> ForwardZoneDelegation | ForwardZone | None:
@@ -1109,6 +1109,7 @@ class HostPolicy(FrozenModel, WithName, ABC):
     # defined on the class that can fetch both Roles and Atoms.
     # Thus, we need to define our own implementations of these methods.
     @classmethod
+    @manager_only
     def get_role_or_atom(cls, client: "ClientProtocol", name: str) -> Atom | Role | None:
         """Get an Atom or Role by name.
 
@@ -1126,6 +1127,7 @@ class HostPolicy(FrozenModel, WithName, ABC):
         return None
 
     @classmethod
+    @manager_only
     def get_role_or_atom_or_raise(cls, client: "ClientProtocol", name: str) -> Atom | Role:
         """Get an Atom or Role by name and raise if not found.
 
@@ -1139,6 +1141,7 @@ class HostPolicy(FrozenModel, WithName, ABC):
         raise EntityNotFound(f"Could not find an atom or a role with name {name}")
 
     @classmethod
+    @manager_only
     def get_role_or_atom_and_raise(cls, client: "ClientProtocol", name: str) -> None:
         """Get an Atom or Role by name and raise if found.
 
@@ -1175,6 +1178,7 @@ class Role(HostPolicy, WithHistory):
         return Endpoint.HostPolicyRoles
 
     @classmethod
+    @manager_only
     def get_roles_with_atom(cls, client: "ClientProtocol", name: str) -> list[Self]:
         """Get all roles with a specific atom.
 
@@ -1183,14 +1187,14 @@ class Role(HostPolicy, WithHistory):
         """
         return client.get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
 
-    def add_atom(self, atom_name: str, client: "ClientProtocol | None" = None) -> bool:
+    def add_atom(self, atom_name: str) -> bool:
         """Add an atom to the role.
 
         :param atom_name: The name of the atom to add.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         # Ensure the atom exists
-        _ = Atom.get_by_name_or_raise(client, atom_name)
+        _ = Atom.get_by_name_or_raise(client, atom_name, _manager=True)
         for atom in self.atoms:
             if atom_name == atom:
                 raise EntityAlreadyExists(f"Atom {atom!r} already a member of role {self.name!r}")
@@ -1198,12 +1202,12 @@ class Role(HostPolicy, WithHistory):
         resp = client.post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
         return resp.is_success if resp else False
 
-    def remove_atom(self, atom_name: str, client: "ClientProtocol | None" = None) -> bool:
+    def remove_atom(self, atom_name: str) -> bool:
         """Remove an atom from the role.
 
         :param atom_name: The name of the atom to remove.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         for atom in self.atoms:
             if atom_name == atom:
                 break
@@ -1213,23 +1217,23 @@ class Role(HostPolicy, WithHistory):
         resp = client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
         return resp.is_success if resp else False
 
-    def get_labels(self, client: "ClientProtocol | None" = None) -> list[Label]:
+    def get_labels(self) -> list[Label]:
         """Get the labels associated with the role.
 
         :returns: A list of Label objects.
         """
-        client = self._require_client(client)
-        return [Label.get_by_id_or_raise(client, id_) for id_ in self.labels]
+        client = self._require_client()
+        return [Label.get_by_id_or_raise(client, id_, _manager=True) for id_ in self.labels]
 
-    def add_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
+    def add_label(self, label_name: str) -> Self:
         """Add a label to the role.
 
         :param label_name: The name of the label to add.
 
         :returns: The updated Role object.
         """
-        client = self._require_client(client)
-        label = Label.get_by_name_or_raise(client, label_name)
+        client = self._require_client()
+        label = Label.get_by_name_or_raise(client, label_name, _manager=True)
         if label.id in self.labels:
             raise EntityAlreadyExists(f"The role {self.name!r} already has the label {label_name!r}")
 
@@ -1237,15 +1241,15 @@ class Role(HostPolicy, WithHistory):
         label_ids.append(label.id)
         return self.patch({"labels": label_ids})
 
-    def remove_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
+    def remove_label(self, label_name: str) -> Self:
         """Add a label to the role.
 
         :param label_name: The name of the label to add.
 
         :returns: The updated Role object.
         """
-        client = self._require_client(client)
-        label = Label.get_by_name_or_raise(client, label_name)
+        client = self._require_client()
+        label = Label.get_by_name_or_raise(client, label_name, _manager=True)
         if label.id not in self.labels:
             raise EntityOwnershipMismatch(
                 f"The role {self.name!r} doesn't have the label {label_name!r}"
@@ -1255,30 +1259,30 @@ class Role(HostPolicy, WithHistory):
         label_ids.remove(label.id)
         return self.patch({"labels": label_ids})
 
-    def add_host(self, name: str, client: "ClientProtocol | None" = None) -> bool:
+    def add_host(self, name: str) -> bool:
         """Add a host to the role by name.
 
         :param name: The name of the host to add.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         resp = client.post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
         return resp.is_success if resp else False
 
-    def remove_host(self, name: str, client: "ClientProtocol | None" = None) -> bool:
+    def remove_host(self, name: str) -> bool:
         """Remove a host from the role by name.
 
         :param name: The name of the host to remove.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         resp = client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
         return resp.is_success if resp else False
 
-    def delete(self, client: "ClientProtocol | None" = None) -> bool:
+    def delete(self) -> bool:
         """Delete the role."""
         if self.hosts:
             hosts = ", ".join(self.hosts)
             raise DeleteError(f"Role {self.name!r} used on hosts: {hosts}")
-        return super().delete(client)
+        return super().delete()
 
 
 class Atom(HostPolicy, WithHistory):
@@ -1294,14 +1298,14 @@ class Atom(HostPolicy, WithHistory):
         """Return the endpoint for the class."""
         return Endpoint.HostPolicyAtoms
 
-    def delete(self, client: "ClientProtocol | None" = None) -> bool:
+    def delete(self) -> bool:
         """Delete the atom."""
-        client = self._require_client(client)
-        roles = Role.get_roles_with_atom(client, self.name)
+        client = self._require_client()
+        roles = Role.get_roles_with_atom(client, self.name, _manager=True)
         if self.roles:
             roles = ", ".join(self.roles)
             raise DeleteError(f"Atom {self.name!r} used in roles: {roles}")
-        return super().delete(client)
+        return super().delete()
 
 
 class Label(FrozenModelWithTimestamps, WithName):
@@ -1317,6 +1321,7 @@ class Label(FrozenModelWithTimestamps, WithName):
         return Endpoint.Labels
 
     @classmethod
+    @manager_only
     def get_all(cls, client: "ClientProtocol") -> list[Self]:
         """Get all labels.
 
@@ -1325,6 +1330,7 @@ class Label(FrozenModelWithTimestamps, WithName):
         return client.get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
 
     @classmethod
+    @manager_only
     def get_by_id_or_raise(cls, client: "ClientProtocol", _id: int) -> Self:
         """Get a Label by ID.
 
@@ -1434,6 +1440,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         )
 
     @classmethod
+    @manager_only
     def get_by_any_means(cls, client: "ClientProtocol", identifier: str) -> Self | None:
         """Get a network by the given identifier.
 
@@ -1465,6 +1472,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         return None
 
     @classmethod
+    @manager_only
     def get_by_any_means_or_raise(cls, client: "ClientProtocol", identifier: str) -> Self:
         """Get a network by the given identifier, and raise if not found.
 
@@ -1476,6 +1484,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         return net
 
     @classmethod
+    @manager_only
     def get_by_ip(cls, client: "ClientProtocol", ip: IP_AddressT) -> Self | None:
         """Get a network by IP address.
 
@@ -1489,6 +1498,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         return client._bind_client(cls.model_validate_json(resp.text))
 
     @classmethod
+    @manager_only
     def get_by_ip_or_raise(cls, client: "ClientProtocol", ip: IP_AddressT) -> Network:
         """Get a network by IP address, and raise if not found.
 
@@ -1502,6 +1512,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         return network
 
     @classmethod
+    @manager_only
     def get_by_network(cls, client: "ClientProtocol", network: str) -> Self | None:
         """Get a network by network address.
 
@@ -1511,6 +1522,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         return cls.get_by_field(client, "network", network)
 
     @classmethod
+    @manager_only
     def get_by_network_or_raise(cls, client: "ClientProtocol", network: str) -> Self:
         """Get a network by its network address, and raise if not found.
 
@@ -1546,11 +1558,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
                 return community
         return None
 
-    def create_community(
-        self, name: str, description: str, client: "ClientProtocol | None" = None
-    ) -> bool:
+    def create_community(self, name: str, description: str) -> bool:
         """Create a community for the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.network),
             name=name,
@@ -1569,71 +1579,67 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         self_net = NetworkOrIP.parse_or_raise(self.network, mode="network")
         return self_net.overlaps(other)
 
-    def get_first_available_ip(self, client: "ClientProtocol | None" = None) -> IP_AddressT:
+    def get_first_available_ip(self) -> IP_AddressT:
         """Return the first available IPv4 address of the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         return ipaddress.ip_address(
             client.get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
         )
 
-    def get_reserved_ips(self, client: "ClientProtocol | None" = None) -> list[IP_AddressT]:
+    def get_reserved_ips(self) -> list[IP_AddressT]:
         """Return the reserved IP addresses of the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(
             Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT]
         )
 
-    def get_used_count(self, client: "ClientProtocol | None" = None) -> int:
+    def get_used_count(self) -> int:
         """Return the number of used IP addresses in the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
 
-    def get_used_list(self, client: "ClientProtocol | None" = None) -> list[IP_AddressT]:
+    def get_used_list(self) -> list[IP_AddressT]:
         """Return the list of used IP addresses in the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(
             Endpoint.NetworksUsedList.with_params(self.network), list[IP_AddressT]
         )
 
-    def get_unused_count(self, client: "ClientProtocol | None" = None) -> int:
+    def get_unused_count(self) -> int:
         """Return the number of unused IP addresses in the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
 
-    def get_unused_list(self, client: "ClientProtocol | None" = None) -> list[IP_AddressT]:
+    def get_unused_list(self) -> list[IP_AddressT]:
         """Return the list of unused IP addresses in the network."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(
             Endpoint.NetworksUnusedList.with_params(self.network), list[IP_AddressT]
         )
 
-    def get_used_host_list(self, client: "ClientProtocol | None" = None) -> dict[str, list[str]]:
+    def get_used_host_list(self) -> dict[str, list[str]]:
         """Return a dict of used IP addresses and their associated hosts."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(
             Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]]
         )
 
-    def get_ptroverride_host_list(
-        self, client: "ClientProtocol | None" = None
-    ) -> dict[str, str]:
+    def get_ptroverride_host_list(self) -> dict[str, str]:
         """Return a dict of PTR override IP addresses and their associated hosts."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(
             Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str]
         )
 
-    def is_reserved_ip(self, ip: IP_AddressT, client: "ClientProtocol | None" = None) -> bool:
+    def is_reserved_ip(self, ip: IP_AddressT) -> bool:
         """Return True if the IP address is in the reserved list.
 
         :param ip: The IP address to check.
         :returns: True if the IP address is in the reserved list.
         """
-        return ip in self.get_reserved_ips(client)
+        return ip in self.get_reserved_ips()
 
-    def add_excluded_range(
-        self, start: str, end: str, client: "ClientProtocol | None" = None
-    ) -> None:
+    def add_excluded_range(self, start: str, end: str) -> None:
         """Add an excluded range to the network.
 
         :param start: The start of the excluded range.
@@ -1641,7 +1647,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
         :returns: The new ExcludedRange object.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
         end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
         if start_ip.version != end_ip.version:
@@ -1661,15 +1667,13 @@ class Network(FrozenModelWithTimestamps, APIMixin):
             # ) from e
             raise e
 
-    def remove_excluded_range(
-        self, start: str, end: str, client: "ClientProtocol | None" = None
-    ) -> None:
+    def remove_excluded_range(self, start: str, end: str) -> None:
         """Remove an excluded range from the network.
 
         :param start: The start of the excluded range.
         :param end: The end of the excluded range.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         # No need to validate IPs - if we find a match it's valid
         exrange: ExcludedRange | None = None
         for excluded_range in self.excluded_ranges:
@@ -1783,10 +1787,10 @@ class NetworkPolicyAttribute(FrozenModelWithTimestamps, WithName):
     name: str
     description: str
 
-    def get_policies(self, client: "ClientProtocol | None" = None) -> list[NetworkPolicy]:
+    def get_policies(self) -> list[NetworkPolicy]:
         """Get all policies using this attribute."""
-        client = self._require_client(client)
-        return NetworkPolicy.get_list_by_field(client, "attributes", self.id)
+        client = self._require_client()
+        return NetworkPolicy.get_list_by_field(client, "attributes", self.id, _manager=True)
 
     @classmethod
     def endpoint(cls) -> Endpoint:
@@ -1822,19 +1826,18 @@ class Community(FrozenModelWithTimestamps, APIMixin):
     @property
     def network_address(self) -> str:
         """Return the network object for the community."""
-        client = self._require_client(None)
-        return Network.get_by_field_or_raise(client, "id", str(self.network)).network
+        client = self._require_client()
+        return Network.get_by_field_or_raise(client, "id", str(self.network), _manager=True).network
 
-    def refetch(self, client: "ClientProtocol | None" = None) -> Self:
+    def refetch(self) -> Self:
         """Refetch the community object."""
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(self.endpoint_with_id, self.__class__)
 
     def patch(
         self,
         fields: dict[str, Any],
         validate: bool = True,
-        client: "ClientProtocol | None" = None,
     ) -> Self:
         """Patch the community.
 
@@ -1842,7 +1845,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         :param validate: Whether to validate the response. (Not implemented)
         :returns: The updated Community object.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         _ = validate
         try:
             _ = client.patch(self.endpoint_with_id, **fields)
@@ -1850,50 +1853,47 @@ class Community(FrozenModelWithTimestamps, APIMixin):
             # TODO: implement after mreg-cli parity
             # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
             raise e
-        new_object = self.refetch(client)
+        new_object = self.refetch()
         return new_object
 
-    def delete(self, client: "ClientProtocol | None" = None) -> bool:
+    def delete(self) -> bool:
         """Delete the community."""
-        client = self._require_client(client)
+        client = self._require_client()
         resp = client.delete(self.endpoint_with_id)
         return resp.is_success if resp else False
 
-    def get_hosts(self, client: "ClientProtocol | None" = None) -> list[Host]:
+    def get_hosts(self) -> list[Host]:
         """Get a list of hosts in the community.
 
         :returns: A list of Host objects.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         return client.get_typed(self.hosts_endpoint, list[Host])
 
     def add_host(
         self,
         host: Host,
         ipaddress: IP_AddressT | None = None,
-        client: "ClientProtocol | None" = None,
     ) -> bool:
         """Add a host to the community.
 
         :param host: The host to add.
         :returns: True if the host was added, False otherwise.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         kwargs: QueryParams = {"id": host.id}
         if ipaddress:
             kwargs["ipaddress"] = str(ipaddress)
         resp = client.post(self.hosts_endpoint, params=None, ok404=False, **kwargs)
         return resp.is_success if resp else False
 
-    def remove_host(
-        self, host: Host, ipaddress: IP_AddressT | None, client: "ClientProtocol | None" = None
-    ) -> bool:
+    def remove_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
         """Remove a host from the community.
 
         :param host: The host to remove.
         :returns: True if the host was removed, False otherwise.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         params: QueryParams = {}
         if ipaddress:
             params["ipaddress"] = str(ipaddress)
@@ -2008,21 +2008,19 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
         )
         # NOTE: can return self.refetch() here if we need to refresh the object
 
-    def networks(self, client: "ClientProtocol | None" = None) -> list[Network]:
+    def networks(self) -> list[Network]:
         """Get all networks using this policy."""
-        client = self._require_client(client)
-        return Network.get_list_by_field(client, "policy", self.id)
+        client = self._require_client()
+        return Network.get_list_by_field(client, "policy", self.id, _manager=True)
 
-    def create_community(
-        self, name: str, description: str, client: "ClientProtocol | None" = None
-    ) -> Community | None:
+    def create_community(self, name: str, description: str) -> Community | None:
         """Create a new community.
 
         :param name: The name of the community.
         :param description: The description of the community.
         :returns: The new Community object.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.id),
             name=name,
@@ -2053,6 +2051,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         return None
 
     @classmethod
+    @manager_only
     def get_by_ip(cls, client: "ClientProtocol", ip: IP_AddressT) -> list[Self]:
         """Get a list of IP address objects by IP address.
 
@@ -2065,6 +2064,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         return cls.get_list_by_field(client, "ipaddress", str(ip))
 
     @classmethod
+    @manager_only
     def ensure_associable(cls, client: "ClientProtocol", mac: MacAddress, force: bool) -> None:
         """Check if a MAC address is available to be associated with an IP address.
 
@@ -2094,6 +2094,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             )
 
     @classmethod
+    @manager_only
     def get_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> Self | None:
         """Get the IP address objects by MAC address.
 
@@ -2106,6 +2107,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             raise MultipleEntitiesFound(f"Multiple IPs found with MAC address {mac}.") from e
 
     @classmethod
+    @manager_only
     def get_ips_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> list[Self]:
         """Get a list of IP addresses by MAC address.
 
@@ -2131,17 +2133,17 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         """Return True if the IP address is IPv6."""
         return self.ipaddress.version == 6
 
-    def network(self, client: "ClientProtocol | None" = None) -> Network | None:
+    def network(self) -> Network | None:
         """Return the network of the IP address."""
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             return client.get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
         except APIError:
             return None
 
-    def vlan(self, client: "ClientProtocol | None" = None) -> int | None:
+    def vlan(self) -> int | None:
         """Return the VLAN of the IP address."""
-        if net := self.network(client):
+        if net := self.network():
             return net.vlan
         return None
 
@@ -2203,6 +2205,7 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         return Endpoint.Cnames
 
     @classmethod
+    @manager_only
     def get_by_name(cls, client: "ClientProtocol", name: HostName) -> CNAME:
         """Get a CNAME record by name.
 
@@ -2215,6 +2218,7 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         return client._bind_client(CNAME.model_validate(data))
 
     @classmethod
+    @manager_only
     def get_by_host_and_name(
         cls, client: "ClientProtocol", host: HostName | int, name: HostName
     ) -> CNAME:
@@ -2274,6 +2278,7 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         return Endpoint.Mxs
 
     @classmethod
+    @manager_only
     def get_by_all(cls, client: "ClientProtocol", host: int, mx: str, priority: int) -> MX:
         """Get an MX record by all fields.
 
@@ -2393,6 +2398,7 @@ class BacnetID(FrozenModel, WithHost, APIMixin):
         return Endpoint.BacnetID
 
     @classmethod
+    @manager_only
     def get_in_range(cls, client: "ClientProtocol", start: int, end: int) -> list[Self]:
         """Get Bacnet IDs in a range.
 
@@ -2520,6 +2526,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return Endpoint.Hosts
 
     @classmethod
+    @manager_only
     def get_list_by_ip(
         cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
     ) -> list[Self]:
@@ -2538,6 +2545,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hosts
 
     @classmethod
+    @manager_only
     def get_list_by_ip_or_raise(
         cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
     ) -> list[Self]:
@@ -2553,6 +2561,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hosts
 
     @classmethod
+    @manager_only
     def get_by_ip(
         cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
     ) -> Host | None:
@@ -2573,6 +2582,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             raise MultipleEntitiesFound(f"Multiple hosts found with IP address {ip}.") from e
 
     @classmethod
+    @manager_only
     def get_by_ip_or_raise(
         cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
     ) -> Host:
@@ -2588,6 +2598,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return host
 
     @classmethod
+    @manager_only
     def get_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> Host | None:
         """Get a host by MAC address.
 
@@ -2597,6 +2608,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return cls.get_by_field(client, "ipaddresses__macaddress", str(mac))
 
     @classmethod
+    @manager_only
     def get_by_mac_or_raise(cls, client: "ClientProtocol", mac: MacAddress) -> Host:
         """Get a host by MAC address or raise EntityNotFound.
 
@@ -2609,6 +2621,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return host
 
     @classmethod
+    @manager_only
     def get_list_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> list[Self]:
         """Get a list of host by MAC address.
 
@@ -2618,6 +2631,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return cls.get_list_by_field(client, "ipaddresses__macaddress", str(mac))
 
     @classmethod
+    @manager_only
     def get_list_by_mac_or_raise(cls, client: "ClientProtocol", mac: MacAddress) -> list[Self]:
         """Get a list of hosts by MAC address or raise EntityNotFound.
 
@@ -2630,6 +2644,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hosts
 
     @classmethod
+    @manager_only
     def get_by_any_means_or_raise(
         cls,
         client: "ClientProtocol",
@@ -2657,6 +2672,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return host
 
     @classmethod
+    @manager_only
     def get_by_any_means(
         cls,
         client: "ClientProtocol",
@@ -2725,6 +2741,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return host
 
     @classmethod
+    @manager_only
     def get_list_by_any_means_or_raise(
         cls,
         client: "ClientProtocol",
@@ -2752,6 +2769,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return hosts
 
     @classmethod
+    @manager_only
     def get_list_by_any_means(
         cls,
         client: "ClientProtocol",
@@ -2817,14 +2835,14 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         return []
 
-    def delete(self, client: "ClientProtocol | None" = None) -> bool:
+    def delete(self) -> bool:
         """Delete the host.
 
         :raises DeleteError: If the operation to delete the host fails.
 
         :returns: True if the host was deleted successfully, False otherwise.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         # Note, we can't use .id as the identifier here, as the host name is used
         # in the endpoint URL...
         try:
@@ -2879,14 +2897,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         # Uses non-atomic host update via PATCH to set the contacts list.
         return self.patch(fields={"contacts": contacts}, validate=False)
 
-    def add_contacts(
-        self, contacts: list[str], client: "ClientProtocol | None" = None
-    ) -> HostContactModification:
+    def add_contacts(self, contacts: list[str]) -> HostContactModification:
         """Add contacts to the host.
 
         Args:
             contacts (list[str]): Contacts to add.
-            client (ClientProtocol | None): Optional client to bind and use.
 
         Raises:
             CreateError: Failed to add contacts to host.
@@ -2894,7 +2909,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             HostContactModification: Summary of host contact modifications.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         # Uses atomic endpoint for contact updates
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
@@ -2906,7 +2921,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         adapter = get_type_adapter(HostContactModification)
         return adapter.validate_json(resp.text)
 
-    def clear_contacts(self, client: "ClientProtocol | None" = None) -> HostContactModification:
+    def clear_contacts(self) -> HostContactModification:
         """Remove all contacts from the host.
 
         Raises:
@@ -2915,7 +2930,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             HostContactModification: _description_
         """
-        client = self._require_client(client)
+        client = self._require_client()
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
             resp = client.delete(endpoint)
@@ -2926,14 +2941,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         adapter = get_type_adapter(HostContactModification)
         return adapter.validate_json(resp.text)
 
-    def remove_contacts(
-        self, contacts: list[str], client: "ClientProtocol | None" = None
-    ) -> HostContactModification:
+    def remove_contacts(self, contacts: list[str]) -> HostContactModification:
         """Remove the given contacts from the host.
 
         Args:
             contacts (list[str]): Contacts to remove.
-            client (ClientProtocol | None): Optional client to bind and use.
 
         Raises:
             DeleteError: Failed to remove contacts.
@@ -2941,7 +2953,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             HostContactModification: Summary of host contact modifications.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
             resp = client.delete(endpoint, emails=contacts)
@@ -2961,22 +2973,20 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         # TODO: add try/except with error message
         return self.patch(fields={"contacts": []})
 
-    def add_ip(
-        self, ip: IP_AddressT, mac: MacAddress | None = None, client: "ClientProtocol | None" = None
-    ) -> Host:
+    def add_ip(self, ip: IP_AddressT, mac: MacAddress | None = None) -> Host:
         """Add an IP address to the host.
 
         :param ip: The IP address to add. IPv4 or IPv6.
 
         :returns: A new Host object fetched from the API with the updated IP address.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         params: QueryParams = {"ipaddress": str(ip), "host": str(self.id)}
         if mac:
             params["macaddress"] = mac
 
-        _ = IPAddress.create(client, params=params)
-        return self.refetch(client)
+        _ = IPAddress.create(client, params=params, _manager=True)
+        return self.refetch()
 
     def has_ip(self, arg_ip: IP_AddressT) -> bool:
         """Check if the host has the given IP address.
@@ -3109,7 +3119,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         mac: MacAddress,
         ip: IP_AddressT | str,
         force: bool = False,
-        client: "ClientProtocol | None" = None,
     ) -> Host:
         """Associate a MAC address to an IP address.
 
@@ -3118,7 +3127,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A new Host object fetched from the API after updating the IP address.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         if isinstance(ip, str):
             ip = NetworkOrIP.parse_or_raise(ip, mode="ip")
 
@@ -3146,7 +3155,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         if not ip_found_in_host:
             raise EntityNotFound(f"IP address {ip} not found in host {self.name}.")
 
-        return self.refetch(client)
+        return self.refetch()
 
     def disassociate_mac_from_ip(self, ip: IP_AddressT | str) -> Host:
         """Disassociate a MAC address from an IP address.
@@ -3203,18 +3212,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             return community.community
         return None
 
-    def networks(self, client: "ClientProtocol | None" = None) -> dict[Network, list[IPAddress]]:
+    def networks(self) -> dict[Network, list[IPAddress]]:
         """Return a dict of unique networks and a list of associated IP addresses for the host.
 
         Does not return networks that are not registered in MREG.
 
         :returns: A dictionary of networks and the associated IP addresses.
         """
-        client = self._require_client(client)
+        _ = self._require_client()
         ret_dict: dict[Network, list[IPAddress]] = {}
 
         for ip in self.ipaddresses:
-            network = ip.network(client)
+            network = ip.network()
             if not network:
                 # If network is not in MREG, we create a placeholder network
                 network = Network.dummy_network_from_ip(ip)
@@ -3226,7 +3235,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         return ret_dict
 
-    def vlans(self, client: "ClientProtocol | None" = None) -> dict[int, list[IPAddress]]:
+    def vlans(self) -> dict[int, list[IPAddress]]:
         """Return a dict of unique VLANs ID and a list of associated IP addresses for the host.
 
         IP addresses without a VLAN are assigned to VLAN 0.
@@ -3238,10 +3247,10 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A dictionary of VLAN ID and the associated IP addresses.
         """
-        client = self._require_client(client)
+        _ = self._require_client()
         ret_dict: dict[int, list[IPAddress]] = {}
 
-        for network, ips in self.networks(client).items():
+        for network, ips in self.networks().items():
             vlan = network.vlan or 0
             if vlan not in ret_dict:
                 ret_dict[vlan] = []
@@ -3254,7 +3263,6 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         self,
         accept_delegation: bool = False,
         validate_zone_resolution: bool = False,
-        client: "ClientProtocol | None" = None,
     ) -> Zone | Delegation | None:
         """Return the zone for the host.
 
@@ -3263,7 +3271,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :param validate_zone_resolution: If True, validate that the resolved zone matches the
                 expected zone ID. Fail with ValidationFailure if it does not.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         if not self.zone:
             return None
 
@@ -3315,38 +3323,36 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         return False
 
-    def get_roles(self, client: "ClientProtocol | None" = None) -> list[Role]:
+    def get_roles(self) -> list[Role]:
         """List all roles for the host."""
-        client = self._require_client(client)
-        return Role.get_list_by_field(client, "hosts", self.id)
+        client = self._require_client()
+        return Role.get_list_by_field(client, "hosts", self.id, _manager=True)
 
-    def get_hostgroups(
-        self, traverse: bool = False, client: "ClientProtocol | None" = None
-    ) -> list[HostGroup]:
+    def get_hostgroups(self, traverse: bool = False) -> list[HostGroup]:
         """Return all hostgroups for the host.
 
         :param traverse: If True, traverse the parent groups and include them in the list.
 
         :returns: A list of HostGroup objects sorted by name.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         groups: list[HostGroup] = []
-        direct = HostGroup.get_list_by_field(client, "hosts", self.id)
+        direct = HostGroup.get_list_by_field(client, "hosts", self.id, _manager=True)
         groups.extend(direct)
 
         if traverse:
             for group in direct:
-                groups.extend(group.get_all_parents(client=client))
+                groups.extend(group.get_all_parents())
 
         return sorted(groups, key=lambda group: group.name)
 
-    def bacnet(self, client: "ClientProtocol | None" = None) -> BacnetID | None:
+    def bacnet(self) -> BacnetID | None:
         """Return the BacnetID for the host."""
         if not self.bacnetid:
             return None
 
-        client = self._require_client(client)
-        return BacnetID.get_by_id(client, self.bacnetid)
+        client = self._require_client()
+        return BacnetID.get_by_id(client, self.bacnetid, _manager=True)
 
     def has_mx_with_priority(self, mx_arg: str, priority: int) -> MX | None:
         """Check if the host has an MX record.
@@ -3383,6 +3389,7 @@ class HostList(FrozenModel):
         return Endpoint.Hosts
 
     @classmethod
+    @manager_only
     def get(cls, client: "ClientProtocol", params: QueryParams | None = None) -> HostList:
         """Get a list of hosts.
 
@@ -3400,6 +3407,7 @@ class HostList(FrozenModel):
         return cls(results=hosts)
 
     @classmethod
+    @manager_only
     def get_by_ip(cls, client: "ClientProtocol", ip: IP_AddressT) -> HostList:
         """Get a list of hosts by IP address.
 
@@ -3470,30 +3478,30 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         return groupname in self.groups
 
-    def add_group(self, groupname: str, client: "ClientProtocol | None" = None) -> Self:
+    def add_group(self, groupname: str) -> Self:
         """Add a group to the hostgroup.
 
         :param group: The group to add.
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             _ = client.post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add group {groupname} to hostgroup {self.name}.", e.response)
             raise e
-        return self.refetch(client)
+        return self.refetch()
 
-    def remove_group(self, groupname: str, client: "ClientProtocol | None" = None) -> Self:
+    def remove_group(self, groupname: str) -> Self:
         """Remove a group from the hostgroup.
 
         :param group: The group to remove.
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             _ = client.delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
         except DeleteError as e:
@@ -3502,7 +3510,7 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
             #     f"Failed to remove group {groupname} from hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch(client)
+        return self.refetch()
 
     def has_host(self, hostname: str) -> bool:
         """Check if the hostgroup has the given host.
@@ -3513,30 +3521,30 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         return hostname in self.hosts
 
-    def add_host(self, hostname: str, client: "ClientProtocol | None" = None) -> Self:
+    def add_host(self, hostname: str) -> Self:
         """Add a host to the hostgroup.
 
         :param hostname: The host to add.
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             _ = client.post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add host {hostname} to hostgroup {self.name}.", e.response)
             raise e
-        return self.refetch(client)
+        return self.refetch()
 
-    def remove_host(self, hostname: str, client: "ClientProtocol | None" = None) -> Self:
+    def remove_host(self, hostname: str) -> Self:
         """Remove a host from the hostgroup.
 
         :param hostname: The host to remove.
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             _ = client.delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
         except DeleteError as e:
@@ -3545,7 +3553,7 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
             #     f"Failed to remove host {hostname} from hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch(client)
+        return self.refetch()
 
     def has_owner(self, ownername: str) -> bool:
         """Check if the hostgroup has the given owner.
@@ -3556,14 +3564,14 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         return ownername in self.owners
 
-    def add_owner(self, ownername: str, client: "ClientProtocol | None" = None) -> Self:
+    def add_owner(self, ownername: str) -> Self:
         """Add an owner to the hostgroup.
 
         :param ownername: The owner to add.
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             _ = client.post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
         except PostError as e:
@@ -3572,16 +3580,16 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
             #     f"Failed to add owner {ownername} to hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch(client)
+        return self.refetch()
 
-    def remove_owner(self, ownername: str, client: "ClientProtocol | None" = None) -> Self:
+    def remove_owner(self, ownername: str) -> Self:
         """Remove an owner from the hostgroup.
 
         :param ownername: The owner to remove.
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        client = self._require_client(client)
+        client = self._require_client()
         try:
             _ = client.delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
         except DeleteError as e:
@@ -3590,17 +3598,17 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
             #     f"Failed to remove owner {ownername} from hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch(client)
+        return self.refetch()
 
-    def get_all_parents(self, client: "ClientProtocol | None" = None) -> list[HostGroup]:
+    def get_all_parents(self) -> list[HostGroup]:
         """Return a list of all parent groups."""
-        client = self._require_client(client)
+        client = self._require_client()
         parents: list[HostGroup] = []
         for parent in self.parent:
-            pobj = HostGroup.get_by_field(client, "name", parent)
+            pobj = HostGroup.get_by_field(client, "name", parent, _manager=True)
             if pobj:
                 parents.append(pobj)
-                parents.extend(pobj.get_all_parents(client=client))
+                parents.extend(pobj.get_all_parents())
 
         return parents
 
@@ -3680,6 +3688,7 @@ class ServerVersion(BaseModel):
         return Endpoint.MetaVersion
 
     @classmethod
+    @manager_only
     def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> ServerVersion:
         """Fetch the server version from the endpoint.
 
@@ -3715,6 +3724,7 @@ class ServerLibraries(BaseModel):
         return Endpoint.MetaLibraries
 
     @classmethod
+    @manager_only
     def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> ServerLibraries:
         """Fetch the server libraries from the endpoint.
 
@@ -3763,6 +3773,7 @@ class UserInfo(BaseModel):
         return Endpoint.MetaUser
 
     @classmethod
+    @manager_only
     def fetch(
         cls, client: "ClientProtocol", *, ignore_errors: bool = True, user: str | None = None
     ) -> UserInfo:
@@ -3814,6 +3825,7 @@ class LDAPHealth(BaseModel, APIMixin):
         return Endpoint.HealthLDAP
 
     @classmethod
+    @manager_only
     def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> Self:
         """Fetch the LDAP status from the endpoint.
 
@@ -3852,6 +3864,7 @@ class HeartbeatHealth(BaseModel, APIMixin):
         return str(timedelta(seconds=self.uptime)) if self.uptime > 0 else "Unknown"
 
     @classmethod
+    @manager_only
     def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> Self:
         """Fetch the heartbeat status from the endpoint.
 
@@ -3875,6 +3888,7 @@ class HealthInfo(BaseModel):
     ldap: LDAPHealth
 
     @classmethod
+    @manager_only
     def fetch(cls, client: "ClientProtocol") -> HealthInfo:
         """Fetch the health information from the endpoint.
 

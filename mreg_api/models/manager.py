@@ -73,5 +73,5 @@ class ModelManager(Generic[T]):
                 return attr
             params = list(sig.parameters.values())
             if params and params[0].name == "client":
-                return functools.partial(attr, self._client)
+                return functools.partial(attr, self._client, _manager=True)
         return attr

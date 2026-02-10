@@ -12,7 +12,7 @@ host = client.host().get_by_id(123)
 host.patch({"comment": "hi"})
 ```
 
-Objects fetched through a manager are automatically bound to the client, so instance methods do not need an explicit `client` argument. The optional `client` parameter on instance methods exists for manually constructed objects (e.g., `Host.model_validate(...)` in tests or custom tooling). Passing it once binds the object for subsequent calls.
+Objects fetched through a manager are automatically bound to the client, so instance methods do not accept an explicit `client` argument. For manually constructed objects (e.g., `Host.model_validate(...)` in tests or custom tooling), call `obj.bind(client)` once before using instance methods.
 
 If you need typing for wrappers or tests, `mreg_api.types.ClientProtocol` documents the minimal client interface expected by models.
 

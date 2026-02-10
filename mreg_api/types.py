@@ -62,6 +62,8 @@ T = TypeVar("T")
 class ClientProtocol(Protocol):
     """Structural protocol for client methods used by models."""
 
+    _manager_call_depth: int
+
     @overload
     def get(
         self, path: str, params: QueryParams | None, ok404: Literal[True]

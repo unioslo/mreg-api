@@ -192,6 +192,7 @@ class MregClient:
         # State setup/reset
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
+        self._manager_call_depth: int = 0
         self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
 
