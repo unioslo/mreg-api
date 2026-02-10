@@ -14,6 +14,7 @@ from pydantic import field_validator
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.types import ClientProtocol
 from mreg_api.types import QueryParams
 from mreg_api.types import parse_json_mapping_string
 
@@ -76,11 +77,8 @@ class HistoryItem(BaseModel):
             raise ValueError("Failed to parse history data as JSON") from e
 
     @classmethod
-    def get(cls, name: str, resource: HistoryResource) -> list[Self]:
+    def get(cls, client: "ClientProtocol", name: str, resource: HistoryResource) -> list[Self]:
         """Get history items for a resource."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        client = MregClient()
         params: QueryParams = {"resource": resource.resource(), "name": name}
         ret = client.get_typed(Endpoint.History, list[cls], params=params)
         if len(ret) == 0:

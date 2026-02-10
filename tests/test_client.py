@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import datetime
 from typing import Any
 
 import pytest
@@ -18,16 +17,9 @@ from mreg_api.models.fields import hostname_domain
 from mreg_api.models.models import Host
 
 
-def test_client_singleton() -> None:
+def test_client_not_singleton() -> None:
     client1 = MregClient(url="http://example.com", domain="example.com", timeout=30)
-    client2 = MregClient()
-    assert client1 is client2
-
-
-def test_client_reset_instance() -> None:
-    client1 = MregClient()
-    MregClient.reset_instance()
-    client2 = MregClient()
+    client2 = MregClient(url="http://example.com", domain="example.com", timeout=30)
     assert client1 is not client2
 
 
@@ -53,10 +45,10 @@ def test_client_caching(httpserver: HTTPServer) -> None:
 
     init_endpoint()
     # First fetch - should hit the server
-    hosts1 = Host.get_list()
+    hosts1 = client.host().get_list()
 
     # Second fetch - should use the cache
-    hosts2 = Host.get_list()
+    hosts2 = client.host().get_list()
 
     assert hosts1 == hosts2
 
@@ -113,11 +105,11 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         {"detail": "Mutation successful"}
     )
 
-    hosts_pre_mutation = Host.get_list()
+    hosts_pre_mutation = client.host().get_list()
     assert len(hosts_pre_mutation) == 1
 
     # Assert we can access the cached data
-    hosts_pre_mutation_cached = Host.get_list()
+    hosts_pre_mutation_cached = client.host().get_list()
     assert len(hosts_pre_mutation_cached) == 1
 
     # We don't care about the mutation response or respecting what it would actually do
@@ -150,7 +142,7 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         ]
     )
 
-    hosts_post_mutation = Host.get_list()
+    hosts_post_mutation = client.host().get_list()
     assert len(hosts_post_mutation) == 2
 
 
@@ -171,7 +163,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
             }
         ]
     )
-    hosts1 = Host.get_list()
+    hosts1 = client.host().get_list()
     assert len(client.get_client_history()) == 1
 
     # Perform same fetches within the context manager - should bypass cache
@@ -196,7 +188,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
                 },
             ]
         )
-        hosts2 = Host.get_list()
+        hosts2 = client.host().get_list()
         assert len(client.get_client_history()) == 2
 
         assert len(hosts1) == 1
@@ -206,7 +198,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     info_pre = client.get_cache_info()
     assert info_pre is not None
 
-    hosts3 = Host.get_list()
+    hosts3 = client.host().get_list()
     assert len(client.get_client_history()) == 2  # History unchanged
     assert len(hosts3) == len(hosts1) == 1
 
@@ -235,7 +227,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
                 }
             ]
         )
-        hosts1 = Host.get_list()
+        hosts1 = client.host().get_list()
         assert len(client.get_client_history()) == 1
 
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
@@ -259,7 +251,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             ]
         )
         # Second fetch should hit the cache - not the new handler
-        hosts2 = Host.get_list()
+        hosts2 = client.host().get_list()
         assert len(client.get_client_history()) == 1
         assert len(hosts1) == len(hosts2) == 1
 
@@ -284,7 +276,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             },
         ]
     )
-    hosts3 = Host.get_list()
+    hosts3 = client.host().get_list()
     assert len(client.get_client_history()) == 2
     assert len(hosts3) == 2
 
@@ -725,7 +717,7 @@ def test_client_domain_override_after_set_domain() -> None:
 def test_client_model_composition(client: MregClient, httpserver: HTTPServer) -> None:
     """MregClient has models composed as attributes for easy access."""
     assert hasattr(client, "host")
-    assert client.host is Host
+    assert client.host().model is Host
 
     # Test that we can use the composed model to make requests
     httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_json(
@@ -741,17 +733,9 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
         ]
     )
 
-    assert client.host.get_list() == snapshot(
-        [
-            Host(
-                created_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
-                updated_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
-                id=1,
-                name="host1.example.com",
-                ipaddresses=[],
-                comment="My comment",
-            )
-        ]
+    hosts = client.host().get_list()
+    assert [(host.id, host.name, host.comment) for host in hosts] == snapshot(
+        [(1, "host1.example.com", "My comment")]
     )
 
 
@@ -788,4 +772,5 @@ def test_client_model_composition_dynamic(model: type, client: MregClient) -> No
     """Ensure all models with get/fetch are accessible via client attributes."""
     attr_name = _to_snake_case(model.__name__)
     assert hasattr(client, attr_name)
-    assert getattr(client, attr_name) is model
+    manager = getattr(client, attr_name)
+    assert manager.model is model

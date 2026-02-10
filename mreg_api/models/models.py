@@ -57,6 +57,7 @@ from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
+from mreg_api.types import ClientProtocol
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
 from mreg_api.types import QueryParams
@@ -273,12 +274,12 @@ class NetworkOrIP(BaseModel):
         return self.is_ipv4_network() or self.is_ipv6_network()
 
 
-class WithHost(BaseModel):
+class WithHost(BaseModel, APIMixin):
     """Model for an object that has a host element."""
 
     host: int
 
-    def resolve_host(self) -> Host | None:
+    def resolve_host(self, client: "ClientProtocol | None" = None) -> Host | None:
         """Resolve the host ID to a Host object.
 
         Notes:
@@ -287,9 +288,9 @@ class WithHost(BaseModel):
             - This assumes that there is a host attribute in the object.
 
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        client = self._require_client(client)
 
-        data = MregClient().get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
+        data = client.get_item_by_key_value(Endpoint.Hosts, "id", str(self.host))
 
         if not data:
             return None
@@ -302,7 +303,7 @@ class WithZone(BaseModel, APIMixin):
 
     zone: int | None = None
 
-    def resolve_zone(self) -> ForwardZone | None:
+    def resolve_zone(self, client: "ClientProtocol | None" = None) -> ForwardZone | None:
         """Resolve the zone ID to a (Forward)Zone object.
 
         Notes:
@@ -313,9 +314,9 @@ class WithZone(BaseModel, APIMixin):
         if self.zone is None:
             return None
 
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        client = self._require_client(client)
 
-        data = MregClient().get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
+        data = client.get_item_by_key_value(Endpoint.ForwardZones, "id", str(self.zone))
 
         if not data:
             return None
@@ -399,44 +400,42 @@ class WithName(BaseModel, APIMixin):
         return name.lower() if cls.__name_lowercase__ else name
 
     @classmethod
-    def get_by_name(cls, name: str) -> Self | None:
+    def get_by_name(cls, client: "ClientProtocol", name: str) -> Self | None:
         """Get a resource by name.
 
         :param name: The resource name to search for.
         :returns: The resource if found.
         """
-        return cls.get_by_field(cls.__name_field__, cls._case_name(name))
+        return cls.get_by_field(client, cls.__name_field__, cls._case_name(name))
 
     @classmethod
-    def get_by_name_and_raise(cls, name: str) -> None:
+    def get_by_name_and_raise(cls, client: "ClientProtocol", name: str) -> None:
         """Get a resource by name, raising EntityAlreadyExists if found.
 
         :param name: The resource name to search for.
         :raises EntityAlreadyExists: If the resource is found.
         """
-        return cls.get_by_field_and_raise(cls.__name_field__, cls._case_name(name))
+        return cls.get_by_field_and_raise(client, cls.__name_field__, cls._case_name(name))
 
     @classmethod
-    def get_by_name_or_raise(cls, name: str) -> Self:
+    def get_by_name_or_raise(cls, client: "ClientProtocol", name: str) -> Self:
         """Get a resource by name, raising EntityNotFound if not found.
 
         :param name: The resource name to search for.
         :returns: The resource.
         :raises EntityNotFound: If the resource is not found.
         """
-        return cls.get_by_field_or_raise(cls.__name_field__, cls._case_name(name))
+        return cls.get_by_field_or_raise(client, cls.__name_field__, cls._case_name(name))
 
     @classmethod
-    def get_list_by_name_regex(cls, name: str) -> list[Self]:
+    def get_list_by_name_regex(cls, client: "ClientProtocol", name: str) -> list[Self]:
         """Get multiple resources by a name regex.
 
         :param name: The regex pattern for names to search for.
         :returns: A list of resource objects.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         param, value = convert_wildcard_to_regex(cls.__name_field__, cls._case_name(name), True)
-        return MregClient().get_typed(cls.endpoint(), list[cls], params={param: value})
+        return client.get_typed(cls.endpoint(), list[cls], params={param: value})
 
     def rename(self, new_name: str) -> Self:
         """Rename the resource.
@@ -474,9 +473,9 @@ class WithHistory(BaseModel, APIMixin):
         return super().__init_subclass__(**kwargs)
 
     @classmethod
-    def get_history(cls, name: str) -> list[HistoryItem]:
+    def get_history(cls, client: "ClientProtocol", name: str) -> list[HistoryItem]:
         """Get the history for the object."""
-        return HistoryItem.get(name, cls.history_resource)
+        return HistoryItem.get(client, name, cls.history_resource)
 
 
 class NameServer(FrozenModelWithTimestamps, WithTTL):
@@ -514,13 +513,14 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
         """Return the endpoint for the class."""
         return Endpoint.PermissionNetgroupRegex
 
-    def add_label(self, label_name: str) -> Self:
+    def add_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
         """Add a label to the permission.
 
         :param label_name: The name of the label to add.
         :returns: The updated Permission object.
         """
-        label = Label.get_by_name_or_raise(label_name)
+        client = self._require_client(client)
+        label = Label.get_by_name_or_raise(client, label_name)
         if label.id in self.labels:
             raise EntityAlreadyExists(f"The permission already has the label {label_name!r}")
 
@@ -528,13 +528,14 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
         label_ids.append(label.id)
         return self.patch({"labels": label_ids})
 
-    def remove_label(self, label_name: str) -> Self:
+    def remove_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
         """Remove a label from the permission.
 
         :param label_name: The name of the label to remove.
         :returns: The updated Permission object.
         """
-        label = Label.get_by_name_or_raise(label_name)
+        client = self._require_client(client)
+        label = Label.get_by_name_or_raise(client, label_name)
         if label.id not in self.labels:
             raise EntityNotFound(f"The permission does not have the label {label_name!r}")
 
@@ -613,7 +614,9 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         return ForwardZone
 
     @classmethod
-    def verify_nameservers(cls, nameservers: list[str], force: bool = False) -> None:
+    def verify_nameservers(
+        cls, client: "ClientProtocol", nameservers: list[str], force: bool = False
+    ) -> None:
         """Verify that nameservers are in mreg and have A-records."""
         if not nameservers:
             raise InputFailure("At least one nameserver is required")
@@ -621,7 +624,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         errors: list[str] = []
         for nameserver in nameservers:
             try:
-                host = Host.get_by_any_means_or_raise(nameserver)
+                host = Host.get_by_any_means_or_raise(client, nameserver)
             except EntityNotFound:
                 if not force:
                     errors.append(f"{nameserver} is not in mreg, must force")
@@ -635,6 +638,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     @classmethod
     def create_zone(
         cls,
+        client: "ClientProtocol",
         name: str,
         email: str,
         primary_ns: list[str],
@@ -647,72 +651,74 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param primary_ns: The primary nameserver for the zone.
         :returns: The created zone object.
         """
-        cls.verify_nameservers(primary_ns, force=force)
+        cls.verify_nameservers(client, primary_ns, force=force)
         zone_t = cls.type_by_name(name)
-        zone_t.get_zone_and_raise(name)
-        return zone_t.create({"name": name, "email": email, "primary_ns": primary_ns})
+        zone_t.get_zone_and_raise(client, name)
+        return zone_t.create(client, {"name": name, "email": email, "primary_ns": primary_ns})
 
     @classmethod
-    def get_zone(cls, name: str) -> ForwardZone | ReverseZone | None:
+    def get_zone(cls, client: "ClientProtocol", name: str) -> ForwardZone | ReverseZone | None:
         """Get a zone by name.
 
         :param name: The name of the zone to get.
         :returns: The zone object.
         """
         zone_t = cls.type_by_name(name)
-        return zone_t.get_by_name(name)
+        return zone_t.get_by_name(client, name)
 
     @classmethod
-    def get_zone_or_raise(cls, name: str) -> ForwardZone | ReverseZone:
+    def get_zone_or_raise(cls, client: "ClientProtocol", name: str) -> ForwardZone | ReverseZone:
         """Get a zone by name, and raise if not found.
 
         :param name: The name of the zone to get.
         :returns: The zone object.
         """
         zone_t = cls.type_by_name(name)
-        return zone_t.get_by_name_or_raise(name)
+        return zone_t.get_by_name_or_raise(client, name)
 
     @classmethod
-    def get_zone_and_raise(cls, name: str) -> None:
+    def get_zone_and_raise(cls, client: "ClientProtocol", name: str) -> None:
         """Get a zone by name, and raise if found.
 
         :param name: The name of the zone to get.
         """
         zone_t = cls.type_by_name(name)
-        return zone_t.get_by_name_and_raise(name)
+        return zone_t.get_by_name_and_raise(client, name)
 
-    def get_subzones(self) -> list[Self]:
+    def get_subzones(self, client: "ClientProtocol | None" = None) -> list[Self]:
         """Get subzones of the zone, excluding self.
 
         :returns: A list of subzones.
         """
-        zones = self.get_list_by_field("name__endswith", f".{self.name}")
+        client = self._require_client(client)
+        zones = self.get_list_by_field(client, "name__endswith", f".{self.name}")
         return [zone for zone in zones if zone.name != self.name]
 
-    def ensure_deletable(self) -> None:
+    def ensure_deletable(self, client: "ClientProtocol | None" = None) -> None:
         """Ensure the zone can be deleted. Raises exception if not.
 
         :raises DeleteError: If zone has entries or subzones.
         """
+        client = self._require_client(client)
         # XXX: Not a fool proof check, as e.g. SRVs are not hosts. (yet.. ?)
-        hosts = Host.get_list_by_field("zone", self.id)
+        hosts = Host.get_list_by_field(client, "zone", self.id)
         if hosts:
             raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
 
-        zones = self.get_subzones()
+        zones = self.get_subzones(client)
         if zones:
             names = ", ".join(zone.name for zone in zones)
             raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
 
-    def delete_zone(self, force: bool) -> bool:
+    def delete_zone(self, force: bool, client: "ClientProtocol | None" = None) -> bool:
         """Delete the zone.
 
         :param force: Whether to force the deletion.
         :returns: True if the deletion was successful.
         """
         if not force:
-            self.ensure_deletable()
-        return self.delete()
+            self.ensure_deletable(client)
+        return self.delete(client)
 
     def update_soa(
         self,
@@ -755,6 +761,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         comment: str,
         force: bool = False,
         fetch_after_create: bool = True,
+        client: "ClientProtocol | None" = None,
     ) -> Delegation | None:
         """Create a delegation for the zone.
 
@@ -764,24 +771,23 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :param force: Force creation if ns/zone doesn't exist.
         :returns: The created delegation object.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         self.ensure_delegation_in_zone(delegation)
-        self.verify_nameservers(nameservers, force=force)
+        self.verify_nameservers(client, nameservers, force=force)
 
         if not force:
             # Ensure delegated zone exists and is same type as parent zone
-            delegated_zone = Zone.get_zone(delegation)
+            delegated_zone = Zone.get_zone(client, delegation)
             if not delegated_zone:
                 raise InputFailure(f"Zone {delegation!r} does not exist. Must force.")
             if delegated_zone.is_reverse() != self.is_reverse():
                 raise InputFailure(f"Delegation '{delegation}' is not a {self.__class__.__name__} zone")
 
-        self.get_delegation_and_raise(delegation)
+        self.get_delegation_and_raise(delegation, client=client)
 
         cls = Delegation.type_by_zone(self)
         try:
-            MregClient().post(
+            _ = client.post(
                 cls.endpoint().with_params(self.name),
                 name=delegation,
                 nameservers=nameservers,
@@ -795,25 +801,29 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             raise e
 
         if fetch_after_create:
-            return self.get_delegation_or_raise(delegation)
+            return self.get_delegation_or_raise(delegation, client=client)
         return None
 
-    def get_delegation(self, name: str) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+    def get_delegation(
+        self, name: str, client: "ClientProtocol | None" = None
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
         """Get a delegation for the zone by name.
 
         :param name: The name of the delegation to get.
         :returns: The delegation object if found.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         self.ensure_delegation_in_zone(name)
         cls = Delegation.type_by_zone(self)
-        resp = MregClient().get(cls.endpoint_with_id(self, name), ok404=True)
+        resp = client.get(cls.endpoint_with_id(self, name), ok404=True)
         if not resp:
             return None
-        return cls.model_validate_json(resp.text)
+        delegation = cls.model_validate_json(resp.text)
+        return client._bind_client(delegation)
 
-    def get_delegation_or_raise(self, name: str) -> ForwardZoneDelegation | ReverseZoneDelegation:
+    def get_delegation_or_raise(
+        self, name: str, client: "ClientProtocol | None" = None
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
         """Get a delegation for the zone by name, raising EntityNotFound if not found.
 
         :param zone: The zone to search in.
@@ -821,59 +831,60 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         :returns: The delegation object.
         :raises EntityNotFound: If the delegation is not found.
         """
-        delegation = self.get_delegation(name)
+        delegation = self.get_delegation(name, client=client)
         if not delegation:
             raise EntityNotFound(f"Could not find delegation {name!r} in zone {name!r}")
         return delegation
 
-    def get_delegation_and_raise(self, name: str) -> None:
+    def get_delegation_and_raise(self, name: str, client: "ClientProtocol | None" = None) -> None:
         """Get a delegation for the zone by name, raising EntityAlreadyExists if found.
 
         :param zone: The zone to search in.
         :param name: The name of the delegation to get.
         :raises EntityAlreadyExists: If the delegation is found.
         """
-        delegation = self.get_delegation(name)
+        delegation = self.get_delegation(name, client=client)
         if delegation:
             raise EntityAlreadyExists(f"Zone {self.name!r} already has a delegation named {name!r}")
 
-    def get_delegations(self) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
+    def get_delegations(
+        self, client: "ClientProtocol | None" = None
+    ) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """Get all delegations for a zone.
 
         :param zone: The zone to search in.
         :param name: The name of the delegation to get.
         :returns: The delegation object.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         cls = Delegation.type_by_zone(self)
-        return MregClient().get_typed(cls.endpoint().with_params(self.name), list[cls])
+        return client.get_typed(cls.endpoint().with_params(self.name), list[cls])
 
-    def delete_delegation(self, name: str) -> bool:
+    def delete_delegation(self, name: str, client: "ClientProtocol | None" = None) -> bool:
         """Delete a delegation from the zone.
 
         :param delegation: The name of the delegation.
         :returns: True if the deletion was successful.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         # Check if delegation exists
         self.ensure_delegation_in_zone(name)  # check name
-        delegation = self.get_delegation_or_raise(name)
-        resp = MregClient().delete(delegation.endpoint_with_id(self, name))
+        delegation = self.get_delegation_or_raise(name, client=client)
+        resp = client.delete(delegation.endpoint_with_id(self, name))
         return resp.is_success if resp else False
 
-    def set_delegation_comment(self, name: str, comment: str) -> None:
+    def set_delegation_comment(
+        self, name: str, comment: str, client: "ClientProtocol | None" = None
+    ) -> None:
         """Set the comment for a delegation.
 
         :param name: The name of the delegation.
         :param comment: The comment to set.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        delegation = self.get_delegation_or_raise(name)
+        client = self._require_client(client)
+        delegation = self.get_delegation_or_raise(name, client=client)
         try:
-            MregClient().patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
+            _ = client.patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(
@@ -888,19 +899,23 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         """
         return self.set_ttl(ttl, "default_ttl")
 
-    def update_nameservers(self, nameservers: list[str], force: bool = False) -> None:
+    def update_nameservers(
+        self,
+        nameservers: list[str],
+        force: bool = False,
+        client: "ClientProtocol | None" = None,
+    ) -> None:
         """Update the nameservers of the zone.
 
         :param nameservers: The new nameservers for the zone.
         :param force: Whether to force the update.
         :returns: True if the update was successful.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        self.verify_nameservers(nameservers, force=force)
+        client = self._require_client(client)
+        self.verify_nameservers(client, nameservers, force=force)
         path = self.endpoint_nameservers().with_params(self.name)
         try:
-            MregClient().patch(path, primary_ns=nameservers)
+            _ = client.patch(path, primary_ns=nameservers)
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(
@@ -924,7 +939,9 @@ class ForwardZone(Zone, WithName, APIMixin):
         return Endpoint.ForwardZonesNameservers
 
     @classmethod
-    def get_from_hostname(cls, hostname: HostName) -> ForwardZoneDelegation | ForwardZone | None:
+    def get_from_hostname(
+        cls, client: "ClientProtocol", hostname: HostName
+    ) -> ForwardZoneDelegation | ForwardZone | None:
         """Get the zone from a hostname.
 
         Note: This method may return either a ForwardZoneDelegation or a ForwardZone object.
@@ -932,22 +949,20 @@ class ForwardZone(Zone, WithName, APIMixin):
         :param hostname: The hostname to search for.
         :returns: The zone if found, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
+        resp = client.get(Endpoint.ForwardZoneForHost.with_id(hostname), ok404=True)
         if not resp:
             return None
 
         zoneblob = resp.json()
 
         if "delegate" in zoneblob:
-            return ForwardZoneDelegation.model_validate(zoneblob)
+            return client._bind_client(ForwardZoneDelegation.model_validate(zoneblob))
 
         if "zone" in zoneblob:
-            return ForwardZone.model_validate(zoneblob["zone"])
+            return client._bind_client(ForwardZone.model_validate(zoneblob["zone"]))
 
         if "delegation" in zoneblob:
-            return ForwardZoneDelegation.model_validate(zoneblob["delegation"])
+            return client._bind_client(ForwardZoneDelegation.model_validate(zoneblob["delegation"]))
 
         raise UnexpectedDataError(f"Unexpected response from server: {zoneblob}", resp)
 
@@ -1094,15 +1109,15 @@ class HostPolicy(FrozenModel, WithName, ABC):
     # defined on the class that can fetch both Roles and Atoms.
     # Thus, we need to define our own implementations of these methods.
     @classmethod
-    def get_role_or_atom(cls, name: str) -> Atom | Role | None:
+    def get_role_or_atom(cls, client: "ClientProtocol", name: str) -> Atom | Role | None:
         """Get an Atom or Role by name.
 
         :param name: The name to search for.
         :returns: The Atom or Role if found, else None.
         """
         funcs: list[Callable[[str], Atom | Role | None]] = [
-            Atom.get_by_name,
-            Role.get_by_name,
+            lambda n: Atom.get_by_name(client, n),
+            lambda n: Role.get_by_name(client, n),
         ]
         for func in funcs:
             role_or_atom = func(name)
@@ -1111,27 +1126,27 @@ class HostPolicy(FrozenModel, WithName, ABC):
         return None
 
     @classmethod
-    def get_role_or_atom_or_raise(cls, name: str) -> Atom | Role:
+    def get_role_or_atom_or_raise(cls, client: "ClientProtocol", name: str) -> Atom | Role:
         """Get an Atom or Role by name and raise if not found.
 
         :param name: The name to search for.
         :returns: The Atom or Role if found.
         :raises EntityNotFound: If the Atom or Role is not found.
         """
-        role_or_atom = cls.get_role_or_atom(name)
+        role_or_atom = cls.get_role_or_atom(client, name)
         if role_or_atom:
             return role_or_atom
         raise EntityNotFound(f"Could not find an atom or a role with name {name}")
 
     @classmethod
-    def get_role_or_atom_and_raise(cls, name: str) -> None:
+    def get_role_or_atom_and_raise(cls, client: "ClientProtocol", name: str) -> None:
         """Get an Atom or Role by name and raise if found.
 
         :param name: The name to search for.
         :returns: The Atom or Role if found.
         :raises EntityAlreadyExists: If the Atom or Role is found.
         """
-        role_or_atom = cls.get_role_or_atom(name)
+        role_or_atom = cls.get_role_or_atom(client, name)
         if role_or_atom:
             raise EntityAlreadyExists(f"An atom or a role with name {name} already exists.")
 
@@ -1160,63 +1175,61 @@ class Role(HostPolicy, WithHistory):
         return Endpoint.HostPolicyRoles
 
     @classmethod
-    def get_roles_with_atom(cls, name: str) -> list[Self]:
+    def get_roles_with_atom(cls, client: "ClientProtocol", name: str) -> list[Self]:
         """Get all roles with a specific atom.
 
         :param atom: Name of the atom to search for.
         :returns: A list of Role objects.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        return client.get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
 
-        return MregClient().get_typed(cls.endpoint(), list[cls], params={"atoms__name__exact": name})
-
-    def add_atom(self, atom_name: str) -> bool:
+    def add_atom(self, atom_name: str, client: "ClientProtocol | None" = None) -> bool:
         """Add an atom to the role.
 
         :param atom_name: The name of the atom to add.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         # Ensure the atom exists
-        Atom.get_by_name_or_raise(atom_name)
+        _ = Atom.get_by_name_or_raise(client, atom_name)
         for atom in self.atoms:
             if atom_name == atom:
                 raise EntityAlreadyExists(f"Atom {atom!r} already a member of role {self.name!r}")
 
-        resp = MregClient().post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
+        resp = client.post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
         return resp.is_success if resp else False
 
-    def remove_atom(self, atom_name: str) -> bool:
+    def remove_atom(self, atom_name: str, client: "ClientProtocol | None" = None) -> bool:
         """Remove an atom from the role.
 
         :param atom_name: The name of the atom to remove.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         for atom in self.atoms:
             if atom_name == atom:
                 break
         else:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {self.name!r}")
 
-        resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
+        resp = client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(self.name, atom))
         return resp.is_success if resp else False
 
-    def get_labels(self) -> list[Label]:
+    def get_labels(self, client: "ClientProtocol | None" = None) -> list[Label]:
         """Get the labels associated with the role.
 
         :returns: A list of Label objects.
         """
-        return [Label.get_by_id_or_raise(id_) for id_ in self.labels]
+        client = self._require_client(client)
+        return [Label.get_by_id_or_raise(client, id_) for id_ in self.labels]
 
-    def add_label(self, label_name: str) -> Self:
+    def add_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
         """Add a label to the role.
 
         :param label_name: The name of the label to add.
 
         :returns: The updated Role object.
         """
-        label = Label.get_by_name_or_raise(label_name)
+        client = self._require_client(client)
+        label = Label.get_by_name_or_raise(client, label_name)
         if label.id in self.labels:
             raise EntityAlreadyExists(f"The role {self.name!r} already has the label {label_name!r}")
 
@@ -1224,14 +1237,15 @@ class Role(HostPolicy, WithHistory):
         label_ids.append(label.id)
         return self.patch({"labels": label_ids})
 
-    def remove_label(self, label_name: str) -> Self:
+    def remove_label(self, label_name: str, client: "ClientProtocol | None" = None) -> Self:
         """Add a label to the role.
 
         :param label_name: The name of the label to add.
 
         :returns: The updated Role object.
         """
-        label = Label.get_by_name_or_raise(label_name)
+        client = self._require_client(client)
+        label = Label.get_by_name_or_raise(client, label_name)
         if label.id not in self.labels:
             raise EntityOwnershipMismatch(
                 f"The role {self.name!r} doesn't have the label {label_name!r}"
@@ -1241,32 +1255,30 @@ class Role(HostPolicy, WithHistory):
         label_ids.remove(label.id)
         return self.patch({"labels": label_ids})
 
-    def add_host(self, name: str) -> bool:
+    def add_host(self, name: str, client: "ClientProtocol | None" = None) -> bool:
         """Add a host to the role by name.
 
         :param name: The name of the host to add.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
+        client = self._require_client(client)
+        resp = client.post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
         return resp.is_success if resp else False
 
-    def remove_host(self, name: str) -> bool:
+    def remove_host(self, name: str, client: "ClientProtocol | None" = None) -> bool:
         """Remove a host from the role by name.
 
         :param name: The name of the host to remove.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
+        client = self._require_client(client)
+        resp = client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(self.name, name))
         return resp.is_success if resp else False
 
-    def delete(self) -> bool:
+    def delete(self, client: "ClientProtocol | None" = None) -> bool:
         """Delete the role."""
         if self.hosts:
             hosts = ", ".join(self.hosts)
             raise DeleteError(f"Role {self.name!r} used on hosts: {hosts}")
-        return super().delete()
+        return super().delete(client)
 
 
 class Atom(HostPolicy, WithHistory):
@@ -1282,13 +1294,14 @@ class Atom(HostPolicy, WithHistory):
         """Return the endpoint for the class."""
         return Endpoint.HostPolicyAtoms
 
-    def delete(self) -> bool:
+    def delete(self, client: "ClientProtocol | None" = None) -> bool:
         """Delete the atom."""
-        roles = Role.get_roles_with_atom(self.name)
+        client = self._require_client(client)
+        roles = Role.get_roles_with_atom(client, self.name)
         if self.roles:
             roles = ", ".join(self.roles)
             raise DeleteError(f"Atom {self.name!r} used in roles: {roles}")
-        return super().delete()
+        return super().delete(client)
 
 
 class Label(FrozenModelWithTimestamps, WithName):
@@ -1304,24 +1317,22 @@ class Label(FrozenModelWithTimestamps, WithName):
         return Endpoint.Labels
 
     @classmethod
-    def get_all(cls) -> list[Self]:
+    def get_all(cls, client: "ClientProtocol") -> list[Self]:
         """Get all labels.
 
         :returns: A list of Label objects.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
+        return client.get_typed(cls.endpoint(), list[cls], params={"ordering": "name"})
 
     @classmethod
-    def get_by_id_or_raise(cls, _id: int) -> Self:
+    def get_by_id_or_raise(cls, client: "ClientProtocol", _id: int) -> Self:
         """Get a Label by ID.
 
         :param _id: The Label ID to search for.
         :returns: The Label if found.
         :raises EntityNotFound: If the Label is not found.
         """
-        label = cls.get_by_id(_id)
+        label = cls.get_by_id(client, _id)
         if not label:
             raise EntityNotFound(f"Label with ID {_id} not found.")
         return label
@@ -1423,7 +1434,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         )
 
     @classmethod
-    def get_by_any_means(cls, identifier: str) -> Self | None:
+    def get_by_any_means(cls, client: "ClientProtocol", identifier: str) -> Self | None:
         """Get a network by the given identifier.
 
         - If the identifier is numeric, it is treated as an ID.
@@ -1442,74 +1453,72 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         else:
             # We (should) have a valid ip or network
             if net_or_ip.is_network():
-                return cls.get_by_network(str(net_or_ip))
+                return cls.get_by_network(client, str(net_or_ip))
             elif net_or_ip.is_ip():
-                return cls.get_by_ip(net_or_ip.as_ip())
+                return cls.get_by_ip(client, net_or_ip.as_ip())
         # Check if identifier is an ID
         if identifier.isdigit():
             try:
-                return cls.get_by_id(int(identifier))
+                return cls.get_by_id(client, int(identifier))
             except ValueError:
                 pass
         return None
 
     @classmethod
-    def get_by_any_means_or_raise(cls, identifier: str) -> Self:
+    def get_by_any_means_or_raise(cls, client: "ClientProtocol", identifier: str) -> Self:
         """Get a network by the given identifier, and raise if not found.
 
         See `get_by_any_means` for details.
         """
-        net = cls.get_by_any_means(identifier)
+        net = cls.get_by_any_means(client, identifier)
         if not net:
             raise EntityNotFound(f"Network {identifier!r} not found.")
         return net
 
     @classmethod
-    def get_by_ip(cls, ip: IP_AddressT) -> Self | None:
+    def get_by_ip(cls, client: "ClientProtocol", ip: IP_AddressT) -> Self | None:
         """Get a network by IP address.
 
         :param ip: The IP address to search for.
         :returns: The network if found, None otherwise.
         :raises EntityNotFound: If the network is not found.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().get(Endpoint.NetworksByIP.with_id(str(ip)), ok404=True)
+        resp = client.get(Endpoint.NetworksByIP.with_id(str(ip)), ok404=True)
         if not resp:
             return None
-        return cls.model_validate_json(resp.text)
+        return client._bind_client(cls.model_validate_json(resp.text))
 
     @classmethod
-    def get_by_ip_or_raise(cls, ip: IP_AddressT) -> Network:
+    def get_by_ip_or_raise(cls, client: "ClientProtocol", ip: IP_AddressT) -> Network:
         """Get a network by IP address, and raise if not found.
 
         :param ip: The IP address to search for.
         :returns: The network if found, None otherwise.
         :raises EntityNotFound: If the network is not found.
         """
-        network = cls.get_by_ip(ip)
+        network = cls.get_by_ip(client, ip)
         if not network:
             raise EntityNotFound(f"Network with IP address {ip} not found.")
         return network
 
     @classmethod
-    def get_by_network(cls, network: str) -> Self | None:
+    def get_by_network(cls, client: "ClientProtocol", network: str) -> Self | None:
         """Get a network by network address.
 
         :param network: The network string to search for.
         :returns: The network if found.
         """
-        return cls.get_by_field("network", network)
+        return cls.get_by_field(client, "network", network)
 
     @classmethod
-    def get_by_network_or_raise(cls, network: str) -> Self:
+    def get_by_network_or_raise(cls, client: "ClientProtocol", network: str) -> Self:
         """Get a network by its network address, and raise if not found.
 
         :param network: The network string to search for.
         :returns: The network if found.
         :raises EntityNotFound: If the network is not found.
         """
-        net = cls.get_by_network(network)
+        net = cls.get_by_network(client, network)
         if not net:
             raise EntityNotFound(f"Network {network} not found.")
         return net
@@ -1537,11 +1546,12 @@ class Network(FrozenModelWithTimestamps, APIMixin):
                 return community
         return None
 
-    def create_community(self, name: str, description: str) -> bool:
+    def create_community(
+        self, name: str, description: str, client: "ClientProtocol | None" = None
+    ) -> bool:
         """Create a community for the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().post(
+        client = self._require_client(client)
+        resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.network),
             name=name,
             description=description,
@@ -1559,75 +1569,71 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         self_net = NetworkOrIP.parse_or_raise(self.network, mode="network")
         return self_net.overlaps(other)
 
-    def get_first_available_ip(self) -> IP_AddressT:
+    def get_first_available_ip(self, client: "ClientProtocol | None" = None) -> IP_AddressT:
         """Return the first available IPv4 address of the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         return ipaddress.ip_address(
-            MregClient().get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
+            client.get_typed(Endpoint.NetworksFirstUnused.with_params(self.network), str)
         )
 
-    def get_reserved_ips(self) -> list[IP_AddressT]:
+    def get_reserved_ips(self, client: "ClientProtocol | None" = None) -> list[IP_AddressT]:
         """Return the reserved IP addresses of the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(
+        client = self._require_client(client)
+        return client.get_typed(
             Endpoint.NetworksReservedList.with_params(self.network), list[IP_AddressT]
         )
 
-    def get_used_count(self) -> int:
+    def get_used_count(self, client: "ClientProtocol | None" = None) -> int:
         """Return the number of used IP addresses in the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        client = self._require_client(client)
+        return client.get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
 
-        return MregClient().get_typed(Endpoint.NetworksUsedCount.with_params(self.network), int)
-
-    def get_used_list(self) -> list[IP_AddressT]:
+    def get_used_list(self, client: "ClientProtocol | None" = None) -> list[IP_AddressT]:
         """Return the list of used IP addresses in the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(
+        client = self._require_client(client)
+        return client.get_typed(
             Endpoint.NetworksUsedList.with_params(self.network), list[IP_AddressT]
         )
 
-    def get_unused_count(self) -> int:
+    def get_unused_count(self, client: "ClientProtocol | None" = None) -> int:
         """Return the number of unused IP addresses in the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        client = self._require_client(client)
+        return client.get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
 
-        return MregClient().get_typed(Endpoint.NetworksUnusedCount.with_params(self.network), int)
-
-    def get_unused_list(self) -> list[IP_AddressT]:
+    def get_unused_list(self, client: "ClientProtocol | None" = None) -> list[IP_AddressT]:
         """Return the list of unused IP addresses in the network."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(
+        client = self._require_client(client)
+        return client.get_typed(
             Endpoint.NetworksUnusedList.with_params(self.network), list[IP_AddressT]
         )
 
-    def get_used_host_list(self) -> dict[str, list[str]]:
+    def get_used_host_list(self, client: "ClientProtocol | None" = None) -> dict[str, list[str]]:
         """Return a dict of used IP addresses and their associated hosts."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(
+        client = self._require_client(client)
+        return client.get_typed(
             Endpoint.NetworksUsedHostList.with_params(self.network), dict[str, list[str]]
         )
 
-    def get_ptroverride_host_list(self) -> dict[str, str]:
+    def get_ptroverride_host_list(
+        self, client: "ClientProtocol | None" = None
+    ) -> dict[str, str]:
         """Return a dict of PTR override IP addresses and their associated hosts."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(
+        client = self._require_client(client)
+        return client.get_typed(
             Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str]
         )
 
-    def is_reserved_ip(self, ip: IP_AddressT) -> bool:
+    def is_reserved_ip(self, ip: IP_AddressT, client: "ClientProtocol | None" = None) -> bool:
         """Return True if the IP address is in the reserved list.
 
         :param ip: The IP address to check.
         :returns: True if the IP address is in the reserved list.
         """
-        return ip in self.get_reserved_ips()
+        return ip in self.get_reserved_ips(client)
 
-    def add_excluded_range(self, start: str, end: str) -> None:
+    def add_excluded_range(
+        self, start: str, end: str, client: "ClientProtocol | None" = None
+    ) -> None:
         """Add an excluded range to the network.
 
         :param start: The start of the excluded range.
@@ -1635,15 +1641,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
         :returns: The new ExcludedRange object.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
         end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
         if start_ip.version != end_ip.version:
             raise InputFailure("Start and end IP addresses must be of the same version")
 
         try:
-            MregClient().post(
+            _ = client.post(
                 Endpoint.NetworksAddExcludedRanges.with_params(self.network),
                 network=self.id,
                 start_ip=str(start_ip),
@@ -1656,14 +1661,15 @@ class Network(FrozenModelWithTimestamps, APIMixin):
             # ) from e
             raise e
 
-    def remove_excluded_range(self, start: str, end: str) -> None:
+    def remove_excluded_range(
+        self, start: str, end: str, client: "ClientProtocol | None" = None
+    ) -> None:
         """Remove an excluded range from the network.
 
         :param start: The start of the excluded range.
         :param end: The end of the excluded range.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         # No need to validate IPs - if we find a match it's valid
         exrange: ExcludedRange | None = None
         for excluded_range in self.excluded_ranges:
@@ -1672,7 +1678,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
                 break
         else:
             raise EntityNotFound(f"Excluded range {start} - {end} not found")
-        resp = MregClient().delete(
+        resp = client.delete(
             Endpoint.NetworksRemoveExcludedRanges.with_params(self.network, exrange.id)
         )
         if not resp or not resp.is_success:
@@ -1777,9 +1783,10 @@ class NetworkPolicyAttribute(FrozenModelWithTimestamps, WithName):
     name: str
     description: str
 
-    def get_policies(self) -> list[NetworkPolicy]:
+    def get_policies(self, client: "ClientProtocol | None" = None) -> list[NetworkPolicy]:
         """Get all policies using this attribute."""
-        return NetworkPolicy.get_list_by_field("attributes", self.id)
+        client = self._require_client(client)
+        return NetworkPolicy.get_list_by_field(client, "attributes", self.id)
 
     @classmethod
     def endpoint(cls) -> Endpoint:
@@ -1815,74 +1822,82 @@ class Community(FrozenModelWithTimestamps, APIMixin):
     @property
     def network_address(self) -> str:
         """Return the network object for the community."""
-        return Network.get_by_field_or_raise("id", str(self.network)).network
+        client = self._require_client(None)
+        return Network.get_by_field_or_raise(client, "id", str(self.network)).network
 
-    def refetch(self) -> Self:
+    def refetch(self, client: "ClientProtocol | None" = None) -> Self:
         """Refetch the community object."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        client = self._require_client(client)
+        return client.get_typed(self.endpoint_with_id, self.__class__)
 
-        return MregClient().get_typed(self.endpoint_with_id, self.__class__)
-
-    def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
+    def patch(
+        self,
+        fields: dict[str, Any],
+        validate: bool = True,
+        client: "ClientProtocol | None" = None,
+    ) -> Self:
         """Patch the community.
 
         :param fields: The fields to patch.
         :param validate: Whether to validate the response. (Not implemented)
         :returns: The updated Community object.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
+        _ = validate
         try:
-            MregClient().patch(self.endpoint_with_id, **fields)
+            _ = client.patch(self.endpoint_with_id, **fields)
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
             raise e
-        new_object = self.refetch()
+        new_object = self.refetch(client)
         return new_object
 
-    def delete(self) -> bool:
+    def delete(self, client: "ClientProtocol | None" = None) -> bool:
         """Delete the community."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().delete(self.endpoint_with_id)
+        client = self._require_client(client)
+        resp = client.delete(self.endpoint_with_id)
         return resp.is_success if resp else False
 
-    def get_hosts(self) -> list[Host]:
+    def get_hosts(self, client: "ClientProtocol | None" = None) -> list[Host]:
         """Get a list of hosts in the community.
 
         :returns: A list of Host objects.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        client = self._require_client(client)
+        return client.get_typed(self.hosts_endpoint, list[Host])
 
-        return MregClient().get_typed(self.hosts_endpoint, list[Host])
-
-    def add_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
+    def add_host(
+        self,
+        host: Host,
+        ipaddress: IP_AddressT | None = None,
+        client: "ClientProtocol | None" = None,
+    ) -> bool:
         """Add a host to the community.
 
         :param host: The host to add.
         :returns: True if the host was added, False otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         kwargs: QueryParams = {"id": host.id}
         if ipaddress:
             kwargs["ipaddress"] = str(ipaddress)
-        resp = MregClient().post(self.hosts_endpoint, params=None, ok404=False, **kwargs)
+        resp = client.post(self.hosts_endpoint, params=None, ok404=False, **kwargs)
         return resp.is_success if resp else False
 
-    def remove_host(self, host: Host, ipaddress: IP_AddressT | None) -> bool:
+    def remove_host(
+        self, host: Host, ipaddress: IP_AddressT | None, client: "ClientProtocol | None" = None
+    ) -> bool:
         """Remove a host from the community.
 
         :param host: The host to remove.
         :returns: True if the host was removed, False otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         params: QueryParams = {}
         if ipaddress:
             params["ipaddress"] = str(ipaddress)
-        resp = MregClient().delete(
+        resp = client.delete(
             Endpoint.NetworkCommunityHost.with_params(
                 self.network_address,
                 self.id,
@@ -1972,7 +1987,7 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
         """
         # Check if attribute exists
         # NOTE: yes, we iterate over it twice here, but it's a small list
-        self.get_attribute_or_raise(attribute)
+        _ = self.get_attribute_or_raise(attribute)
         attrs = self.attributes.copy()
         for a in attrs:
             if a.name == attribute:
@@ -1987,27 +2002,27 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
 
         :param attrs: The new attributes.
         """
-        self.patch(
+        _ = self.patch(
             {"attributes": [{"name": a.name, "value": a.value} for a in attrs]},
             validate=False,
         )
         # NOTE: can return self.refetch() here if we need to refresh the object
 
-    def networks(self) -> list[Network]:
+    def networks(self, client: "ClientProtocol | None" = None) -> list[Network]:
         """Get all networks using this policy."""
-        return Network.get_list_by_field("policy", self.id)
+        client = self._require_client(client)
+        return Network.get_list_by_field(client, "policy", self.id)
 
-    def create_community(self, name: str, description: str) -> Community | None:
+    def create_community(
+        self, name: str, description: str, client: "ClientProtocol | None" = None
+    ) -> Community | None:
         """Create a new community.
 
         :param name: The name of the community.
         :param description: The description of the community.
         :returns: The new Community object.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        client = MregClient()
-
+        client = self._require_client(client)
         resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.id),
             name=name,
@@ -2038,7 +2053,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         return None
 
     @classmethod
-    def get_by_ip(cls, ip: IP_AddressT) -> list[Self]:
+    def get_by_ip(cls, client: "ClientProtocol", ip: IP_AddressT) -> list[Self]:
         """Get a list of IP address objects by IP address.
 
         Note that the IP addresses can be duplicated across hosts,
@@ -2047,10 +2062,10 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         :param ip: The IP address to search for.
         :returns: The IP address if found, None otherwise.
         """
-        return cls.get_list_by_field("ipaddress", str(ip))
+        return cls.get_list_by_field(client, "ipaddress", str(ip))
 
     @classmethod
-    def ensure_associable(cls, mac: MacAddress, force: bool) -> None:
+    def ensure_associable(cls, client: "ClientProtocol", mac: MacAddress, force: bool) -> None:
         """Check if a MAC address is available to be associated with an IP address.
 
         Raise an exception if the MAC address is already associated with an IP address,
@@ -2064,7 +2079,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         if force:
             return
 
-        ips = cls.get_ips_by_mac(mac)
+        ips = cls.get_ips_by_mac(client, mac)
         if not ips:
             return
 
@@ -2079,25 +2094,25 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             )
 
     @classmethod
-    def get_by_mac(cls, mac: MacAddress) -> Self | None:
+    def get_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> Self | None:
         """Get the IP address objects by MAC address.
 
         :param mac: The MAC address to search for.
         :returns: The IP address if found, None otherwise.
         """
         try:
-            return cls.get_by_field("macaddress", mac)
+            return cls.get_by_field(client, "macaddress", mac)
         except MultipleEntitiesFound as e:
             raise MultipleEntitiesFound(f"Multiple IPs found with MAC address {mac}.") from e
 
     @classmethod
-    def get_ips_by_mac(cls, mac: MacAddress) -> list[Self]:
+    def get_ips_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> list[Self]:
         """Get a list of IP addresses by MAC address.
 
         :param mac: The MAC address to search for.
         :returns: A list of IP addresses.
         """
-        return cls.get_list_by_field("macaddress", mac)
+        return cls.get_list_by_field(client, "macaddress", mac)
 
     @classmethod
     def endpoint(cls) -> Endpoint:
@@ -2116,18 +2131,17 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         """Return True if the IP address is IPv6."""
         return self.ipaddress.version == 6
 
-    def network(self) -> Network | None:
+    def network(self, client: "ClientProtocol | None" = None) -> Network | None:
         """Return the network of the IP address."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            return MregClient().get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
+            return client.get_typed(Endpoint.NetworksByIP.with_id(str(self.ipaddress)), Network)
         except APIError:
             return None
 
-    def vlan(self) -> int | None:
+    def vlan(self, client: "ClientProtocol | None" = None) -> int | None:
         """Return the VLAN of the IP address."""
-        if net := self.network():
+        if net := self.network(client):
             return net.vlan
         return None
 
@@ -2189,21 +2203,21 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         return Endpoint.Cnames
 
     @classmethod
-    def get_by_name(cls, name: HostName) -> CNAME:
+    def get_by_name(cls, client: "ClientProtocol", name: HostName) -> CNAME:
         """Get a CNAME record by name.
 
         :param name: The name to search for.
         :returns: The CNAME record if found, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        data = MregClient().get_item_by_key_value(Endpoint.Cnames, "name", name)
+        data = client.get_item_by_key_value(Endpoint.Cnames, "name", name)
         if not data:
             raise EntityNotFound(f"CNAME record for {name} not found.")
-        return CNAME.model_validate(data)
+        return client._bind_client(CNAME.model_validate(data))
 
     @classmethod
-    def get_by_host_and_name(cls, host: HostName | int, name: HostName) -> CNAME:
+    def get_by_host_and_name(
+        cls, client: "ClientProtocol", host: HostName | int, name: HostName
+    ) -> CNAME:
         """Get a CNAME record by host and name.
 
         :param host: The host to search for, either a hostname or an ID.
@@ -2212,19 +2226,19 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         """
         target_hostname = None
         if isinstance(host, str):
-            hostobj = Host.get_by_any_means(host, inform_as_cname=False)
+            hostobj = Host.get_by_any_means(client, host, inform_as_cname=False)
             if not hostobj:
                 raise EntityNotFound(f"Host with name {host} not found.")
 
             host = hostobj.id
             target_hostname = hostobj.name
         else:
-            hostobj = Host.get_by_id(host)
+            hostobj = Host.get_by_id(client, host)
             if not hostobj:
                 raise EntityNotFound(f"Host with ID {host} not found.")
             target_hostname = hostobj.name
 
-        results = cls.get_by_query({"host": str(host), "name": name})
+        results = cls.get_by_query(client, {"host": str(host), "name": name})
 
         if not results or len(results) == 0:
             raise EntityNotFound(f"CNAME record for {name} not found for {target_hostname}.")
@@ -2260,7 +2274,7 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         return Endpoint.Mxs
 
     @classmethod
-    def get_by_all(cls, host: int, mx: str, priority: int) -> MX:
+    def get_by_all(cls, client: "ClientProtocol", host: int, mx: str, priority: int) -> MX:
         """Get an MX record by all fields.
 
         :param host: The host ID.
@@ -2268,14 +2282,12 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         :param priority: The priority.
         :returns: The MX record if found, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        data = MregClient().get_list_unique(
+        data = client.get_list_unique(
             Endpoint.Mxs, params={"host": str(host), "mx": mx, "priority": str(priority)}
         )
         if not data:
             raise EntityNotFound(f"MX record for {mx} not found.")
-        return MX.model_validate(data)
+        return client._bind_client(MX.model_validate(data))
 
     def has_mx_with_priority(self, mx: str, priority: int) -> bool:
         """Return True if the MX record has the given MX and priority.
@@ -2381,17 +2393,15 @@ class BacnetID(FrozenModel, WithHost, APIMixin):
         return Endpoint.BacnetID
 
     @classmethod
-    def get_in_range(cls, start: int, end: int) -> list[Self]:
+    def get_in_range(cls, client: "ClientProtocol", start: int, end: int) -> list[Self]:
         """Get Bacnet IDs in a range.
 
         :param start: The start of the range.
         :param end: The end of the range.
         :returns: List of BacnetID objects in the range.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         params: QueryParams = {"id__range": f"{start},{end}"}
-        return MregClient().get_typed(Endpoint.BacnetID, list[cls], params=params)
+        return client.get_typed(Endpoint.BacnetID, list[cls], params=params)
 
 
 class Location(FrozenModelWithTimestamps, WithHost, APIMixin):
@@ -2510,36 +2520,42 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return Endpoint.Hosts
 
     @classmethod
-    def get_list_by_ip(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> list[Self]:
+    def get_list_by_ip(
+        cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
+    ) -> list[Self]:
         """Get a list of hosts by IP address.
 
         :param ip: The IP address to search for.
         :param check_ptr: If True, check for PTR overrides as well.
         :returns: A list of Host objects.
         """
-        hosts = cls.get_list_by_field("ipaddresses__ipaddress", str(ip))
+        hosts = cls.get_list_by_field(client, "ipaddresses__ipaddress", str(ip))
         if not hosts:
-            hosts = cls.get_list_by_field("ptr_overrides__ipaddress", str(ip))
+            hosts = cls.get_list_by_field(client, "ptr_overrides__ipaddress", str(ip))
             if hosts and inform_as_ptr:
                 for host in hosts:
                     host.add_note(f"{ip} is a PTR override for {host.name}")
         return hosts
 
     @classmethod
-    def get_list_by_ip_or_raise(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> list[Self]:
+    def get_list_by_ip_or_raise(
+        cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
+    ) -> list[Self]:
         """Get a list of hosts by IP address or raise EntityNotFound.
 
         :param ip: The IP address to search for.
         :returns: A list of Host objects.
         :param check_ptr: If True, check for PTR overrides as well.
         """
-        hosts = cls.get_list_by_ip(ip, inform_as_ptr=inform_as_ptr)
+        hosts = cls.get_list_by_ip(client, ip, inform_as_ptr=inform_as_ptr)
         if not hosts:
             raise EntityNotFound(f"Host with IP address {ip} not found.")
         return hosts
 
     @classmethod
-    def get_by_ip(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> Host | None:
+    def get_by_ip(
+        cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
+    ) -> Host | None:
         """Get a host by IP address.
 
         :param ip: The IP address to search for.
@@ -2547,9 +2563,9 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :returns: The Host object if found, None otherwise.
         """
         try:
-            host = cls.get_by_field("ipaddresses__ipaddress", str(ip))
+            host = cls.get_by_field(client, "ipaddresses__ipaddress", str(ip))
             if not host:
-                host = cls.get_by_field("ptr_overrides__ipaddress", str(ip))
+                host = cls.get_by_field(client, "ptr_overrides__ipaddress", str(ip))
                 if host and inform_as_ptr:
                     host.add_note(f"{ip} is a PTR override for {host.name}")
             return host
@@ -2557,63 +2573,69 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             raise MultipleEntitiesFound(f"Multiple hosts found with IP address {ip}.") from e
 
     @classmethod
-    def get_by_ip_or_raise(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> Host:
+    def get_by_ip_or_raise(
+        cls, client: "ClientProtocol", ip: IP_AddressT, inform_as_ptr: bool = True
+    ) -> Host:
         """Get a host by IP address or raise EntityNotFound.
 
         :param ip: The IP address to search for.
         :returns: The Host object if found.
         :param check_ptr: If True, check for PTR overrides as well.
         """
-        host = cls.get_by_ip(ip, inform_as_ptr=inform_as_ptr)
+        host = cls.get_by_ip(client, ip, inform_as_ptr=inform_as_ptr)
         if not host:
             raise EntityNotFound(f"Host with IP address {ip} not found.")
         return host
 
     @classmethod
-    def get_by_mac(cls, mac: MacAddress) -> Host | None:
+    def get_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> Host | None:
         """Get a host by MAC address.
 
         :param ip: The MAC address to search for.
         :returns: The Host object if found, None otherwise.
         """
-        return cls.get_by_field("ipaddresses__macaddress", str(mac))
+        return cls.get_by_field(client, "ipaddresses__macaddress", str(mac))
 
     @classmethod
-    def get_by_mac_or_raise(cls, mac: MacAddress) -> Host:
+    def get_by_mac_or_raise(cls, client: "ClientProtocol", mac: MacAddress) -> Host:
         """Get a host by MAC address or raise EntityNotFound.
 
         :param ip: The MAC address to search for.
         :returns: The Host object if found.
         """
-        host = cls.get_by_mac(mac)
+        host = cls.get_by_mac(client, mac)
         if not host:
             raise EntityNotFound(f"Host with MAC address {mac} not found.")
         return host
 
     @classmethod
-    def get_list_by_mac(cls, mac: MacAddress) -> list[Self]:
+    def get_list_by_mac(cls, client: "ClientProtocol", mac: MacAddress) -> list[Self]:
         """Get a list of host by MAC address.
 
         :param ip: The MAC address to search for.
         :returns: The Host object if found, None otherwise.
         """
-        return cls.get_list_by_field("ipaddresses__macaddress", str(mac))
+        return cls.get_list_by_field(client, "ipaddresses__macaddress", str(mac))
 
     @classmethod
-    def get_list_by_mac_or_raise(cls, mac: MacAddress) -> list[Self]:
+    def get_list_by_mac_or_raise(cls, client: "ClientProtocol", mac: MacAddress) -> list[Self]:
         """Get a list of hosts by MAC address or raise EntityNotFound.
 
         :param ip: The MAC address to search for.
         :returns: The Host object if found.
         """
-        hosts = cls.get_list_by_mac(mac)
+        hosts = cls.get_list_by_mac(client, mac)
         if not hosts:
             raise EntityNotFound(f"Host with MAC address {mac} not found.")
         return hosts
 
     @classmethod
     def get_by_any_means_or_raise(
-        cls, identifier: str | HostName, inform_as_cname: bool = True, inform_as_ptr: bool = True
+        cls,
+        client: "ClientProtocol",
+        identifier: str | HostName,
+        inform_as_cname: bool = True,
+        inform_as_ptr: bool = True,
     ) -> Host:
         """Get a host by the given identifier or raise EntityNotFound.
 
@@ -2628,7 +2650,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :returns: A Host object if the host was found.
         """
         host = cls.get_by_any_means(
-            identifier, inform_as_cname=inform_as_cname, inform_as_ptr=inform_as_ptr
+            client, identifier, inform_as_cname=inform_as_cname, inform_as_ptr=inform_as_ptr
         )
         if not host:
             raise EntityNotFound(f"Host {identifier} not found.")
@@ -2636,7 +2658,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
     @classmethod
     def get_by_any_means(
-        cls, identifier: str, inform_as_cname: bool = True, inform_as_ptr: bool = True
+        cls,
+        client: "ClientProtocol",
+        identifier: str,
+        inform_as_cname: bool = True,
+        inform_as_ptr: bool = True,
     ) -> Host | None:
         """Get a host by the given identifier.
 
@@ -2672,26 +2698,26 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :returns: A Host object if the host was found, otherwise None.
         """
         if identifier.isdigit():
-            return Host.get_by_id(int(identifier))
+            return Host.get_by_id(client, int(identifier))
 
         if ip := NetworkOrIP.parse(identifier, mode="ip"):
-            host = cls.get_by_ip_or_raise(ip, inform_as_ptr=inform_as_ptr)
+            host = cls.get_by_ip_or_raise(client, ip, inform_as_ptr=inform_as_ptr)
             return host
 
         if mac := MacAddress.parse(identifier):
-            return cls.get_by_mac_or_raise(mac)
+            return cls.get_by_mac_or_raise(client, mac)
 
         # Let us try to find the host by name...
         identifier = HostName.parse_or_raise(identifier)
 
-        if host := cls.get_by_field("name", identifier):
+        if host := cls.get_by_field(client, "name", identifier):
             return host
 
-        cname = CNAME.get_by_field("name", identifier)
+        cname = CNAME.get_by_field(client, "name", identifier)
         # If we found a CNAME, get the host it points to. We're not interested in the
         # CNAME itself.
         if cname is not None:
-            host = Host.get_by_id(cname.host)
+            host = Host.get_by_id(client, cname.host)
 
             if host and inform_as_cname:
                 host.add_note(f"{identifier} is a CNAME for {host.name}")
@@ -2700,7 +2726,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
     @classmethod
     def get_list_by_any_means_or_raise(
-        cls, identifier: str | HostName, inform_as_cname: bool = True, inform_as_ptr: bool = True
+        cls,
+        client: "ClientProtocol",
+        identifier: str | HostName,
+        inform_as_cname: bool = True,
+        inform_as_ptr: bool = True,
     ) -> list[Self]:
         """Get a host by the given identifier or raise EntityNotFound.
 
@@ -2715,7 +2745,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :returns: A Host object if the host was found.
         """
         hosts = cls.get_list_by_any_means(
-            identifier, inform_as_cname=inform_as_cname, inform_as_ptr=inform_as_ptr
+            client, identifier, inform_as_cname=inform_as_cname, inform_as_ptr=inform_as_ptr
         )
         if not hosts:
             raise EntityNotFound(f"Host {identifier} not found.")
@@ -2723,7 +2753,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
     @classmethod
     def get_list_by_any_means(
-        cls, identifier: str, inform_as_cname: bool = True, inform_as_ptr: bool = True
+        cls,
+        client: "ClientProtocol",
+        identifier: str,
+        inform_as_cname: bool = True,
+        inform_as_ptr: bool = True,
     ) -> list[Self]:
         """Get a host by the given identifier.
 
@@ -2758,44 +2792,43 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A Host object if the host was found, otherwise None.
         """
-        if identifier.isdigit() and (host := cls.get_by_id(int(identifier))):
+        if identifier.isdigit() and (host := cls.get_by_id(client, int(identifier))):
             return [host]
 
         if ip := NetworkOrIP.parse(identifier, mode="ip"):
-            return cls.get_list_by_ip_or_raise(ip, inform_as_ptr=inform_as_ptr)
+            return cls.get_list_by_ip_or_raise(client, ip, inform_as_ptr=inform_as_ptr)
 
         if mac := MacAddress.parse(identifier):
-            return cls.get_list_by_mac_or_raise(mac)
+            return cls.get_list_by_mac_or_raise(client, mac)
 
         # Let us try to find the host by name...
         identifier = HostName.parse_or_raise(identifier)
 
-        if host := cls.get_by_field("name", identifier):
+        if host := cls.get_by_field(client, "name", identifier):
             return [host]
 
         # If we found a CNAME, get the host it points to. We're not interested in the
         # CNAME itself.
-        if cname := CNAME.get_by_field("name", identifier):
-            host = cls.get_by_id(cname.host)
+        if cname := CNAME.get_by_field(client, "name", identifier):
+            host = cls.get_by_id(client, cname.host)
             if host and inform_as_cname:
                 host.add_note(f"{identifier} is a CNAME for {host.name}")
                 return [host]
 
         return []
 
-    def delete(self) -> bool:
+    def delete(self, client: "ClientProtocol | None" = None) -> bool:
         """Delete the host.
 
         :raises DeleteError: If the operation to delete the host fails.
 
         :returns: True if the host was deleted successfully, False otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         # Note, we can't use .id as the identifier here, as the host name is used
         # in the endpoint URL...
         try:
-            resp = MregClient().delete(Endpoint.Hosts.with_id(str(self.name)), ok404=False)
+            resp = client.delete(Endpoint.Hosts.with_id(str(self.name)), ok404=False)
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(f"Failed to delete host {self.name}.", e.response) from e
@@ -2846,11 +2879,14 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         # Uses non-atomic host update via PATCH to set the contacts list.
         return self.patch(fields={"contacts": contacts}, validate=False)
 
-    def add_contacts(self, contacts: list[str]) -> HostContactModification:
+    def add_contacts(
+        self, contacts: list[str], client: "ClientProtocol | None" = None
+    ) -> HostContactModification:
         """Add contacts to the host.
 
         Args:
             contacts (list[str]): Contacts to add.
+            client (ClientProtocol | None): Optional client to bind and use.
 
         Raises:
             CreateError: Failed to add contacts to host.
@@ -2858,12 +2894,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             HostContactModification: Summary of host contact modifications.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         # Uses atomic endpoint for contact updates
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
-            resp = MregClient().post(endpoint, emails=contacts)
+            resp = client.post(endpoint, emails=contacts)
         except PostError:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add contacts to host {self.name}.", e.response) from e
@@ -2871,7 +2906,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         adapter = get_type_adapter(HostContactModification)
         return adapter.validate_json(resp.text)
 
-    def clear_contacts(self) -> HostContactModification:
+    def clear_contacts(self, client: "ClientProtocol | None" = None) -> HostContactModification:
         """Remove all contacts from the host.
 
         Raises:
@@ -2880,11 +2915,10 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             HostContactModification: _description_
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
-            resp = MregClient().delete(endpoint)
+            resp = client.delete(endpoint)
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(f"Failed to remove contacts from host {self.name}.", e.response) from e
@@ -2892,11 +2926,14 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         adapter = get_type_adapter(HostContactModification)
         return adapter.validate_json(resp.text)
 
-    def remove_contacts(self, contacts: list[str]) -> HostContactModification:
+    def remove_contacts(
+        self, contacts: list[str], client: "ClientProtocol | None" = None
+    ) -> HostContactModification:
         """Remove the given contacts from the host.
 
         Args:
             contacts (list[str]): Contacts to remove.
+            client (ClientProtocol | None): Optional client to bind and use.
 
         Raises:
             DeleteError: Failed to remove contacts.
@@ -2904,11 +2941,10 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             HostContactModification: Summary of host contact modifications.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
-            resp = MregClient().delete(endpoint, emails=contacts)
+            resp = client.delete(endpoint, emails=contacts)
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(f"Failed to remove contacts from host {self.name}.", e.response) from e
@@ -2925,19 +2961,22 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         # TODO: add try/except with error message
         return self.patch(fields={"contacts": []})
 
-    def add_ip(self, ip: IP_AddressT, mac: MacAddress | None = None) -> Host:
+    def add_ip(
+        self, ip: IP_AddressT, mac: MacAddress | None = None, client: "ClientProtocol | None" = None
+    ) -> Host:
         """Add an IP address to the host.
 
         :param ip: The IP address to add. IPv4 or IPv6.
 
         :returns: A new Host object fetched from the API with the updated IP address.
         """
+        client = self._require_client(client)
         params: QueryParams = {"ipaddress": str(ip), "host": str(self.id)}
         if mac:
             params["macaddress"] = mac
 
-        IPAddress.create(params=params)
-        return self.refetch()
+        _ = IPAddress.create(client, params=params)
+        return self.refetch(client)
 
     def has_ip(self, arg_ip: IP_AddressT) -> bool:
         """Check if the host has the given IP address.
@@ -3065,7 +3104,13 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """Return a list of IPv6 addresses."""
         return [ip for ip in self.ipaddresses if ip.is_ipv6()]
 
-    def associate_mac_to_ip(self, mac: MacAddress, ip: IP_AddressT | str, force: bool = False) -> Host:
+    def associate_mac_to_ip(
+        self,
+        mac: MacAddress,
+        ip: IP_AddressT | str,
+        force: bool = False,
+        client: "ClientProtocol | None" = None,
+    ) -> Host:
         """Associate a MAC address to an IP address.
 
         :param mac: The MAC address to associate.
@@ -3073,8 +3118,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A new Host object fetched from the API after updating the IP address.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         if isinstance(ip, str):
             ip = NetworkOrIP.parse_or_raise(ip, mode="ip")
 
@@ -3083,7 +3127,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             "ordering": "ipaddress",
         }
 
-        ipadresses = MregClient().get_typed(Endpoint.Ipaddresses, list[IPAddress], params=params)
+        ipadresses = client.get_typed(Endpoint.Ipaddresses, list[IPAddress], params=params)
 
         if ip in [ip.ipaddress for ip in ipadresses]:
             raise EntityAlreadyExists(f"IP address {ip} already has MAC address {mac} associated.")
@@ -3096,13 +3140,13 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         ip_found_in_host = False
         for myip in self.ipaddresses:
             if myip.ipaddress == ip:
-                myip.associate_mac(mac, force=force)
+                _ = myip.associate_mac(mac, force=force)
                 ip_found_in_host = True
 
         if not ip_found_in_host:
             raise EntityNotFound(f"IP address {ip} not found in host {self.name}.")
 
-        return self.refetch()
+        return self.refetch(client)
 
     def disassociate_mac_from_ip(self, ip: IP_AddressT | str) -> Host:
         """Disassociate a MAC address from an IP address.
@@ -3120,7 +3164,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         ip_found_in_host = False
         for myip in self.ipaddresses:
             if myip.ipaddress == ip:
-                myip.disassociate_mac()
+                _ = myip.disassociate_mac()
                 ip_found_in_host = True
 
         if not ip_found_in_host:
@@ -3159,17 +3203,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             return community.community
         return None
 
-    def networks(self) -> dict[Network, list[IPAddress]]:
+    def networks(self, client: "ClientProtocol | None" = None) -> dict[Network, list[IPAddress]]:
         """Return a dict of unique networks and a list of associated IP addresses for the host.
 
         Does not return networks that are not registered in MREG.
 
         :returns: A dictionary of networks and the associated IP addresses.
         """
+        client = self._require_client(client)
         ret_dict: dict[Network, list[IPAddress]] = {}
 
         for ip in self.ipaddresses:
-            network = ip.network()
+            network = ip.network(client)
             if not network:
                 # If network is not in MREG, we create a placeholder network
                 network = Network.dummy_network_from_ip(ip)
@@ -3181,7 +3226,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         return ret_dict
 
-    def vlans(self) -> dict[int, list[IPAddress]]:
+    def vlans(self, client: "ClientProtocol | None" = None) -> dict[int, list[IPAddress]]:
         """Return a dict of unique VLANs ID and a list of associated IP addresses for the host.
 
         IP addresses without a VLAN are assigned to VLAN 0.
@@ -3193,9 +3238,10 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :returns: A dictionary of VLAN ID and the associated IP addresses.
         """
+        client = self._require_client(client)
         ret_dict: dict[int, list[IPAddress]] = {}
 
-        for network, ips in self.networks().items():
+        for network, ips in self.networks(client).items():
             vlan = network.vlan or 0
             if vlan not in ret_dict:
                 ret_dict[vlan] = []
@@ -3205,7 +3251,10 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         return ret_dict
 
     def resolve_zone(
-        self, accept_delegation: bool = False, validate_zone_resolution: bool = False
+        self,
+        accept_delegation: bool = False,
+        validate_zone_resolution: bool = False,
+        client: "ClientProtocol | None" = None,
     ) -> Zone | Delegation | None:
         """Return the zone for the host.
 
@@ -3214,16 +3263,16 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :param validate_zone_resolution: If True, validate that the resolved zone matches the
                 expected zone ID. Fail with ValidationFailure if it does not.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         if not self.zone:
             return None
 
-        data = MregClient().get(Endpoint.ForwardZoneForHost.with_id(str(self.name)))
+        data = client.get(Endpoint.ForwardZoneForHost.with_id(str(self.name)))
         data_as_dict = data.json()
 
         if data_as_dict["zone"]:
             zone = ForwardZone.model_validate(data_as_dict["zone"])
+            zone = client._bind_client(zone)
             if validate_zone_resolution and zone.id != self.zone:
                 raise MregValidationError(f"Expected zone ID {self.zone} but resolved as {zone.id}.")
             return zone
@@ -3233,7 +3282,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                 raise EntityOwnershipMismatch(
                     f"Host {self.name} is delegated to zone {data_as_dict['delegation']['name']}."
                 )
-            return ForwardZoneDelegation.model_validate(data_as_dict["delegation"])
+            delegation = ForwardZoneDelegation.model_validate(data_as_dict["delegation"])
+            return client._bind_client(delegation)
 
         raise EntityNotFound(f"Failed to resolve zone for host {self.name}.")
 
@@ -3265,33 +3315,38 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         return False
 
-    def get_roles(self) -> list[Role]:
+    def get_roles(self, client: "ClientProtocol | None" = None) -> list[Role]:
         """List all roles for the host."""
-        return Role.get_list_by_field("hosts", self.id)
+        client = self._require_client(client)
+        return Role.get_list_by_field(client, "hosts", self.id)
 
-    def get_hostgroups(self, traverse: bool = False) -> list[HostGroup]:
+    def get_hostgroups(
+        self, traverse: bool = False, client: "ClientProtocol | None" = None
+    ) -> list[HostGroup]:
         """Return all hostgroups for the host.
 
         :param traverse: If True, traverse the parent groups and include them in the list.
 
         :returns: A list of HostGroup objects sorted by name.
         """
+        client = self._require_client(client)
         groups: list[HostGroup] = []
-        direct = HostGroup.get_list_by_field("hosts", self.id)
+        direct = HostGroup.get_list_by_field(client, "hosts", self.id)
         groups.extend(direct)
 
         if traverse:
             for group in direct:
-                groups.extend(group.get_all_parents())
+                groups.extend(group.get_all_parents(client=client))
 
         return sorted(groups, key=lambda group: group.name)
 
-    def bacnet(self) -> BacnetID | None:
+    def bacnet(self, client: "ClientProtocol | None" = None) -> BacnetID | None:
         """Return the BacnetID for the host."""
         if not self.bacnetid:
             return None
 
-        return BacnetID.get_by_id(self.bacnetid)
+        client = self._require_client(client)
+        return BacnetID.get_by_id(client, self.bacnetid)
 
     def has_mx_with_priority(self, mx_arg: str, priority: int) -> MX | None:
         """Check if the host has an MX record.
@@ -3328,33 +3383,31 @@ class HostList(FrozenModel):
         return Endpoint.Hosts
 
     @classmethod
-    def get(cls, params: QueryParams | None = None) -> HostList:
+    def get(cls, client: "ClientProtocol", params: QueryParams | None = None) -> HostList:
         """Get a list of hosts.
 
         :param params: Optional parameters to pass to the API.
 
         :returns: A HostList object.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         if params is None:
             params = {}
 
         if "ordering" not in params:
             params["ordering"] = "name"
 
-        hosts = MregClient().get_typed(cls.endpoint(), list[Host], params=params)
+        hosts = client.get_typed(cls.endpoint(), list[Host], params=params)
         return cls(results=hosts)
 
     @classmethod
-    def get_by_ip(cls, ip: IP_AddressT) -> HostList:
+    def get_by_ip(cls, client: "ClientProtocol", ip: IP_AddressT) -> HostList:
         """Get a list of hosts by IP address.
 
         :param ip: The IP address to search for.
 
         :returns: A HostList object.
         """
-        return cls.get(params={"ipaddresses__ipaddress": str(ip), "ordering": "name"})
+        return cls.get(client, params={"ipaddresses__ipaddress": str(ip), "ordering": "name"})
 
     def __len__(self):
         """Return the number of results."""
@@ -3417,41 +3470,39 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         return groupname in self.groups
 
-    def add_group(self, groupname: str) -> Self:
+    def add_group(self, groupname: str, client: "ClientProtocol | None" = None) -> Self:
         """Add a group to the hostgroup.
 
         :param group: The group to add.
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            MregClient().post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
+            _ = client.post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add group {groupname} to hostgroup {self.name}.", e.response)
             raise e
-        return self.refetch()
+        return self.refetch(client)
 
-    def remove_group(self, groupname: str) -> Self:
+    def remove_group(self, groupname: str, client: "ClientProtocol | None" = None) -> Self:
         """Remove a group from the hostgroup.
 
         :param group: The group to remove.
 
         :returns: A new HostGroup object fetched from the API with the updated groups.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            MregClient().delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
+            _ = client.delete(Endpoint.HostGroupsRemoveHostGroups.with_params(self.name, groupname))
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(
             #     f"Failed to remove group {groupname} from hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch()
+        return self.refetch(client)
 
     def has_host(self, hostname: str) -> bool:
         """Check if the hostgroup has the given host.
@@ -3462,41 +3513,39 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         return hostname in self.hosts
 
-    def add_host(self, hostname: str) -> Self:
+    def add_host(self, hostname: str, client: "ClientProtocol | None" = None) -> Self:
         """Add a host to the hostgroup.
 
         :param hostname: The host to add.
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            MregClient().post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
+            _ = client.post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add host {hostname} to hostgroup {self.name}.", e.response)
             raise e
-        return self.refetch()
+        return self.refetch(client)
 
-    def remove_host(self, hostname: str) -> Self:
+    def remove_host(self, hostname: str, client: "ClientProtocol | None" = None) -> Self:
         """Remove a host from the hostgroup.
 
         :param hostname: The host to remove.
 
         :returns: A new HostGroup object fetched from the API with the updated hosts.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            MregClient().delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
+            _ = client.delete(Endpoint.HostGroupsRemoveHosts.with_params(self.name, hostname))
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(
             #     f"Failed to remove host {hostname} from hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch()
+        return self.refetch(client)
 
     def has_owner(self, ownername: str) -> bool:
         """Check if the hostgroup has the given owner.
@@ -3507,52 +3556,51 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         """
         return ownername in self.owners
 
-    def add_owner(self, ownername: str) -> Self:
+    def add_owner(self, ownername: str, client: "ClientProtocol | None" = None) -> Self:
         """Add an owner to the hostgroup.
 
         :param ownername: The owner to add.
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            MregClient().post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
+            _ = client.post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(
             #     f"Failed to add owner {ownername} to hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch()
+        return self.refetch(client)
 
-    def remove_owner(self, ownername: str) -> Self:
+    def remove_owner(self, ownername: str, client: "ClientProtocol | None" = None) -> Self:
         """Remove an owner from the hostgroup.
 
         :param ownername: The owner to remove.
 
         :returns: A new HostGroup object fetched from the API with the updated owners.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
+        client = self._require_client(client)
         try:
-            MregClient().delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
+            _ = client.delete(Endpoint.HostGroupsRemoveOwner.with_params(self.name, ownername))
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(
             #     f"Failed to remove owner {ownername} from hostgroup {self.name}.", e.response
             # ) from e
             raise e
-        return self.refetch()
+        return self.refetch(client)
 
-    def get_all_parents(self) -> list[HostGroup]:
+    def get_all_parents(self, client: "ClientProtocol | None" = None) -> list[HostGroup]:
         """Return a list of all parent groups."""
+        client = self._require_client(client)
         parents: list[HostGroup] = []
         for parent in self.parent:
-            pobj = HostGroup.get_by_field("name", parent)
+            pobj = HostGroup.get_by_field(client, "name", parent)
             if pobj:
                 parents.append(pobj)
-                parents.extend(pobj.get_all_parents())
+                parents.extend(pobj.get_all_parents(client=client))
 
         return parents
 
@@ -3618,7 +3666,7 @@ class Fetchable(Protocol[FetchT_co]):
     specific response format and construct the appropriate object.
     """
 
-    def fetch(self, *, ignore_errors: bool = True) -> FetchT_co: ...  # noqa: D102
+    def fetch(self, client: "ClientProtocol", *, ignore_errors: bool = True) -> FetchT_co: ...  # noqa: D102
 
 
 class ServerVersion(BaseModel):
@@ -3632,7 +3680,7 @@ class ServerVersion(BaseModel):
         return Endpoint.MetaVersion
 
     @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> ServerVersion:
+    def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> ServerVersion:
         """Fetch the server version from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
@@ -3640,10 +3688,8 @@ class ServerVersion(BaseModel):
         :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerVersion with the fetched data.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         try:
-            response = MregClient().get(cls.endpoint())
+            response = client.get(cls.endpoint())
             return cls.model_validate(response.json())
         except Exception as e:
             if ignore_errors:
@@ -3669,7 +3715,7 @@ class ServerLibraries(BaseModel):
         return Endpoint.MetaLibraries
 
     @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> ServerLibraries:
+    def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> ServerLibraries:
         """Fetch the server libraries from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
@@ -3677,10 +3723,8 @@ class ServerLibraries(BaseModel):
         :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of ServerLibraries with the fetched data.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         try:
-            response = MregClient().get_typed(cls.endpoint(), dict[str, str])
+            response = client.get_typed(cls.endpoint(), dict[str, str])
             libraries: list[Library] = []
 
             for name, version in response.items():
@@ -3719,7 +3763,9 @@ class UserInfo(BaseModel):
         return Endpoint.MetaUser
 
     @classmethod
-    def fetch(cls, *, ignore_errors: bool = True, user: str | None = None) -> UserInfo:
+    def fetch(
+        cls, client: "ClientProtocol", *, ignore_errors: bool = True, user: str | None = None
+    ) -> UserInfo:
         """Fetch the user information from the endpoint.
 
         :param ignore_errors: Whether to ignore errors.
@@ -3730,14 +3776,12 @@ class UserInfo(BaseModel):
         :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
         :returns: An instance of UserInfo with the fetched data.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         try:
             endpoint = cls.endpoint()
             if user:
                 endpoint = f"{endpoint}?username={user}"
 
-            response = MregClient().get(endpoint)
+            response = client.get(endpoint)
             return cls.model_validate(response.json())
         except Exception as e:
             if ignore_errors:
@@ -3770,7 +3814,7 @@ class LDAPHealth(BaseModel, APIMixin):
         return Endpoint.HealthLDAP
 
     @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> Self:
+    def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> Self:
         """Fetch the LDAP status from the endpoint.
 
         :param ignore_errors: Ignore non-503 errors. 503 means LDAP is down,
@@ -3778,10 +3822,8 @@ class LDAPHealth(BaseModel, APIMixin):
         :raises GetError: If the response code is not 200 or 503.
         :returns: An instance of LDAPStatus.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         try:
-            MregClient().get(cls.endpoint())
+            _ = client.get(cls.endpoint())
             return cls(status="OK")
         except GetError as e:
             if ignore_errors:
@@ -3810,16 +3852,14 @@ class HeartbeatHealth(BaseModel, APIMixin):
         return str(timedelta(seconds=self.uptime)) if self.uptime > 0 else "Unknown"
 
     @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> Self:
+    def fetch(cls, client: "ClientProtocol", *, ignore_errors: bool = True) -> Self:
         """Fetch the heartbeat status from the endpoint.
 
         :param ignore_errors: Ignore HTTP errors and return dummy object with negative uptime.
         :returns: An instance of HeartbeatHealth with the fetched data.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         try:
-            result = MregClient().get(cls.endpoint())
+            result = client.get(cls.endpoint())
             return cls.model_validate_json(result.text)
         except Exception as e:
             if ignore_errors:
@@ -3835,14 +3875,14 @@ class HealthInfo(BaseModel):
     ldap: LDAPHealth
 
     @classmethod
-    def fetch(cls) -> HealthInfo:
+    def fetch(cls, client: "ClientProtocol") -> HealthInfo:
         """Fetch the health information from the endpoint.
 
         :returns: An instance of HealthInfo with the fetched data.
         """
         return cls(
-            heartbeat=HeartbeatHealth.fetch(),
-            ldap=LDAPHealth.fetch(),
+            heartbeat=HeartbeatHealth.fetch(client),
+            ldap=LDAPHealth.fetch(client),
         )
 
 

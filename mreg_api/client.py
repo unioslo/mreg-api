@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import functools
+import importlib
 import logging
 import re
 from collections import deque
 from collections.abc import Generator
 from contextlib import contextmanager
-from contextvars import ContextVar
 from contextvars import Token
 from enum import StrEnum
 from typing import Any
@@ -48,48 +48,12 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
-from mreg_api.models import CNAME
-from mreg_api.models import MX
-from mreg_api.models import NAPTR
-from mreg_api.models import SSHFP
-from mreg_api.models import TXT
-from mreg_api.models import Atom
-from mreg_api.models import BacnetID
-from mreg_api.models import Community
-from mreg_api.models import Delegation
-from mreg_api.models import ExcludedRange
-from mreg_api.models import ForwardZone
-from mreg_api.models import ForwardZoneDelegation
-from mreg_api.models import HealthInfo
-from mreg_api.models import HeartbeatHealth
-from mreg_api.models import HInfo
-from mreg_api.models import Host
-from mreg_api.models import HostCommunity
-from mreg_api.models import HostGroup
-from mreg_api.models import HostList
-from mreg_api.models import HostPolicy
-from mreg_api.models import IPAddress
-from mreg_api.models import Label
-from mreg_api.models import LDAPHealth
-from mreg_api.models import Location
-from mreg_api.models import NameServer
-from mreg_api.models import Network
-from mreg_api.models import NetworkOrIP
-from mreg_api.models import NetworkPolicy
-from mreg_api.models import NetworkPolicyAttribute
-from mreg_api.models import NetworkPolicyAttributeValue
-from mreg_api.models import Permission
-from mreg_api.models import PTR_override
-from mreg_api.models import ReverseZone
-from mreg_api.models import ReverseZoneDelegation
-from mreg_api.models import Role
-from mreg_api.models import ServerLibraries
-from mreg_api.models import ServerVersion
-from mreg_api.models import Srv
-from mreg_api.models import UserInfo
-from mreg_api.models import Zone
+from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.fields import hostname_domain
-from mreg_api.models.models import TokenAuth
+from mreg_api.models.manager import ModelManager
+from mreg_api.models.manager import client_model_map
+from mreg_api.request_context import last_request_method
+from mreg_api.request_context import last_request_url
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
@@ -98,9 +62,21 @@ from mreg_api.types import get_type_adapter
 
 logger = logging.getLogger(__name__)
 
-# Context variables for tracking request info (used in error reporting)
-last_request_url: ContextVar[str | None] = ContextVar("last_request_url", default=None)
-last_request_method: ContextVar[str | None] = ContextVar("last_request_method", default=None)
+_CLIENT_MODEL_MAP: dict[str, type] | None = None
+
+
+class _TokenAuthResponse(BaseModel):
+    """Response model for authentication token."""
+
+    token: str
+
+
+def _get_client_model_map() -> dict[str, type]:
+    global _CLIENT_MODEL_MAP
+    if _CLIENT_MODEL_MAP is None:
+        models_module = importlib.import_module("mreg_api.models")
+        _CLIENT_MODEL_MAP = client_model_map(models_module)
+    return _CLIENT_MODEL_MAP
 
 
 T = TypeVar("T")
@@ -115,25 +91,6 @@ class Header(StrEnum):
     AUTH = "Authorization"
     CORRELATION_ID = "X-Correlation-ID"
     REQUEST_ID = "X-Request-Id"
-
-
-class SingletonMeta(type):
-    """A metaclass for singleton classes."""
-
-    _instances: dict[type, object] = {}
-
-    def __call__(cls: type[Any], *args: Any, **kwargs: Any):
-        """Get the singleton instance of the class."""
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue] # TODO: fix typing for this
-        return cls._instances[cls]
-
-    def reset_instance(self) -> None:
-        """Reset the singleton instance (useful for testing)."""
-        try:
-            del self._instances[self]
-        except KeyError:
-            pass
 
 
 class RequestRecord(NamedTuple):
@@ -176,18 +133,17 @@ def invalidate_cache(
     def wrapper(self: MregClient, *args: P.args, **kwargs: P.kwargs) -> T:
         result = func(self, *args, **kwargs)
         # Clear cache after successful mutation (if it exists)
-        self.clear_cache()
+        _ = self.clear_cache()
         return result
 
     return wrapper
 
 
-class MregClient(metaclass=SingletonMeta):
+class MregClient:
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
-    methods for making API requests. It is designed to be used as
-    a singleton.
+    methods for making API requests.
 
     Authentication modes:
     1. Token: Provide token directly via set_token()
@@ -196,57 +152,13 @@ class MregClient(metaclass=SingletonMeta):
     Example:
         >>> client = MregClient()
         >>> client.login("username", "password")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
+        >>> host = client.host().get_by_any_means("example.uio.no")
 
         Or with token:
         >>> client = MregClient()
         >>> client.set_token("your-token-here")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
+        >>> host = client.host().get_by_any_means("example.uio.no")
     """
-
-    # Compose models on client for easy access
-    atom: type[Atom] = Atom
-    bacnet_id: type[BacnetID] = BacnetID
-    cname: type[CNAME] = CNAME
-    community: type[Community] = Community
-    delegation: type[Delegation] = Delegation
-    excluded_range: type[ExcludedRange] = ExcludedRange
-    forward_zone: type[ForwardZone] = ForwardZone
-    forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation
-    hinfo: type[HInfo] = HInfo
-    host: type[Host] = Host
-    host_community: type[HostCommunity] = HostCommunity
-    host_group: type[HostGroup] = HostGroup
-    host_list: type[HostList] = HostList
-    host_policy: type[HostPolicy] = HostPolicy
-    ip_address: type[IPAddress] = IPAddress
-    label: type[Label] = Label
-    location: type[Location] = Location
-    mx: type[MX] = MX
-    name_server: type[NameServer] = NameServer
-    naptr: type[NAPTR] = NAPTR
-    network: type[Network] = Network
-    network_or_ip: type[NetworkOrIP] = NetworkOrIP
-    network_policy: type[NetworkPolicy] = NetworkPolicy
-    network_policy_attribute: type[NetworkPolicyAttribute] = NetworkPolicyAttribute
-    network_policy_attribute_value: type[NetworkPolicyAttributeValue] = NetworkPolicyAttributeValue
-    permission: type[Permission] = Permission
-    ptr_override: type[PTR_override] = PTR_override
-    reverse_zone: type[ReverseZone] = ReverseZone
-    reverse_zone_delegation: type[ReverseZoneDelegation] = ReverseZoneDelegation
-    role: type[Role] = Role
-    srv: type[Srv] = Srv
-    sshfp: type[SSHFP] = SSHFP
-    txt: type[TXT] = TXT
-    zone: type[Zone] = Zone
-    health_info: type[HealthInfo] = HealthInfo
-    heartbeat_health: type[HeartbeatHealth] = HeartbeatHealth
-    ldap_health: type[LDAPHealth] = LDAPHealth
-    server_libraries: type[ServerLibraries] = ServerLibraries
-    server_version: type[ServerVersion] = ServerVersion
-    user_info: type[UserInfo] = UserInfo
 
     def __init__(
         self,
@@ -259,7 +171,7 @@ class MregClient(metaclass=SingletonMeta):
         page_size: int | None = None,
         history_size: int | None = 100,
     ) -> None:
-        """Initialize the client (only once for singleton)."""
+        """Initialize the client."""
         self.session: httpx.Client = httpx.Client(
             headers={"User-Agent": f"mreg-api-{__version__}"},
             follow_redirects=follow_redirects,
@@ -283,6 +195,17 @@ class MregClient(metaclass=SingletonMeta):
         self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
 
+    def __getattr__(self, name: str) -> ModelManager[Any]:
+        """Return a client-bound model manager for the named resource."""
+        model = _get_client_model_map().get(name)
+        if model is None:
+            raise AttributeError(f"{self.__class__.__name__!s} object has no attribute {name!r}")
+        return ModelManager(self, model)
+
+    def manager(self, model: type[T]) -> ModelManager[T]:
+        """Get a model manager for a specific model class."""
+        return ModelManager(self, model)
+
     @property
     def timeout(self) -> float | None:
         """Get the current timeout setting."""
@@ -296,12 +219,40 @@ class MregClient(metaclass=SingletonMeta):
     def __del__(self) -> None:
         """Cleanup on deletion."""
         self._reset_contextvars()
-        self.session.close()
+        try:
+            session = object.__getattribute__(self, "session")
+        except AttributeError:
+            session = None
+        if session is not None:
+            session.close()
 
     def _reset_contextvars(self) -> None:
         """Reset context variables used for request tracking."""
         _ = last_request_url.set(None)
         _ = last_request_method.set(None)
+
+    def _bind_client(self, value: Any) -> Any:
+        """Bind this client to model instances returned from API calls."""
+        if isinstance(value, list):
+            for item in value:
+                self._bind_client(item)
+            return value
+        if isinstance(value, tuple):
+            for item in value:
+                self._bind_client(item)
+            return value
+        if isinstance(value, dict):
+            for item in value.values():
+                self._bind_client(item)
+            return value
+        if isinstance(value, APIMixin):
+            value._set_client(self)
+        if isinstance(value, BaseModel):
+            for field in value.__class__.model_fields:
+                if field in value.__dict__:
+                    self._bind_client(value.__dict__[field])
+            return value
+        return value
 
     def set_domain(self, domain: str) -> Token[str]:
         """Set the default domain for hostname validation.
@@ -371,7 +322,7 @@ class MregClient(metaclass=SingletonMeta):
                       If False, leave the cache data intact.
         """
         if clear:
-            self.clear_cache()
+            _ = self.clear_cache()
         self.cache.disable()
 
     def clear_cache(self) -> int:
@@ -441,7 +392,7 @@ class MregClient(metaclass=SingletonMeta):
 
     def unset_token(self) -> None:
         """Unset the current authorization token."""
-        self.session.headers.pop(Header.AUTH, None)
+        _ = self.session.headers.pop(Header.AUTH, None)
         self._token = None
 
     def set_correlation_id(self, suffix: str) -> str:
@@ -532,7 +483,7 @@ class MregClient(metaclass=SingletonMeta):
         if not (json_str := response.text):
             raise LoginFailedError("No token received from server")
         try:
-            token = TokenAuth.model_validate_json(json_str).token
+            token = _TokenAuthResponse.model_validate_json(json_str).token
         except ValidationError as e:
             raise LoginFailedError(f"Failed to parse authentication token: {e}") from e
 
@@ -546,7 +497,7 @@ class MregClient(metaclass=SingletonMeta):
         """Logout from MREG (invalidate token on server)."""
         path = urljoin(self.url, Endpoint.TokenLogout)
         try:
-            self.session.post(path, timeout=self.timeout)
+            _ = self.session.post(path, timeout=self.timeout)
         except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
@@ -568,7 +519,7 @@ class MregClient(metaclass=SingletonMeta):
                 params={"page_size": 1},
                 timeout=self.timeout,
             )
-            ret.raise_for_status()
+            _ = ret.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
 
@@ -653,8 +604,8 @@ class MregClient(metaclass=SingletonMeta):
         logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
 
         # Update context variables for error reporting
-        last_request_url.set(str(request.url))
-        last_request_method.set(method)
+        _ = last_request_url.set(str(request.url))
+        _ = last_request_method.set(method)
 
         result = self.session.send(request)
         # Log response in response log
@@ -1054,10 +1005,10 @@ class MregClient(metaclass=SingletonMeta):
         adapter = get_type_adapter(type_)
         if type_ is list or get_origin(type_) is list:
             resp = self.get_list(path, params=params, limit=limit)
-            return adapter.validate_python(resp)
+            return self._bind_client(adapter.validate_python(resp))
         else:
             resp = self.get(path, params=params)
-            return adapter.validate_json(resp.text)
+            return self._bind_client(adapter.validate_json(resp.text))
 
 
 class PaginatedResponse(BaseModel):

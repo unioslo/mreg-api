@@ -56,7 +56,7 @@ def get_writable_file_or_tempfile(path: Path) -> Path:
 
 def check_writable(path: Path) -> None:
     """Check if user has write access to the given path."""
-    os.access(path, os.W_OK)
+    _ = os.access(path, os.W_OK)
 
 
 @functools.cache

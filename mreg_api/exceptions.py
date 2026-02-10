@@ -11,6 +11,8 @@ from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 
+from mreg_api.request_context import last_request_method
+from mreg_api.request_context import last_request_url
 from mreg_api.types import HTTPMethod
 
 logger = logging.getLogger(__name__)
@@ -179,9 +181,6 @@ class MregValidationError(MregApiBaseError):
         :param context: What was being validated (e.g., "JSON", "string", "object").
         :returns: The created MregValidationError.
         """
-        from mreg_api.client import last_request_method  # noqa: PLC0415
-        from mreg_api.client import last_request_url  # noqa: PLC0415
-
         # Display a title containing the HTTP method and URL if available
         method = last_request_method.get()
         url = last_request_url.get()

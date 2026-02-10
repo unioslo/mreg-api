@@ -9,6 +9,8 @@ from typing import Any
 from typing import Callable
 from typing import Self
 from typing import cast
+from weakref import ReferenceType
+from weakref import ref
 
 from pydantic import AliasChoices
 from pydantic import BaseModel
@@ -23,6 +25,7 @@ from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
+from mreg_api.types import ClientProtocol
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 
@@ -146,11 +149,34 @@ class FrozenModelWithTimestamps(FrozenModel):
 class APIMixin(ABC):
     """A mixin for API-related methods."""
 
+    _client: "ReferenceType[ClientProtocol] | None" = PrivateAttr(default=None)
+
+    def _set_client(self, client: "ClientProtocol") -> None:
+        object.__setattr__(self, "_client", ref(client))
+
+    def _get_client(self) -> "ClientProtocol | None":
+        if self._client is None:
+            return None
+        return self._client()
+
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Ensure that the subclass inherits from BaseModel."""
         super().__init_subclass__(**kwargs)
         if BaseModel not in cls.__mro__:
             raise TypeError(f"{cls.__name__} must be applied on classes inheriting from BaseModel.")
+
+    def _require_client(self, client: "ClientProtocol | None") -> "ClientProtocol":
+        if client is not None:
+            if self._get_client() is None:
+                self._set_client(client)
+            return client
+        client = self._get_client()
+        if client is None:
+            raise RuntimeError(
+                f"{self.__class__.__name__} instance is not bound to a client. "
+                "Fetch it via a client manager or pass a client explicitly."
+            )
+        return client
 
     def id_for_endpoint(self) -> int | str:
         """Return the appropriate id for the object for its endpoint.
@@ -167,7 +193,7 @@ class APIMixin(ABC):
         raise NotImplementedError("You must define an endpoint.")
 
     @classmethod
-    def get(cls, _id: int) -> Self | None:
+    def get(cls, client: "ClientProtocol", _id: int) -> Self | None:
         """Get an object.
 
         This function is at its base a wrapper around the get_by_id function,
@@ -176,29 +202,28 @@ class APIMixin(ABC):
         :param _id: The ID of the object.
         :returns: The object if found, None otherwise.
         """
-        return cls.get_by_id(_id)
+        return cls.get_by_id(client, _id)
 
     @classmethod
-    def get_list_by_id(cls, _id: int) -> list[Self]:
+    def get_list_by_id(cls, client: "ClientProtocol", _id: int) -> list[Self]:
         """Get a list of objects by their ID.
 
         :param _id: The ID of the object.
         :returns: A list of objects if found, an empty list otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         endpoint = cls.endpoint()
         if endpoint.requires_search_for_id():
-            return cls.get_list_by_field("id", _id)
+            return cls.get_list_by_field(client, "id", _id)
 
-        data = MregClient().get(endpoint.with_id(_id), ok404=True)
+        data = client.get(endpoint.with_id(_id), ok404=True)
         if not data:
             return []
 
-        return [cls(**item) for item in data.json()]
+        ret = [cls(**item) for item in data.json()]
+        return client._bind_client(ret)
 
     @classmethod
-    def get_by_id(cls, _id: int) -> Self | None:
+    def get_by_id(cls, client: "ClientProtocol", _id: int) -> Self | None:
         """Get an object by its ID.
 
         Note that for Hosts, the ID is the name of the host.
@@ -206,10 +231,6 @@ class APIMixin(ABC):
         :param _id: The ID of the object.
         :returns: The object if found, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        client = MregClient()
-
         endpoint = cls.endpoint()
 
         # Some endpoints do not use the ID field as the endpoint identifier,
@@ -225,10 +246,11 @@ class APIMixin(ABC):
         if not data:
             return None
 
-        return cls(**data)
+        obj = cls(**data)
+        return client._bind_client(obj)
 
     @classmethod
-    def get_by_field(cls, field: str, value: str | int) -> Self | None:
+    def get_by_field(cls, client: "ClientProtocol", field: str, value: str | int) -> Self | None:
         """Get an object by a field.
 
         Note that some endpoints do not use the ID field for lookups. We do some
@@ -247,9 +269,6 @@ class APIMixin(ABC):
 
         :returns: The object if found, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        client = MregClient()
         endpoint = cls.endpoint()
 
         if endpoint.requires_search_for_id() and field == endpoint.external_id_field():
@@ -263,11 +282,13 @@ class APIMixin(ABC):
         if not data:
             return None
 
-        return cls(**data)
+        obj = cls(**data)
+        return client._bind_client(obj)
 
     @classmethod
     def get_by_field_or_raise(
         cls,
+        client: "ClientProtocol",
         field: str,
         value: str,
         exc_type: type[Exception] = EntityNotFound,
@@ -284,7 +305,7 @@ class APIMixin(ABC):
 
         :returns: The object if found.
         """
-        obj = cls.get_by_field(field, value)
+        obj = cls.get_by_field(client, field, value)
         if not obj:
             if not exc_message:
                 exc_message = f"{cls.__name__} with {field} {value!r} not found."
@@ -294,6 +315,7 @@ class APIMixin(ABC):
     @classmethod
     def get_by_field_and_raise(
         cls,
+        client: "ClientProtocol",
         field: str,
         value: str,
         exc_type: type[Exception] = EntityAlreadyExists,
@@ -310,7 +332,7 @@ class APIMixin(ABC):
 
         :raises Exception: If the object is found.
         """
-        obj = cls.get_by_field(field, value)
+        obj = cls.get_by_field(client, field, value)
         if obj:
             if not exc_message:
                 exc_message = f"{cls.__name__} with {field} {value!r} already exists."
@@ -318,7 +340,9 @@ class APIMixin(ABC):
         return None
 
     @classmethod
-    def get_list(cls, params: QueryParams | None = None, limit: int | None = None) -> list[Self]:
+    def get_list(
+        cls, client: "ClientProtocol", params: QueryParams | None = None, limit: int | None = None
+    ) -> list[Self]:
         """Get a list of all objects.
 
         Optionally filtered by query parameters and limited by limit.
@@ -328,13 +352,15 @@ class APIMixin(ABC):
 
         :returns: A list of objects if found, an empty list otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        return MregClient().get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
+        return client.get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
 
     @classmethod
     def get_by_query(
-        cls, query: QueryParams, ordering: str | None = None, limit: int | None = 500
+        cls,
+        client: "ClientProtocol",
+        query: QueryParams,
+        ordering: str | None = None,
+        limit: int | None = 500,
     ) -> list[Self]:
         """Get a list of objects by a query.
 
@@ -346,11 +372,16 @@ class APIMixin(ABC):
         """
         if ordering:
             query["ordering"] = ordering
-        return cls.get_list(params=query, limit=limit)
+        return cls.get_list(client, params=query, limit=limit)
 
     @classmethod
     def get_list_by_field(
-        cls, field: str, value: str | int, ordering: str | None = None, limit: int = 500
+        cls,
+        client: "ClientProtocol",
+        field: str,
+        value: str | int,
+        ordering: str | None = None,
+        limit: int = 500,
     ) -> list[Self]:
         """Get a list of objects by a field.
 
@@ -362,11 +393,12 @@ class APIMixin(ABC):
         :returns: A list of objects if found, an empty list otherwise.
         """
         query: QueryParams = {field: value}
-        return cls.get_by_query(query=query, ordering=ordering, limit=limit)
+        return cls.get_by_query(client, query=query, ordering=ordering, limit=limit)
 
     @classmethod
     def get_by_query_unique_or_raise(
         cls,
+        client: "ClientProtocol",
         query: QueryParams,
         exc_type: type[Exception] = EntityNotFound,
         exc_message: str | None = None,
@@ -381,7 +413,7 @@ class APIMixin(ABC):
 
         :returns: The object if found.
         """
-        obj = cls.get_by_query_unique(query)
+        obj = cls.get_by_query_unique(client, query)
         if not obj:
             if not exc_message:
                 exc_message = f"{cls.__name__} with query {query} not found."
@@ -391,6 +423,7 @@ class APIMixin(ABC):
     @classmethod
     def get_by_query_unique_and_raise(
         cls,
+        client: "ClientProtocol",
         query: QueryParams,
         exc_type: type[Exception] = EntityAlreadyExists,
         exc_message: str | None = None,
@@ -405,7 +438,7 @@ class APIMixin(ABC):
 
         :raises Exception: If the object is found.
         """
-        obj = cls.get_by_query_unique(query)
+        obj = cls.get_by_query_unique(client, query)
         if obj:
             if not exc_message:
                 exc_message = f"{cls.__name__} with query {query} already exists."
@@ -413,56 +446,52 @@ class APIMixin(ABC):
         return None
 
     @classmethod
-    def get_by_query_unique(cls, data: QueryParams) -> Self | None:
+    def get_by_query_unique(cls, client: "ClientProtocol", data: QueryParams) -> Self | None:
         """Get an object with the given data.
 
         :param data: The data to search for.
         :returns: The object if found, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        obj_dict = MregClient().get_list_unique(cls.endpoint(), params=data)
+        obj_dict = client.get_list_unique(cls.endpoint(), params=data)
         if not obj_dict:
             return None
-        return cls(**obj_dict)
+        obj = cls(**obj_dict)
+        return client._bind_client(obj)
 
     @classmethod
-    def get_first(cls) -> Self | None:
+    def get_first(cls, client: "ClientProtocol") -> Self | None:
         """Get the first object from the list.
 
         :raises EntityNotFound: If no items are found.
         :returns: The first item from the list.
         """
         try:
-            return cls.get_first_or_raise()
+            return cls.get_first_or_raise(client)
         except EntityNotFound:
             return None
 
     @classmethod
-    def get_first_or_raise(cls) -> Self:
+    def get_first_or_raise(cls, client: "ClientProtocol") -> Self:
         """Get the first object from the list.
 
         :raises EntityNotFound: If no items are found.
         :returns: The first item from the list.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        obj = MregClient().get_first(cls.endpoint())
+        obj = client.get_first(cls.endpoint())
         if not obj:
             raise EntityNotFound("No items found.")
-        return cls(**obj)
+        result = cls(**obj)
+        return client._bind_client(result)
 
     @classmethod
-    def get_count(cls) -> int:
+    def get_count(cls, client: "ClientProtocol") -> int:
         """Get the count of items from the list.
 
         :returns: The count of items.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
+        return client.get_count(cls.endpoint())
 
-        return MregClient().get_count(cls.endpoint())
-
-    def refetch(self) -> Self:
+    def refetch(self, client: "ClientProtocol | None" = None) -> Self:
         """Fetch an updated version of the object.
 
         Note that the caller (self) of this method will remain unchanged and can contain
@@ -481,20 +510,27 @@ class APIMixin(ABC):
         # If we have and ID field, a refetch based on that is cleaner as a rename
         # will change the name or whatever other insane field that are used for lookups...
         # Let this be a lesson to you all, don't use mutable fields as identifiers. :)
-        if hasattr(self, "id"):
+        model_cls = cast(type[BaseModel], self.__class__)
+        if "id" in model_cls.model_fields:
             lookup = getattr(self, "id", None)
             if not lookup:
                 raise InternalError(f"Could not get ID for {self.__class__.__name__} via 'id'.")
         else:
             lookup = getattr(self, identifier)
 
-        obj = self.__class__.get_by_id(lookup)
+        client = self._require_client(client)
+        obj = self.__class__.get_by_id(client, lookup)
         if not obj:
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
 
         return obj
 
-    def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:
+    def patch(
+        self,
+        fields: dict[str, Any],
+        validate: bool = True,
+        client: "ClientProtocol | None" = None,
+    ) -> Self:
         """Patch the object with the given values.
 
         Notes:
@@ -508,10 +544,9 @@ class APIMixin(ABC):
         :returns: The object refetched from the server.
 
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
-        new_object = self.refetch()
+        client = self._require_client(client)
+        _ = client.patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
+        new_object = self.refetch(client)
 
         if validate:
             # __init_subclass__ guarantees we inherit from BaseModel
@@ -520,14 +555,13 @@ class APIMixin(ABC):
 
         return new_object
 
-    def delete(self) -> bool:
+    def delete(self, client: "ClientProtocol | None" = None) -> bool:
         """Delete the object.
 
         :returns: True if the object was deleted, False otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        response = MregClient().delete(self.endpoint().with_id(self.id_for_endpoint()))
+        client = self._require_client(client)
+        response = client.delete(self.endpoint().with_id(self.id_for_endpoint()))
 
         if response and response.is_success:
             return True
@@ -535,7 +569,9 @@ class APIMixin(ABC):
         return False
 
     @classmethod
-    def create(cls, params: JsonMapping, fetch_after_create: bool = True) -> Self | None:
+    def create(
+        cls, client: "ClientProtocol", params: JsonMapping, fetch_after_create: bool = True
+    ) -> Self | None:
         """Create the object.
 
         Note that several endpoints do not support location headers for created objects,
@@ -547,10 +583,6 @@ class APIMixin(ABC):
         :raises GetError: If the object could not be fetched after creation.
         :returns: The object if created and its fetchable, None otherwise.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        client = MregClient()
-
         response = client.post(cls.endpoint(), params=None, ok404=False, **params)
 
         if response and response.is_success:

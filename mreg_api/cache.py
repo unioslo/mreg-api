@@ -171,7 +171,7 @@ class MregApiCache(Generic[T]):
         if not self.is_enabled or self._cache is None:
             return
         try:
-            self._cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
+            _ = self._cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
         except Exception as e:
             raise CacheError(f"Failed to set cache key {key}: {e}") from e
 
