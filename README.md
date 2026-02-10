@@ -37,6 +37,9 @@ updated_hosts = hosts.patch(comment="hi")
 updated_hosts = hosts.patch_typed(comment="hi")  # typed helper on ModelList
 updated_hosts = hosts.patch_raw({"comment": "hi"})  # explicit untyped fallback
 
+# Directly.
+updated_hosts = client.host().get_list().patch_typed(comment="hi")
+
 # Bulk delete (raises on failure):
 hosts.delete()
 ```
