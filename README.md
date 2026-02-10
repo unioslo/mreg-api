@@ -16,6 +16,24 @@ Objects fetched through a manager are automatically bound to the client, so inst
 
 If you need typing for wrappers or tests, `mreg_api.types.ClientProtocol` documents the minimal client interface expected by models.
 
+## List Interface (ModelList)
+
+Manager list methods (for example `client.host().get_list()`) return a `ModelList`, which behaves like a normal Python list but adds bulk operations:
+
+```python
+hosts = client.host().get_list()
+
+# Regular list behavior still works:
+for host in hosts:
+    print(host.name)
+
+# Bulk patch (returns a new ModelList of updated objects):
+updated_hosts = hosts.patch({"comment": "hi"})
+
+# Bulk delete (raises on failure):
+hosts.delete()
+```
+
 ## Pre-commit Hooks
 
 This project uses `prek` to manage pre-commit hooks for code quality and formatting. To set up the pre-commit hooks, run the following command:

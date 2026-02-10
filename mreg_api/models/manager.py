@@ -32,6 +32,40 @@ _SPECIAL_SNAKE_CASE: dict[str, str] = {
 }
 
 
+class ModelList(list[T], Generic[T]):
+    """A list of models with convenience bulk operations."""
+
+    def _bulk_call(self, method_name: str, *args: Any, **kwargs: Any) -> list[Any]:
+        """Call the same method on each item and fail fast on unsupported/failed operations."""
+        results: list[Any] = []
+        for item in self:
+            method = getattr(item, method_name, None)
+            if not callable(method):
+                raise TypeError(f"Cannot bulk-{method_name} item of type {type(item).__name__}.")
+            result = method(*args, **kwargs)
+            if result is False or result is None:
+                raise RuntimeError(f"Failed to {method_name} item of type {type(item).__name__}.")
+            results.append(result)
+        return results
+
+    def delete(self) -> None:
+        """Delete all objects in this list.
+
+        :raises TypeError: If an item does not define a callable ``delete`` method.
+        :raises RuntimeError: If any ``delete()`` call reports failure.
+        """
+        _ = self._bulk_call("delete")
+
+    def patch(self, fields: dict[str, Any], validate: bool = True) -> "ModelList[T]":
+        """Patch all objects in this list and return updated objects.
+
+        :raises TypeError: If an item does not define a callable ``patch`` method.
+        :raises RuntimeError: If any ``patch()`` call reports failure.
+        :returns: A ``ModelList`` containing the patched objects.
+        """
+        return ModelList(cast(list[T], self._bulk_call("patch", fields, validate=validate)))
+
+
 def to_snake_case(name: str) -> str:
     """Convert a model class name to a client attribute name."""
     if name in _SPECIAL_SNAKE_CASE:
@@ -85,9 +119,9 @@ class ModelManager(Generic[T]):
         """Get an object."""
         return cast(T | None, self._model.get(self._client, _id, _manager=True))
 
-    def get_list_by_id(self, _id: int) -> list[T]:
+    def get_list_by_id(self, _id: int) -> ModelList[T]:
         """Get a list of objects by their ID."""
-        return cast(list[T], self._model.get_list_by_id(self._client, _id, _manager=True))
+        return ModelList(cast(list[T], self._model.get_list_by_id(self._client, _id, _manager=True)))
 
     def get_by_id(self, _id: int) -> T | None:
         """Get an object by its ID."""
@@ -136,10 +170,10 @@ class ModelManager(Generic[T]):
             _manager=True,
         )
 
-    def get_list(self, params: QueryParams | None = None, limit: int | None = None) -> list[T]:
+    def get_list(self, params: QueryParams | None = None, limit: int | None = None) -> ModelList[T]:
         """Get a list of all objects."""
-        return cast(
-            list[T], self._model.get_list(self._client, params=params, limit=limit, _manager=True)
+        return ModelList(
+            cast(list[T], self._model.get_list(self._client, params=params, limit=limit, _manager=True))
         )
 
     def get_by_query(
@@ -147,13 +181,15 @@ class ModelManager(Generic[T]):
         query: QueryParams,
         ordering: str | None = None,
         limit: int | None = 500,
-    ) -> list[T]:
+    ) -> ModelList[T]:
         """Get a list of objects by a query."""
-        return cast(
-            list[T],
-            self._model.get_by_query(
-                self._client, query=query, ordering=ordering, limit=limit, _manager=True
-            ),
+        return ModelList(
+            cast(
+                list[T],
+                self._model.get_by_query(
+                    self._client, query=query, ordering=ordering, limit=limit, _manager=True
+                ),
+            )
         )
 
     def get_list_by_field(
@@ -162,18 +198,20 @@ class ModelManager(Generic[T]):
         value: str | int,
         ordering: str | None = None,
         limit: int = 500,
-    ) -> list[T]:
+    ) -> ModelList[T]:
         """Get a list of objects by a field."""
-        return cast(
-            list[T],
-            self._model.get_list_by_field(
-                self._client,
-                field,
-                value,
-                ordering=ordering,
-                limit=limit,
-                _manager=True,
-            ),
+        return ModelList(
+            cast(
+                list[T],
+                self._model.get_list_by_field(
+                    self._client,
+                    field,
+                    value,
+                    ordering=ordering,
+                    limit=limit,
+                    _manager=True,
+                ),
+            )
         )
 
     def get_by_query_unique_or_raise(

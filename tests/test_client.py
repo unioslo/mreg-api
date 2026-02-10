@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Any
+from typing import cast
 
 import pytest
 from inline_snapshot import snapshot
@@ -14,6 +15,8 @@ from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import hostname_domain
+from mreg_api.models.manager import ModelList
+from mreg_api.models.manager import ModelManager
 from mreg_api.models.manager import to_snake_case
 from mreg_api.models.models import Host
 
@@ -451,6 +454,118 @@ def test_client_get_list_non_paginated_non_array(httpserver: HTTPServer, client:
     assert "Failed to validate JSON list" in exc_msg
 
 
+def test_manager_get_list_returns_model_list(httpserver: HTTPServer, client: MregClient) -> None:
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            }
+        ]
+    )
+
+    hosts = client.host().get_list()
+    assert isinstance(hosts, ModelList)
+    assert [str(host.name) for host in hosts] == ["host1.example.com"]
+
+
+def test_model_list_delete_bulk(httpserver: HTTPServer, client: MregClient) -> None:
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
+        [
+            {
+                "id": 1,
+                "name": "host1.example.com",
+                "ipaddresses": [],
+                "comment": "My comment",
+                "created_at": "2024-01-01T00:00:00Z",
+                "updated_at": "2024-01-01T00:00:00Z",
+            },
+            {
+                "id": 2,
+                "name": "host2.example.com",
+                "ipaddresses": [],
+                "comment": "My other comment",
+                "created_at": "2025-01-01T00:00:00Z",
+                "updated_at": "2025-01-01T00:00:00Z",
+            },
+        ]
+    )
+    httpserver.expect_oneshot_request("/api/v1/hosts/host1.example.com", method="DELETE").respond_with_json({})
+    httpserver.expect_oneshot_request("/api/v1/hosts/host2.example.com", method="DELETE").respond_with_json({})
+
+    hosts = client.host().get_list()
+    hosts.delete()
+
+
+def test_model_list_patch_dispatches() -> None:
+    class Patchable:
+        def __init__(self) -> None:
+            self.calls: list[tuple[dict[str, Any], bool]] = []
+
+        def patch(self, fields: dict[str, Any], validate: bool = True) -> Patchable:
+            self.calls.append((fields, validate))
+            return self
+
+    one = Patchable()
+    two = Patchable()
+    objects = ModelList([one, two])
+
+    patched = objects.patch({"comment": "updated"}, validate=False)
+
+    assert isinstance(patched, ModelList)
+    assert patched == [one, two]
+    assert one.calls == [({"comment": "updated"}, False)]
+    assert two.calls == [({"comment": "updated"}, False)]
+
+
+def test_model_list_delete_raises_on_failure() -> None:
+    class Deletable:
+        def __init__(self, ok: bool) -> None:
+            self.ok = ok
+
+        def delete(self) -> bool:
+            return self.ok
+
+    objects = ModelList([Deletable(True), Deletable(False)])
+    with pytest.raises(RuntimeError, match="Failed to delete"):
+        _ = objects.delete()
+
+
+def test_model_list_patch_raises_if_missing_method() -> None:
+    objects = ModelList([object()])
+    with pytest.raises(TypeError, match="Cannot bulk-patch"):
+        _ = objects.patch({"comment": "updated"})
+
+
+def test_model_list_patch_matches_manual_loop() -> None:
+    class Patchable:
+        def __init__(self, identifier: int) -> None:
+            self.identifier = identifier
+            self.calls: list[tuple[dict[str, Any], bool]] = []
+
+        def patch(self, fields: dict[str, Any], validate: bool = True) -> Patchable:
+            self.calls.append((fields, validate))
+            return self
+
+    bulk_objects = ModelList([Patchable(1), Patchable(2)])
+    loop_objects = ModelList([Patchable(1), Patchable(2)])
+
+    bulk_result = bulk_objects.patch({"comment": "hi"})
+
+    loop_result = ModelList[Patchable]()
+    for host in loop_objects:
+        loop_result.append(host.patch({"comment": "hi"}))
+
+    assert isinstance(bulk_result, ModelList)
+    assert bulk_result == bulk_objects
+    assert [obj.identifier for obj in bulk_result] == [obj.identifier for obj in loop_result]
+    assert [obj.calls for obj in bulk_objects] == [obj.calls for obj in loop_objects]
+
+
 def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:
     """Non-paginated response with invalid JSON is an error."""
     httpserver.expect_oneshot_request("/test_client_get_list_non_paginated_invalid_json").respond_with_data(
@@ -718,7 +833,8 @@ def test_client_model_composition_dynamic(model: type, client: MregClient) -> No
     """Ensure all models with get/fetch are accessible via client attributes."""
     attr_name = to_snake_case(model.__name__)
     assert hasattr(client, attr_name)
-    manager = getattr(client, attr_name)
+    manager: Any = getattr(client, attr_name)
     if callable(manager):
         manager = manager()
-    assert manager.model is model
+    typed_manager = cast(ModelManager[Any], manager)
+    assert typed_manager.model is model
