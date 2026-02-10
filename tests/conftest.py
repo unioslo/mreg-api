@@ -16,7 +16,7 @@ def reset_hostname_after_test() -> Generator[None, None, None]:
     try:
         yield
     finally:
-        hostname_domain.set(pre)
+        _ = hostname_domain.set(pre)
 
 
 @pytest.fixture

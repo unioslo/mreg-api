@@ -53,20 +53,23 @@ def test_client_caching(httpserver: HTTPServer) -> None:
     assert hosts1 == hosts2
 
     # Using client directly to access endpoint
-    client.clear_cache()
+    _ = client.clear_cache()  # Clear cache to test caching again
     init_endpoint()
 
     # First fetch - should hit the server
     resp = client.get(str(Host.endpoint()), params=None, ok404=False)
+    assert resp is not None
 
     # Ensure that trying to access the endpoint now raises an exception (oneshot)
     with pytest.raises(GetError) as exc_info:
-        client._do_get(str(Host.endpoint()), params=None, ok404=False)
+        _ = client._do_get(str(Host.endpoint()), params=None, ok404=False)
+    assert exc_info.value.response is not None
     assert "No handler found" in exc_info.value.response.text
     assert exc_info.value.response.status_code == snapshot(500)
 
     # We know the endpoint doesn't work, so this is certain to go via the cache
     resp2 = client.get(str(Host.endpoint()), params=None, ok404=False)
+    assert resp2 is not None
 
     assert resp.content == resp2.content
     assert resp.json() == snapshot(
@@ -101,9 +104,7 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         ]
     )
 
-    httpserver.expect_oneshot_request("/api/v1/hosts/", method=method).respond_with_json(
-        {"detail": "Mutation successful"}
-    )
+    httpserver.expect_oneshot_request("/api/v1/hosts/", method=method).respond_with_json({"detail": "Mutation successful"})
 
     hosts_pre_mutation = client.host().get_list()
     assert len(hosts_pre_mutation) == 1
@@ -114,11 +115,11 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
 
     # We don't care about the mutation response or respecting what it would actually do
     if method == "POST":
-        client.post("/api/v1/hosts/", params={"name": "newhost.example.com"})
+        _ = client.post("/api/v1/hosts/", params={"name": "newhost.example.com"})
     elif method == "PATCH":
-        client.patch("/api/v1/hosts/", params={"comment": "Updated comment"})
+        _ = client.patch("/api/v1/hosts/", params={"comment": "Updated comment"})
     elif method == "DELETE":
-        client.delete("/api/v1/hosts/")
+        _ = client.delete("/api/v1/hosts/")
 
     # Pretend response has changed after mutation
     httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
@@ -330,9 +331,7 @@ def test_client_get_list_paginated_empty(httpserver: HTTPServer, client: MregCli
 
 
 def test_client_get_list_paginated_multiple_pages(httpserver: HTTPServer, client: MregClient) -> None:
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_paginated_multiple_pages"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_paginated_multiple_pages").respond_with_json(
         {
             "results": [{"foo": "bar"}],
             "count": 1,
@@ -340,9 +339,7 @@ def test_client_get_list_paginated_multiple_pages(httpserver: HTTPServer, client
             "previous": None,
         }
     )
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_paginated_multiple_pages", query_string="page=2"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_paginated_multiple_pages", query_string="page=2").respond_with_json(
         {
             "results": [{"baz": "qux"}],
             "count": 1,
@@ -354,13 +351,9 @@ def test_client_get_list_paginated_multiple_pages(httpserver: HTTPServer, client
     assert resp == snapshot([{"foo": "bar"}, {"baz": "qux"}])
 
 
-def test_client_get_list_paginated_multiple_pages_ok404(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_paginated_multiple_pages_ok404(httpserver: HTTPServer, client: MregClient) -> None:
     """Paginated response with 404 on next page is ignored when `ok404=True`."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_paginated_multiple_pages_ok404"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_paginated_multiple_pages_ok404").respond_with_json(
         {
             "results": [{"foo": "bar"}],
             "count": 1,
@@ -371,18 +364,12 @@ def test_client_get_list_paginated_multiple_pages_ok404(
     httpserver.expect_oneshot_request(
         "/test_client_get_list_paginated_multiple_pages_ok404", query_string="page=2"
     ).respond_with_response(Response(status=404))
-    assert client.get_list(
-        "/test_client_get_list_paginated_multiple_pages_ok404", ok404=True
-    ) == snapshot([{"foo": "bar"}])
+    assert client.get_list("/test_client_get_list_paginated_multiple_pages_ok404", ok404=True) == snapshot([{"foo": "bar"}])
 
 
-def test_client_get_list_paginated_multiple_pages_inconsistent_count(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_paginated_multiple_pages_inconsistent_count(httpserver: HTTPServer, client: MregClient) -> None:
     """Inconsistent count in paginated response is ignored."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_paginated_multiple_pages_inconsistent_count"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_paginated_multiple_pages_inconsistent_count").respond_with_json(
         {
             "results": [{"foo": "bar"}, {"baz": "qux"}],
             "count": 1,  # wrong count
@@ -414,9 +401,7 @@ def test_client_get_list_paginated_multiple_pages_inconsistent_count(
         "[{'foo': 'bar'}]",  # Invalid JSON
     ],
 )
-def test_client_get_list_paginated_invalid(
-    httpserver: HTTPServer, client: MregClient, results: Any
-) -> None:
+def test_client_get_list_paginated_invalid(httpserver: HTTPServer, client: MregClient, results: Any) -> None:
     """Invalid JSON or non-array response is an error."""
     httpserver.expect_oneshot_request("/test_client_get_list_paginated_invalid").respond_with_data(
         f"""{{
@@ -427,7 +412,7 @@ def test_client_get_list_paginated_invalid(
             }}"""
     )
     with pytest.raises(MregValidationError) as exc_info:
-        client.get_list("/test_client_get_list_paginated_invalid")
+        _ = client.get_list("/test_client_get_list_paginated_invalid")
     exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
     assert "Failed to validate paginated JSON" in exc_msg
 
@@ -460,21 +445,19 @@ def test_client_get_list_non_paginated_non_array(httpserver: HTTPServer, client:
         }
     )
     with pytest.raises(MregValidationError) as exc_info:
-        client.get_list("/test_client_get_list_non_paginated_non_array")
+        _ = client.get_list("/test_client_get_list_non_paginated_non_array")
     exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
     assert "Failed to validate JSON list" in exc_msg
 
 
 def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:
     """Non-paginated response with invalid JSON is an error."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_non_paginated_invalid_json"
-    ).respond_with_data(
+    httpserver.expect_oneshot_request("/test_client_get_list_non_paginated_invalid_json").respond_with_data(
         "[{'key': 'value'}, 'foo',]",  # strings must be double quoted
         content_type="application/json",
     )
     with pytest.raises(MregValidationError) as exc_info:
-        client.get_list("/test_client_get_list_non_paginated_invalid_json")
+        _ = client.get_list("/test_client_get_list_non_paginated_invalid_json")
     exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
     assert "Failed to validate JSON list" in exc_msg
 
@@ -493,13 +476,9 @@ def test_client_get_list_unique_paginated(httpserver: HTTPServer, client: MregCl
     assert resp == snapshot({"foo": "bar"})
 
 
-def test_client_get_list_unique_paginated_too_many_results(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_unique_paginated_too_many_results(httpserver: HTTPServer, client: MregClient) -> None:
     """get_list_unique with multiple unique results is an error."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_unique_paginated_too_many_results"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_unique_paginated_too_many_results").respond_with_json(
         {
             "results": [{"foo": "bar"}],
             "count": 1,
@@ -518,19 +497,15 @@ def test_client_get_list_unique_paginated_too_many_results(
         }
     )
     with pytest.raises(MultipleEntitiesFound) as exc_info:
-        client.get_list_unique("/test_client_get_list_unique_paginated_too_many_results", params={})
+        _ = client.get_list_unique("/test_client_get_list_unique_paginated_too_many_results", params={})
     assert exc_info.exconly() == snapshot(
         "mreg_api.exceptions.MultipleEntitiesFound: Expected a unique result, got 2 distinct results."
     )
 
 
-def test_client_get_list_unique_paginated_duplicate_result_ok(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_unique_paginated_duplicate_result_ok(httpserver: HTTPServer, client: MregClient) -> None:
     """get_list_unique with _only_ duplicate results is ok."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_unique_paginated_duplicate_result_ok"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_unique_paginated_duplicate_result_ok").respond_with_json(
         {
             "results": [{"foo": "bar"}],
             "count": 1,
@@ -548,17 +523,13 @@ def test_client_get_list_unique_paginated_duplicate_result_ok(
             "previous": "/test_client_get_list_unique_paginated_duplicate_result_ok?page=1",
         }
     )
-    resp = client.get_list_unique(
-        "/test_client_get_list_unique_paginated_duplicate_result_ok", params={}
-    )
+    resp = client.get_list_unique("/test_client_get_list_unique_paginated_duplicate_result_ok", params={})
     assert resp == snapshot({"foo": "bar"})
 
 
 def test_client_get_list_unique_paginated_no_result(httpserver: HTTPServer, client: MregClient) -> None:
     """No result is None."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_unique_paginated_no_result"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_unique_paginated_no_result").respond_with_json(
         {
             "results": [],
             "count": 0,
@@ -570,22 +541,16 @@ def test_client_get_list_unique_paginated_no_result(httpserver: HTTPServer, clie
     assert resp is None
 
 
-def test_client_get_list_unique_non_paginated_no_result(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_unique_non_paginated_no_result(httpserver: HTTPServer, client: MregClient) -> None:
     """No result is None."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_unique_non_paginated_no_result"
-    ).respond_with_json([])
+    httpserver.expect_oneshot_request("/test_client_get_list_unique_non_paginated_no_result").respond_with_json([])
     resp = client.get_list_unique("/test_client_get_list_unique_non_paginated_no_result", params={})
     assert resp is None
 
 
 def test_client_get_list_unique_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:
     """get_list_unique with multiple unique results is an error."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_unique_paginated_too_many_results"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_unique_paginated_too_many_results").respond_with_json(
         {
             # Invalid result: expected list containing a single dict
             "results": ["invalid_not_a_dict"],
@@ -595,7 +560,7 @@ def test_client_get_list_unique_invalid_json(httpserver: HTTPServer, client: Mre
         }
     )
     with pytest.raises(MregValidationError) as exc_info:
-        client.get_list_unique("/test_client_get_list_unique_paginated_too_many_results", params={})
+        _ = client.get_list_unique("/test_client_get_list_unique_paginated_too_many_results", params={})
 
     exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
     assert "Failed to validate JSON mapping" in exc_msg
@@ -607,7 +572,7 @@ def test_client_set_domain() -> None:
     assert hostname_domain.get() == "example.com"
     assert HostName.validate_hostname("myhost") == "myhost.example.com"
 
-    client.set_domain("other.org")
+    _ = client.set_domain("other.org")
     assert client.get_domain() == "other.org"
     assert client.get_domain() == hostname_domain.get()
     assert HostName.validate_hostname("myhost") == "myhost.other.org"
@@ -621,7 +586,7 @@ def test_client_reset_domain() -> None:
     assert hostname_domain.get() == "example.com"
 
     # Set another domain
-    client.set_domain("other.org")
+    _ = client.set_domain("other.org")
     assert hostname_domain.get() == "other.org"
 
     # Reset to original
@@ -638,9 +603,9 @@ def test_client_reset_domain_after_multiple_set_domain() -> None:
     """reset_domain always restores to the initialization value, not the previous value."""
     client = MregClient(url="http://example.com", domain="example.com")
 
-    client.set_domain("first.org")
-    client.set_domain("second.org")
-    client.set_domain("third.org")
+    _ = client.set_domain("first.org")
+    _ = client.set_domain("second.org")
+    _ = client.set_domain("third.org")
     assert client.get_domain() == "third.org"
     assert client.get_domain() == hostname_domain.get()
 
@@ -700,7 +665,7 @@ def test_client_domain_override_after_set_domain() -> None:
     """domain_override works correctly after set_domain has been called."""
     client = MregClient(url="http://example.com", domain="example.com")
 
-    client.set_domain("changed.org")
+    _ = client.set_domain("changed.org")
     assert client.get_domain() == "changed.org"
 
     with client.domain_override("temp.net"):
@@ -734,9 +699,7 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
     )
 
     hosts = client.host().get_list()
-    assert [(host.id, host.name, host.comment) for host in hosts] == snapshot(
-        [(1, "host1.example.com", "My comment")]
-    )
+    assert [(host.id, host.name, host.comment) for host in hosts] == snapshot([(1, "host1.example.com", "My comment")])
 
 
 def _to_snake_case(name: str) -> str:
@@ -773,4 +736,6 @@ def test_client_model_composition_dynamic(model: type, client: MregClient) -> No
     attr_name = _to_snake_case(model.__name__)
     assert hasattr(client, attr_name)
     manager = getattr(client, attr_name)
+    if callable(manager):
+        manager = manager()
     assert manager.model is model

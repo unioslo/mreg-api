@@ -143,7 +143,11 @@ def _validate_default(new: Any, old: Any) -> bool:
     return str(new) == str(old)
 
 
-class FrozenModel(BaseModel):
+class MregBaseModel(BaseModel):
+    """Base Pydantic model for this library."""
+
+
+class FrozenModel(MregBaseModel):
     """Model for an immutable object."""
 
     _notes: list[str] = PrivateAttr(default_factory=list)

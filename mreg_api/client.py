@@ -11,6 +11,7 @@ from collections.abc import Generator
 from contextlib import contextmanager
 from contextvars import Token
 from enum import StrEnum
+from typing import TYPE_CHECKING
 from typing import Any
 from typing import Callable
 from typing import Concatenate
@@ -62,7 +63,45 @@ from mreg_api.types import get_type_adapter
 
 logger = logging.getLogger(__name__)
 
-_CLIENT_MODEL_MAP: dict[str, type] | None = None
+_client_model_map_cache: dict[str, type] | None = None
+
+if TYPE_CHECKING:
+    from mreg_api.models import CNAME
+    from mreg_api.models import MX
+    from mreg_api.models import NAPTR
+    from mreg_api.models import SSHFP
+    from mreg_api.models import TXT
+    from mreg_api.models import Atom
+    from mreg_api.models import BacnetID
+    from mreg_api.models import Community
+    from mreg_api.models import Delegation
+    from mreg_api.models import ForwardZone
+    from mreg_api.models import ForwardZoneDelegation
+    from mreg_api.models import HealthInfo
+    from mreg_api.models import HeartbeatHealth
+    from mreg_api.models import HInfo
+    from mreg_api.models import Host
+    from mreg_api.models import HostGroup
+    from mreg_api.models import HostList
+    from mreg_api.models import HostPolicy
+    from mreg_api.models import IPAddress
+    from mreg_api.models import Label
+    from mreg_api.models import LDAPHealth
+    from mreg_api.models import Location
+    from mreg_api.models import NameServer
+    from mreg_api.models import Network
+    from mreg_api.models import NetworkPolicy
+    from mreg_api.models import NetworkPolicyAttribute
+    from mreg_api.models import Permission
+    from mreg_api.models import PTR_override
+    from mreg_api.models import ReverseZone
+    from mreg_api.models import ReverseZoneDelegation
+    from mreg_api.models import Role
+    from mreg_api.models import ServerLibraries
+    from mreg_api.models import ServerVersion
+    from mreg_api.models import Srv
+    from mreg_api.models import UserInfo
+    from mreg_api.models import Zone
 
 
 class _TokenAuthResponse(BaseModel):
@@ -72,11 +111,11 @@ class _TokenAuthResponse(BaseModel):
 
 
 def _get_client_model_map() -> dict[str, type]:
-    global _CLIENT_MODEL_MAP
-    if _CLIENT_MODEL_MAP is None:
+    global _client_model_map_cache
+    if _client_model_map_cache is None:
         models_module = importlib.import_module("mreg_api.models")
-        _CLIENT_MODEL_MAP = client_model_map(models_module)
-    return _CLIENT_MODEL_MAP
+        _client_model_map_cache = client_model_map(models_module)
+    return _client_model_map_cache
 
 
 T = TypeVar("T")
@@ -206,6 +245,150 @@ class MregClient:
     def manager(self, model: type[T]) -> ModelManager[T]:
         """Get a model manager for a specific model class."""
         return ModelManager(self, model)
+
+    def atom(self) -> ModelManager["Atom"]:
+        """Return a client-bound manager for Atom."""
+        return ModelManager(self, _get_client_model_map()["atom"])
+
+    def bacnet_id(self) -> ModelManager["BacnetID"]:
+        """Return a client-bound manager for BacnetID."""
+        return ModelManager(self, _get_client_model_map()["bacnet_id"])
+
+    def cname(self) -> ModelManager["CNAME"]:
+        """Return a client-bound manager for CNAME."""
+        return ModelManager(self, _get_client_model_map()["cname"])
+
+    def community(self) -> ModelManager["Community"]:
+        """Return a client-bound manager for Community."""
+        return ModelManager(self, _get_client_model_map()["community"])
+
+    def delegation(self) -> ModelManager["Delegation"]:
+        """Return a client-bound manager for Delegation."""
+        return ModelManager(self, _get_client_model_map()["delegation"])
+
+    def forward_zone(self) -> ModelManager["ForwardZone"]:
+        """Return a client-bound manager for ForwardZone."""
+        return ModelManager(self, _get_client_model_map()["forward_zone"])
+
+    def forward_zone_delegation(self) -> ModelManager["ForwardZoneDelegation"]:
+        """Return a client-bound manager for ForwardZoneDelegation."""
+        return ModelManager(self, _get_client_model_map()["forward_zone_delegation"])
+
+    def health_info(self) -> ModelManager["HealthInfo"]:
+        """Return a client-bound manager for HealthInfo."""
+        return ModelManager(self, _get_client_model_map()["health_info"])
+
+    def heartbeat_health(self) -> ModelManager["HeartbeatHealth"]:
+        """Return a client-bound manager for HeartbeatHealth."""
+        return ModelManager(self, _get_client_model_map()["heartbeat_health"])
+
+    def hinfo(self) -> ModelManager["HInfo"]:
+        """Return a client-bound manager for HInfo."""
+        return ModelManager(self, _get_client_model_map()["hinfo"])
+
+    def host(self) -> ModelManager["Host"]:
+        """Return a client-bound manager for Host."""
+        return ModelManager(self, _get_client_model_map()["host"])
+
+    def host_group(self) -> ModelManager["HostGroup"]:
+        """Return a client-bound manager for HostGroup."""
+        return ModelManager(self, _get_client_model_map()["host_group"])
+
+    def host_list(self) -> ModelManager["HostList"]:
+        """Return a client-bound manager for HostList."""
+        return ModelManager(self, _get_client_model_map()["host_list"])
+
+    def host_policy(self) -> ModelManager["HostPolicy"]:
+        """Return a client-bound manager for HostPolicy."""
+        return ModelManager(self, _get_client_model_map()["host_policy"])
+
+    def ip_address(self) -> ModelManager["IPAddress"]:
+        """Return a client-bound manager for IPAddress."""
+        return ModelManager(self, _get_client_model_map()["ip_address"])
+
+    def label(self) -> ModelManager["Label"]:
+        """Return a client-bound manager for Label."""
+        return ModelManager(self, _get_client_model_map()["label"])
+
+    def ldap_health(self) -> ModelManager["LDAPHealth"]:
+        """Return a client-bound manager for LDAPHealth."""
+        return ModelManager(self, _get_client_model_map()["ldap_health"])
+
+    def location(self) -> ModelManager["Location"]:
+        """Return a client-bound manager for Location."""
+        return ModelManager(self, _get_client_model_map()["location"])
+
+    def mx(self) -> ModelManager["MX"]:
+        """Return a client-bound manager for MX."""
+        return ModelManager(self, _get_client_model_map()["mx"])
+
+    def name_server(self) -> ModelManager["NameServer"]:
+        """Return a client-bound manager for NameServer."""
+        return ModelManager(self, _get_client_model_map()["name_server"])
+
+    def naptr(self) -> ModelManager["NAPTR"]:
+        """Return a client-bound manager for NAPTR."""
+        return ModelManager(self, _get_client_model_map()["naptr"])
+
+    def network(self) -> ModelManager["Network"]:
+        """Return a client-bound manager for Network."""
+        return ModelManager(self, _get_client_model_map()["network"])
+
+    def network_policy(self) -> ModelManager["NetworkPolicy"]:
+        """Return a client-bound manager for NetworkPolicy."""
+        return ModelManager(self, _get_client_model_map()["network_policy"])
+
+    def network_policy_attribute(self) -> ModelManager["NetworkPolicyAttribute"]:
+        """Return a client-bound manager for NetworkPolicyAttribute."""
+        return ModelManager(self, _get_client_model_map()["network_policy_attribute"])
+
+    def permission(self) -> ModelManager["Permission"]:
+        """Return a client-bound manager for Permission."""
+        return ModelManager(self, _get_client_model_map()["permission"])
+
+    def ptr_override(self) -> ModelManager["PTR_override"]:
+        """Return a client-bound manager for PTR_override."""
+        return ModelManager(self, _get_client_model_map()["ptr_override"])
+
+    def reverse_zone(self) -> ModelManager["ReverseZone"]:
+        """Return a client-bound manager for ReverseZone."""
+        return ModelManager(self, _get_client_model_map()["reverse_zone"])
+
+    def reverse_zone_delegation(self) -> ModelManager["ReverseZoneDelegation"]:
+        """Return a client-bound manager for ReverseZoneDelegation."""
+        return ModelManager(self, _get_client_model_map()["reverse_zone_delegation"])
+
+    def role(self) -> ModelManager["Role"]:
+        """Return a client-bound manager for Role."""
+        return ModelManager(self, _get_client_model_map()["role"])
+
+    def server_libraries(self) -> ModelManager["ServerLibraries"]:
+        """Return a client-bound manager for ServerLibraries."""
+        return ModelManager(self, _get_client_model_map()["server_libraries"])
+
+    def server_version(self) -> ModelManager["ServerVersion"]:
+        """Return a client-bound manager for ServerVersion."""
+        return ModelManager(self, _get_client_model_map()["server_version"])
+
+    def srv(self) -> ModelManager["Srv"]:
+        """Return a client-bound manager for Srv."""
+        return ModelManager(self, _get_client_model_map()["srv"])
+
+    def sshfp(self) -> ModelManager["SSHFP"]:
+        """Return a client-bound manager for SSHFP."""
+        return ModelManager(self, _get_client_model_map()["sshfp"])
+
+    def txt(self) -> ModelManager["TXT"]:
+        """Return a client-bound manager for TXT."""
+        return ModelManager(self, _get_client_model_map()["txt"])
+
+    def user_info(self) -> ModelManager["UserInfo"]:
+        """Return a client-bound manager for UserInfo."""
+        return ModelManager(self, _get_client_model_map()["user_info"])
+
+    def zone(self) -> ModelManager["Zone"]:
+        """Return a client-bound manager for Zone."""
+        return ModelManager(self, _get_client_model_map()["zone"])
 
     @property
     def timeout(self) -> float | None:

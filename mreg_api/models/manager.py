@@ -8,8 +8,13 @@ from types import ModuleType
 from typing import Any
 from typing import Generic
 from typing import TypeVar
+from typing import cast
 
+from mreg_api.exceptions import EntityAlreadyExists
+from mreg_api.exceptions import EntityNotFound
 from mreg_api.types import ClientProtocol
+from mreg_api.types import JsonMapping
+from mreg_api.types import QueryParams
 
 T = TypeVar("T")
 
@@ -50,7 +55,7 @@ class ModelManager(Generic[T]):
     def __init__(self, client: ClientProtocol, model: type[T]) -> None:
         """Create a manager bound to a client and model."""
         self._client = client
-        self._model = model
+        self._model: Any = model
 
     def __call__(self) -> "ModelManager[T]":
         """Return self to support fluent call chains."""
@@ -75,3 +80,158 @@ class ModelManager(Generic[T]):
             if params and params[0].name == "client":
                 return functools.partial(attr, self._client, _manager=True)
         return attr
+
+    def get(self, _id: int) -> T | None:
+        """Get an object."""
+        return cast(T | None, self._model.get(self._client, _id, _manager=True))
+
+    def get_list_by_id(self, _id: int) -> list[T]:
+        """Get a list of objects by their ID."""
+        return cast(list[T], self._model.get_list_by_id(self._client, _id, _manager=True))
+
+    def get_by_id(self, _id: int) -> T | None:
+        """Get an object by its ID."""
+        return cast(T | None, self._model.get_by_id(self._client, _id, _manager=True))
+
+    def get_by_field(self, field: str, value: str | int) -> T | None:
+        """Get an object by a field."""
+        return cast(
+            T | None, self._model.get_by_field(self._client, field, value, _manager=True)
+        )
+
+    def get_by_field_or_raise(
+        self,
+        field: str,
+        value: str,
+        exc_type: type[Exception] = EntityNotFound,
+        exc_message: str | None = None,
+    ) -> T:
+        """Get an object by a field and raise if not found."""
+        return cast(
+            T,
+            self._model.get_by_field_or_raise(
+                self._client,
+                field,
+                value,
+                exc_type=exc_type,
+                exc_message=exc_message,
+                _manager=True,
+            ),
+        )
+
+    def get_by_field_and_raise(
+        self,
+        field: str,
+        value: str,
+        exc_type: type[Exception] = EntityAlreadyExists,
+        exc_message: str | None = None,
+    ) -> None:
+        """Get an object by a field and raise if found."""
+        _ = self._model.get_by_field_and_raise(
+            self._client,
+            field,
+            value,
+            exc_type=exc_type,
+            exc_message=exc_message,
+            _manager=True,
+        )
+
+    def get_list(self, params: QueryParams | None = None, limit: int | None = None) -> list[T]:
+        """Get a list of all objects."""
+        return cast(
+            list[T], self._model.get_list(self._client, params=params, limit=limit, _manager=True)
+        )
+
+    def get_by_query(
+        self,
+        query: QueryParams,
+        ordering: str | None = None,
+        limit: int | None = 500,
+    ) -> list[T]:
+        """Get a list of objects by a query."""
+        return cast(
+            list[T],
+            self._model.get_by_query(
+                self._client, query=query, ordering=ordering, limit=limit, _manager=True
+            ),
+        )
+
+    def get_list_by_field(
+        self,
+        field: str,
+        value: str | int,
+        ordering: str | None = None,
+        limit: int = 500,
+    ) -> list[T]:
+        """Get a list of objects by a field."""
+        return cast(
+            list[T],
+            self._model.get_list_by_field(
+                self._client,
+                field,
+                value,
+                ordering=ordering,
+                limit=limit,
+                _manager=True,
+            ),
+        )
+
+    def get_by_query_unique_or_raise(
+        self,
+        query: QueryParams,
+        exc_type: type[Exception] = EntityNotFound,
+        exc_message: str | None = None,
+    ) -> T:
+        """Get an object by a query and raise if not found."""
+        return cast(
+            T,
+            self._model.get_by_query_unique_or_raise(
+                self._client,
+                query=query,
+                exc_type=exc_type,
+                exc_message=exc_message,
+                _manager=True,
+            ),
+        )
+
+    def get_by_query_unique_and_raise(
+        self,
+        query: QueryParams,
+        exc_type: type[Exception] = EntityAlreadyExists,
+        exc_message: str | None = None,
+    ) -> None:
+        """Get an object by a query and raise if found."""
+        _ = self._model.get_by_query_unique_and_raise(
+            self._client,
+            query=query,
+            exc_type=exc_type,
+            exc_message=exc_message,
+            _manager=True,
+        )
+
+    def get_by_query_unique(self, data: QueryParams) -> T | None:
+        """Get an object with the given data."""
+        return cast(
+            T | None, self._model.get_by_query_unique(self._client, data=data, _manager=True)
+        )
+
+    def get_first(self) -> T | None:
+        """Get the first object from the list."""
+        return cast(T | None, self._model.get_first(self._client, _manager=True))
+
+    def get_first_or_raise(self) -> T:
+        """Get the first object from the list, raising if empty."""
+        return cast(T, self._model.get_first_or_raise(self._client, _manager=True))
+
+    def get_count(self) -> int:
+        """Get the count of items from the list."""
+        return self._model.get_count(self._client, _manager=True)
+
+    def create(self, params: JsonMapping, fetch_after_create: bool = True) -> T | None:
+        """Create the object."""
+        return cast(
+            T | None,
+            self._model.create(
+                self._client, params=params, fetch_after_create=fetch_after_create, _manager=True
+            ),
+        )

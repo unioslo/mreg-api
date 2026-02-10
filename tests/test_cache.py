@@ -20,7 +20,7 @@ def test_cache_enable() -> None:
     assert not cache.is_enabled
     cache.set("test_key", "test_value")
     with pytest.raises(CacheMiss) as exc_info:
-        cache.get("test_key")
+        _ = cache.get("test_key")
     assert "disabled" in str(exc_info.value)
 
     # Enable cache
@@ -34,7 +34,7 @@ def test_cache_enable() -> None:
     cache.disable()
     assert not cache.is_enabled
     with pytest.raises(CacheMiss) as exc_info:
-        cache.get("test_key")
+        _ = cache.get("test_key")
     assert "disabled" in str(exc_info.value)
 
 
@@ -53,7 +53,7 @@ def test_cache_disable() -> None:
     cache.disable()
     assert not cache.is_enabled
     with pytest.raises(CacheMiss) as exc_info:
-        cache.get("test_key")
+        _ = cache.get("test_key")
     assert "disabled" in str(exc_info.value)
 
     # Re-enable cache and check value is still there

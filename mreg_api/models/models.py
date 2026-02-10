@@ -52,6 +52,7 @@ from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.abstracts import FrozenModel
 from mreg_api.models.abstracts import FrozenModelWithTimestamps
+from mreg_api.models.abstracts import MregBaseModel
 from mreg_api.models.abstracts import manager_only
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
@@ -275,7 +276,7 @@ class NetworkOrIP(BaseModel):
         return self.is_ipv4_network() or self.is_ipv6_network()
 
 
-class WithHost(BaseModel, APIMixin):
+class WithHost(MregBaseModel, APIMixin, ABC):
     """Model for an object that has a host element."""
 
     host: int
@@ -299,7 +300,7 @@ class WithHost(BaseModel, APIMixin):
         return Host.model_validate(data)
 
 
-class WithZone(BaseModel, APIMixin):
+class WithZone(MregBaseModel, APIMixin, ABC):
     """Model for an object that has a zone element."""
 
     zone: int | None = None
@@ -325,7 +326,7 @@ class WithZone(BaseModel, APIMixin):
         return ForwardZone.model_validate(data)
 
 
-class WithTTL(BaseModel, APIMixin):
+class WithTTL(MregBaseModel, APIMixin, ABC):
     """Model for an object that needs to work with TTL values."""
 
     _ttl_nullable: ClassVar[bool] = True
@@ -386,7 +387,7 @@ class WithTTL(BaseModel, APIMixin):
         return ttl
 
 
-class WithName(BaseModel, APIMixin):
+class WithName(MregBaseModel, APIMixin, ABC):
     """Mixin type for an object that has a name element."""
 
     __name_field__: str = "name"
@@ -459,7 +460,7 @@ def AbstractClassVar() -> Any:
     return ClassVarNotSet
 
 
-class WithHistory(BaseModel, APIMixin):
+class WithHistory(MregBaseModel, APIMixin, ABC):
     """Resource that supports history lookups.
 
     Subclasses must implement the `history_resource` class variable.
@@ -3814,7 +3815,7 @@ class UserInfo(BaseModel):
             raise e
 
 
-class LDAPHealth(BaseModel, APIMixin):
+class LDAPHealth(MregBaseModel, APIMixin):
     """Model for LDAP health endpoint."""
 
     status: str
@@ -3847,7 +3848,7 @@ class LDAPHealth(BaseModel, APIMixin):
             raise e
 
 
-class HeartbeatHealth(BaseModel, APIMixin):
+class HeartbeatHealth(MregBaseModel, APIMixin):
     """Model for heartbeat health endpoint."""
 
     uptime: int
