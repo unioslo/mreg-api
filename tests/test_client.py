@@ -14,6 +14,7 @@ from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import hostname_domain
+from mreg_api.models.manager import to_snake_case
 from mreg_api.models.models import Host
 
 
@@ -702,24 +703,6 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
     assert [(host.id, host.name, host.comment) for host in hosts] == snapshot([(1, "host1.example.com", "My comment")])
 
 
-def _to_snake_case(name: str) -> str:
-    special_cases: dict[str, str] = {
-        "BacnetID": "bacnet_id",
-        "CNAME": "cname",
-        "HInfo": "hinfo",
-        "IPAddress": "ip_address",
-        "LDAPHealth": "ldap_health",
-        "MX": "mx",
-        "NAPTR": "naptr",
-        "PTR_override": "ptr_override",
-        "SSHFP": "sshfp",
-        "TXT": "txt",
-    }
-    if name in special_cases:
-        return special_cases[name]
-    return "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
-
-
 def _client_models() -> list[type]:
     client_models: list[type] = []
     for model in models.__all__:
@@ -733,7 +716,7 @@ def _client_models() -> list[type]:
 @pytest.mark.parametrize("model", _client_models())
 def test_client_model_composition_dynamic(model: type, client: MregClient) -> None:
     """Ensure all models with get/fetch are accessible via client attributes."""
-    attr_name = _to_snake_case(model.__name__)
+    attr_name = to_snake_case(model.__name__)
     assert hasattr(client, attr_name)
     manager = getattr(client, attr_name)
     if callable(manager):

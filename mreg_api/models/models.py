@@ -276,7 +276,11 @@ class NetworkOrIP(BaseModel):
         return self.is_ipv4_network() or self.is_ipv6_network()
 
 
-class WithHost(MregBaseModel, APIMixin, ABC):
+class APIModelMixin(MregBaseModel, APIMixin, ABC):
+    """Shared base for API-backed model mixins."""
+
+
+class WithHost(APIModelMixin):
     """Model for an object that has a host element."""
 
     host: int
@@ -300,7 +304,7 @@ class WithHost(MregBaseModel, APIMixin, ABC):
         return Host.model_validate(data)
 
 
-class WithZone(MregBaseModel, APIMixin, ABC):
+class WithZone(APIModelMixin):
     """Model for an object that has a zone element."""
 
     zone: int | None = None
@@ -326,7 +330,7 @@ class WithZone(MregBaseModel, APIMixin, ABC):
         return ForwardZone.model_validate(data)
 
 
-class WithTTL(MregBaseModel, APIMixin, ABC):
+class WithTTL(APIModelMixin):
     """Model for an object that needs to work with TTL values."""
 
     _ttl_nullable: ClassVar[bool] = True
@@ -387,7 +391,7 @@ class WithTTL(MregBaseModel, APIMixin, ABC):
         return ttl
 
 
-class WithName(MregBaseModel, APIMixin, ABC):
+class WithName(APIModelMixin):
     """Mixin type for an object that has a name element."""
 
     __name_field__: str = "name"
@@ -460,7 +464,7 @@ def AbstractClassVar() -> Any:
     return ClassVarNotSet
 
 
-class WithHistory(MregBaseModel, APIMixin, ABC):
+class WithHistory(APIModelMixin):
     """Resource that supports history lookups.
 
     Subclasses must implement the `history_resource` class variable.
@@ -560,7 +564,7 @@ def is_reverse_zone_name(name: str) -> bool:
     return name.endswith(".arpa")
 
 
-class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
+class Zone(FrozenModelWithTimestamps, WithTTL):
     """Model representing a DNS zone with various attributes and related nameservers."""
 
     id: int  # noqa: A003
@@ -925,7 +929,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             raise e
 
 
-class ForwardZone(Zone, WithName, APIMixin):
+class ForwardZone(Zone, WithName):
     """A forward zone."""
 
     @classmethod
@@ -968,7 +972,7 @@ class ForwardZone(Zone, WithName, APIMixin):
         raise UnexpectedDataError(f"Unexpected response from server: {zoneblob}", resp)
 
 
-class ReverseZone(Zone, WithName, APIMixin):
+class ReverseZone(Zone, WithName):
     """A reverse zone."""
 
     @classmethod
@@ -1027,7 +1031,7 @@ class Delegation(FrozenModelWithTimestamps, WithZone):
         return ForwardZoneDelegation
 
 
-class ForwardZoneDelegation(Delegation, APIMixin):
+class ForwardZoneDelegation(Delegation):
     """A forward zone delegation."""
 
     @classmethod
@@ -1036,7 +1040,7 @@ class ForwardZoneDelegation(Delegation, APIMixin):
         return Endpoint.ForwardZonesDelegations
 
 
-class ReverseZoneDelegation(Delegation, APIMixin):
+class ReverseZoneDelegation(Delegation):
     """A reverse zone delegation."""
 
     @classmethod
@@ -2032,7 +2036,7 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
         return None
 
 
-class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
+class IPAddress(FrozenModelWithTimestamps, WithHost):
     """Represents an IP address with associated details."""
 
     id: int  # noqa: A003
@@ -2181,7 +2185,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         return hash((self.id, self.ipaddress, self.macaddress))
 
 
-class HInfo(FrozenModelWithTimestamps, WithHost, APIMixin):
+class HInfo(FrozenModelWithTimestamps, WithHost):
     """Represents a HINFO record."""
 
     cpu: str
@@ -2193,7 +2197,7 @@ class HInfo(FrozenModelWithTimestamps, WithHost, APIMixin):
         return Endpoint.Hinfos
 
 
-class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
+class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL):
     """Represents a CNAME record."""
 
     id: int  # noqa: A003
@@ -2254,7 +2258,7 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         return results[0]
 
 
-class TXT(FrozenModelWithTimestamps, WithHost, APIMixin):
+class TXT(FrozenModelWithTimestamps, WithHost):
     """Represents a TXT record."""
 
     id: int  # noqa: A003
@@ -2266,7 +2270,7 @@ class TXT(FrozenModelWithTimestamps, WithHost, APIMixin):
         return Endpoint.Txts
 
 
-class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
+class MX(FrozenModelWithTimestamps, WithHost):
     """Represents a MX record."""
 
     id: int  # noqa: A003
@@ -2305,7 +2309,7 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         return self.mx == mx and self.priority == priority
 
 
-class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
+class NAPTR(FrozenModelWithTimestamps, WithHost):
     """Represents a NAPTR record."""
 
     id: int  # noqa: A003
@@ -2335,7 +2339,7 @@ class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
         ]
 
 
-class Srv(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
+class Srv(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL):
     """Represents a SRV record."""
 
     id: int  # noqa: A003
@@ -2355,7 +2359,7 @@ class Srv(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
         return self.name
 
 
-class PTR_override(FrozenModelWithTimestamps, WithHost, APIMixin):
+class PTR_override(FrozenModelWithTimestamps, WithHost):
     """Represents a PTR override record."""
 
     id: int  # noqa: A003
@@ -2367,7 +2371,7 @@ class PTR_override(FrozenModelWithTimestamps, WithHost, APIMixin):
         return Endpoint.PTR_overrides
 
 
-class SSHFP(FrozenModelWithTimestamps, WithHost, WithTTL, APIMixin):
+class SSHFP(FrozenModelWithTimestamps, WithHost, WithTTL):
     """Represents a SSHFP record."""
 
     id: int  # noqa: A003
@@ -2382,7 +2386,7 @@ class SSHFP(FrozenModelWithTimestamps, WithHost, WithTTL, APIMixin):
         return Endpoint.Sshfps
 
 
-class BacnetID(FrozenModel, WithHost, APIMixin):
+class BacnetID(FrozenModel, WithHost):
     """Represents a Bacnet ID record."""
 
     id: int  # noqa: A003
@@ -2411,7 +2415,7 @@ class BacnetID(FrozenModel, WithHost, APIMixin):
         return client.get_typed(Endpoint.BacnetID, list[cls], params=params)
 
 
-class Location(FrozenModelWithTimestamps, WithHost, APIMixin):
+class Location(FrozenModelWithTimestamps, WithHost):
     """Represents a LOC record."""
 
     loc: str
@@ -2450,7 +2454,7 @@ class ContactEmail(FrozenModelWithTimestamps):
     email: str
 
 
-class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
+class Host(FrozenModelWithTimestamps, WithTTL, WithHistory):
     """Model for an individual host."""
 
     id: int  # noqa: A003
@@ -3443,7 +3447,7 @@ class HostList(FrozenModel):
         return len(self.results)
 
 
-class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
+class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory):
     """Model for a hostgroup."""
 
     id: int  # noqa: A003
@@ -3815,7 +3819,7 @@ class UserInfo(BaseModel):
             raise e
 
 
-class LDAPHealth(MregBaseModel, APIMixin):
+class LDAPHealth(APIModelMixin):
     """Model for LDAP health endpoint."""
 
     status: str
@@ -3848,7 +3852,7 @@ class LDAPHealth(MregBaseModel, APIMixin):
             raise e
 
 
-class HeartbeatHealth(MregBaseModel, APIMixin):
+class HeartbeatHealth(APIModelMixin):
     """Model for heartbeat health endpoint."""
 
     uptime: int
