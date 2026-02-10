@@ -19,11 +19,19 @@ from mreg_api.exceptions import InvalidNetwork
 from mreg_api.models import Host
 from mreg_api.models import IPAddress
 from mreg_api.models import IPNetMode
+from mreg_api.models import Label
 from mreg_api.models import Network
+from mreg_api.models import NetworkPolicy
 from mreg_api.models import NetworkOrIP
+from mreg_api.models import Permission
+from mreg_api.models import Role
+from mreg_api.models import Zone
+from mreg_api.models.models import Community
+from mreg_api.models.models import HostGroup
 from mreg_api.models.fields import HostName
 from mreg_api.models.models import ContactEmail
 from mreg_api.types import IP_NetworkT
+from mreg_api.client import MregClient
 
 
 def test_host_contacts_compatibility() -> None:
@@ -86,6 +94,71 @@ def test_host_contacts_compatibility_does_not_override_contacts() -> None:
 
     # Property only contains contact from `contacts` field
     assert host.contact_emails == ["actual-contact@example.com"]
+
+
+def test_host_patch_typed_kwargs_and_raw(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = MregClient(url="http://example.com", domain="example.com")
+    host = Host(
+        id=1,
+        name=HostName("test-host"),
+        ipaddresses=[],
+        created_at=datetime.datetime(2020, 1, 1, 0, 0, 0),
+        updated_at=datetime.datetime(2021, 1, 1, 0, 0, 0),
+        contact=None,
+        contacts=[],
+        comment="old",
+    ).bind(client)
+
+    captured: dict[str, Any] = {}
+
+    def fake_patch(path: str, params: Any = None, **kwargs: Any) -> object:
+        captured["path"] = path
+        captured["params"] = params
+        captured["kwargs"] = kwargs
+        return object()
+
+    monkeypatch.setattr(client, "patch", fake_patch)
+
+    updated = Host(
+        id=1,
+        name=HostName("test-host"),
+        ipaddresses=[],
+        created_at=datetime.datetime(2020, 1, 1, 0, 0, 0),
+        updated_at=datetime.datetime(2021, 1, 1, 0, 0, 0),
+        contact=None,
+        contacts=[],
+        comment="hi",
+    ).bind(client)
+    monkeypatch.setattr(Host, "refetch", lambda self: updated)
+
+    patched = host.patch_typed(comment="hi", validate=False)
+    assert patched.comment == "hi"
+    assert captured["kwargs"] == {"comment": "hi"}
+
+    _ = host.patch(comment="hi", validate=False)
+    assert captured["kwargs"] == {"comment": "hi"}
+
+    _ = host.patch_raw({"comment": "hi"}, validate=False)
+    assert captured["kwargs"] == {"comment": "hi"}
+
+
+@pytest.mark.parametrize(
+    "model_cls",
+    [
+        Host,
+        Permission,
+        Zone,
+        Role,
+        Label,
+        Network,
+        Community,
+        NetworkPolicy,
+        IPAddress,
+        HostGroup,
+    ],
+)
+def test_patch_typed_is_available_on_patchable_models(model_cls: type[Any]) -> None:
+    assert hasattr(model_cls, "patch_typed")
 
 
 @pytest.mark.parametrize(

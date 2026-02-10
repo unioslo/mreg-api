@@ -6,6 +6,7 @@ import ipaddress
 import logging
 import warnings
 from abc import ABC
+from collections.abc import Mapping
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -54,11 +55,22 @@ from mreg_api.models.abstracts import FrozenModel
 from mreg_api.models.abstracts import FrozenModelWithTimestamps
 from mreg_api.models.abstracts import MregBaseModel
 from mreg_api.models.abstracts import manager_only
+from mreg_api.models.abstracts import normalize_patch_fields
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
+from mreg_api.models.patch_types import CommunityPatch
+from mreg_api.models.patch_types import HostGroupPatch
+from mreg_api.models.patch_types import HostPatch
+from mreg_api.models.patch_types import HostPolicyPatch
+from mreg_api.models.patch_types import IPAddressPatch
+from mreg_api.models.patch_types import LabelPatch
+from mreg_api.models.patch_types import NetworkPatch
+from mreg_api.models.patch_types import NetworkPolicyPatch
+from mreg_api.models.patch_types import PermissionPatch
+from mreg_api.models.patch_types import ZonePatch
 from mreg_api.types import ClientProtocol
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
@@ -524,6 +536,10 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
         """Return the endpoint for the class."""
         return Endpoint.PermissionNetgroupRegex
 
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[PermissionPatch]) -> Self:
+        """Patch permission with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
+
     def add_label(self, label_name: str) -> Self:
         """Add a label to the permission.
 
@@ -769,6 +785,10 @@ class Zone(FrozenModelWithTimestamps, WithTTL):
         if not params:
             raise InputFailure("No parameters to update")
         return self.patch(params)
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[ZonePatch]) -> Self:
+        """Patch zone with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
 
     def create_delegation(
         self,
@@ -1162,6 +1182,10 @@ class HostPolicy(FrozenModel, WithName, ABC):
         """Set a new description."""
         return self.patch({"description": description})
 
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[HostPolicyPatch]) -> Self:
+        """Patch host policy with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
+
 
 class Role(HostPolicy, WithHistory):
     """Model for a role."""
@@ -1352,6 +1376,10 @@ class Label(FrozenModelWithTimestamps, WithName):
         """Set a new description."""
         return self.patch({"description": description})
 
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[LabelPatch]) -> Self:
+        """Patch label with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
+
 
 class ExcludedRange(FrozenModelWithTimestamps):
     """Model for an excluded IP range for a network."""
@@ -1386,6 +1414,10 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def __hash__(self):
         """Return a hash of the network."""
         return hash((self.id, self.network))
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[NetworkPatch]) -> Self:
+        """Patch network with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
 
     @cached_property
     def ip_network(self) -> IP_NetworkT:
@@ -1841,25 +1873,36 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
     def patch(
         self,
-        fields: dict[str, Any],
+        fields: Mapping[str, Any] | None = None,
         validate: bool = True,
+        **field_kwargs: Any,
     ) -> Self:
         """Patch the community.
 
         :param fields: The fields to patch.
         :param validate: Whether to validate the response. (Not implemented)
+        :param field_kwargs: Keyword patch arguments.
         :returns: The updated Community object.
         """
         client = self._require_client()
         _ = validate
+        patch_fields = normalize_patch_fields(fields, field_kwargs)
         try:
-            _ = client.patch(self.endpoint_with_id, **fields)
+            _ = client.patch(self.endpoint_with_id, **patch_fields)
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
             raise e
         new_object = self.refetch()
         return new_object
+
+    def patch_raw(self, fields: dict[str, Any], validate: bool = True) -> Self:
+        """Patch the community using a raw dictionary payload."""
+        return self.patch(fields=fields, validate=validate)
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[CommunityPatch]) -> Self:
+        """Patch community with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
 
     def delete(self) -> bool:
         """Delete the community."""
@@ -1937,6 +1980,10 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.NetworkPolicies
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[NetworkPolicyPatch]) -> Self:
+        """Patch network policy with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
 
     def get_attribute_or_raise(self, name: str) -> NetworkPolicyAttributeValue:
         """Get a network attribute value by name, and raise if not found.
@@ -2125,6 +2172,10 @@ class IPAddress(FrozenModelWithTimestamps, WithHost):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.Ipaddresses
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[IPAddressPatch]) -> IPAddress:
+        """Patch IP address with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
 
     def __str__(self):
         """Return the IP address as a string."""
@@ -2529,6 +2580,24 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.Hosts
+
+    def patch(
+        self,
+        fields: Mapping[str, Any] | None = None,
+        validate: bool = True,
+        **field_kwargs: Any,
+    ) -> Host:
+        """Patch the host using typed keyword arguments by default."""
+        patch_fields = normalize_patch_fields(fields, field_kwargs)
+        return super().patch(fields=patch_fields, validate=validate)
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[HostPatch]) -> Host:
+        """Patch the host using a statically typed keyword interface."""
+        return self.patch(validate=validate, **field_kwargs)
+
+    def patch_raw(self, fields: dict[str, Any], validate: bool = True) -> Host:
+        """Patch the host using a raw dictionary payload."""
+        return super().patch(fields=fields, validate=validate)
 
     @classmethod
     @manager_only
@@ -3464,6 +3533,10 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the class."""
         return Endpoint.HostGroups
+
+    def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[HostGroupPatch]) -> Self:
+        """Patch hostgroup with typed keyword arguments."""
+        return self.patch(validate=validate, **field_kwargs)
 
     def set_description(self, description: str) -> Self:
         """Set the description for the hostgroup.

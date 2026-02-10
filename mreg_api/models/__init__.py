@@ -48,6 +48,17 @@ from mreg_api.models.models import UserInfo
 from mreg_api.models.models import UserMregStatus
 from mreg_api.models.models import UserPermission
 from mreg_api.models.models import Zone
+from mreg_api.models.patch_types import CommunityPatch
+from mreg_api.models.patch_types import HostGroupPatch
+from mreg_api.models.patch_types import HostPatch
+from mreg_api.models.patch_types import HostPolicyPatch
+from mreg_api.models.patch_types import IPAddressPatch
+from mreg_api.models.patch_types import LabelPatch
+from mreg_api.models.patch_types import NetworkPatch
+from mreg_api.models.patch_types import NetworkPolicyAttributePatch
+from mreg_api.models.patch_types import NetworkPolicyPatch
+from mreg_api.models.patch_types import PermissionPatch
+from mreg_api.models.patch_types import ZonePatch
 
 __all__ = [
     "Atom",
@@ -96,4 +107,15 @@ __all__ = [
     "UserMregStatus",
     "UserPermission",
     "Zone",
+    "CommunityPatch",
+    "HostGroupPatch",
+    "HostPatch",
+    "HostPolicyPatch",
+    "IPAddressPatch",
+    "LabelPatch",
+    "NetworkPatch",
+    "NetworkPolicyAttributePatch",
+    "NetworkPolicyPatch",
+    "PermissionPatch",
+    "ZonePatch",
 ]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from inline_snapshot import snapshot
@@ -10,14 +9,9 @@ from werkzeug import Response
 
 from mreg_api import models
 from mreg_api.client import MregClient
-from mreg_api.exceptions import GetError
-from mreg_api.exceptions import MregValidationError
-from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.models.fields import HostName
-from mreg_api.models.fields import hostname_domain
-from mreg_api.models.manager import ModelList
-from mreg_api.models.manager import ModelManager
-from mreg_api.models.manager import to_snake_case
+from mreg_api.exceptions import EntityNotFound, GetError, MregValidationError, MultipleEntitiesFound
+from mreg_api.models.fields import HostName, hostname_domain
+from mreg_api.models.manager import ModelList, ModelManager, to_snake_case
 from mreg_api.models.models import Host
 
 
@@ -506,15 +500,16 @@ def test_model_list_patch_dispatches() -> None:
         def __init__(self) -> None:
             self.calls: list[tuple[dict[str, Any], bool]] = []
 
-        def patch(self, fields: dict[str, Any], validate: bool = True) -> Patchable:
-            self.calls.append((fields, validate))
+        def patch(self, fields: dict[str, Any] | None = None, validate: bool = True, **field_kwargs: Any) -> Patchable:
+            payload = fields if fields is not None else field_kwargs
+            self.calls.append((payload, validate))
             return self
 
     one = Patchable()
     two = Patchable()
     objects = ModelList([one, two])
 
-    patched = objects.patch({"comment": "updated"}, validate=False)
+    patched = objects.patch(comment="updated", validate=False)
 
     assert isinstance(patched, ModelList)
     assert patched == [one, two]
@@ -547,23 +542,95 @@ def test_model_list_patch_matches_manual_loop() -> None:
             self.identifier = identifier
             self.calls: list[tuple[dict[str, Any], bool]] = []
 
-        def patch(self, fields: dict[str, Any], validate: bool = True) -> Patchable:
-            self.calls.append((fields, validate))
+        def patch(self, fields: dict[str, Any] | None = None, validate: bool = True, **field_kwargs: Any) -> Patchable:
+            payload = fields if fields is not None else field_kwargs
+            self.calls.append((payload, validate))
             return self
 
     bulk_objects = ModelList([Patchable(1), Patchable(2)])
     loop_objects = ModelList([Patchable(1), Patchable(2)])
 
-    bulk_result = bulk_objects.patch({"comment": "hi"})
+    bulk_result = bulk_objects.patch(comment="hi")
 
     loop_result = ModelList[Patchable]()
     for host in loop_objects:
-        loop_result.append(host.patch({"comment": "hi"}))
+        loop_result.append(host.patch(comment="hi"))
 
     assert isinstance(bulk_result, ModelList)
     assert bulk_result == bulk_objects
     assert [obj.identifier for obj in bulk_result] == [obj.identifier for obj in loop_result]
     assert [obj.calls for obj in bulk_objects] == [obj.calls for obj in loop_objects]
+
+
+def test_model_list_patch_raw_dispatches() -> None:
+    class Patchable:
+        def __init__(self) -> None:
+            self.calls: list[tuple[dict[str, Any], bool]] = []
+
+        def patch_raw(self, fields: dict[str, Any], validate: bool = True) -> Patchable:
+            self.calls.append((fields, validate))
+            return self
+
+    one = Patchable()
+    two = Patchable()
+    objects = ModelList([one, two])
+
+    patched = objects.patch_raw({"comment": "updated"}, validate=False)
+
+    assert isinstance(patched, ModelList)
+    assert patched == [one, two]
+    assert one.calls == [({"comment": "updated"}, False)]
+    assert two.calls == [({"comment": "updated"}, False)]
+
+
+def test_model_list_patch_typed_dispatches() -> None:
+    class Patchable:
+        def __init__(self) -> None:
+            self.calls: list[tuple[dict[str, Any], bool]] = []
+
+        def patch_typed(self, *, validate: bool = True, **field_kwargs: Any) -> Patchable:
+            self.calls.append((field_kwargs, validate))
+            return self
+
+    one = Patchable()
+    two = Patchable()
+    objects = ModelList([one, two])
+
+    patched = objects.patch_typed(comment="updated", validate=False)
+
+    assert isinstance(patched, ModelList)
+    assert patched == [one, two]
+    assert one.calls == [({"comment": "updated"}, False)]
+    assert two.calls == [({"comment": "updated"}, False)]
+
+
+def test_model_list_patch_typed_raises_if_missing_method() -> None:
+    objects = ModelList([object()])
+    with pytest.raises(TypeError, match="Cannot bulk-patch_typed"):
+        _ = objects.patch_typed(comment="updated")
+
+
+def test_model_manager_get_by_id_or_raise_returns_object() -> None:
+    class DummyModel:
+        @classmethod
+        def get_by_id(cls, client: object, _id: int, _manager: bool = False) -> object | None:
+            _ = (client, _id, _manager)
+            return {"id": 1}
+
+    manager = ModelManager(MregClient(), DummyModel)
+    assert manager.get_by_id_or_raise(1) == {"id": 1}
+
+
+def test_model_manager_get_by_id_or_raise_raises_with_default_message() -> None:
+    class DummyModel:
+        @classmethod
+        def get_by_id(cls, client: object, _id: int, _manager: bool = False) -> object | None:
+            _ = (client, _id, _manager)
+            return None
+
+    manager = ModelManager(MregClient(), DummyModel)
+    with pytest.raises(EntityNotFound, match="DummyModel with ID 1 not found"):
+        _ = manager.get_by_id_or_raise(1)
 
 
 def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:

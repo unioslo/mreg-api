@@ -51,7 +51,21 @@ from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.fields import hostname_domain
+from mreg_api.models.manager import AtomManager
+from mreg_api.models.manager import CommunityManager
+from mreg_api.models.manager import ForwardZoneManager
+from mreg_api.models.manager import HostManager
+from mreg_api.models.manager import HostGroupManager
+from mreg_api.models.manager import HostPolicyManager
+from mreg_api.models.manager import IPAddressManager
+from mreg_api.models.manager import LabelManager
 from mreg_api.models.manager import ModelManager
+from mreg_api.models.manager import NetworkManager
+from mreg_api.models.manager import NetworkPolicyManager
+from mreg_api.models.manager import PermissionManager
+from mreg_api.models.manager import ReverseZoneManager
+from mreg_api.models.manager import RoleManager
+from mreg_api.models.manager import ZoneManager
 from mreg_api.models.manager import client_model_map
 from mreg_api.request_context import last_request_method
 from mreg_api.request_context import last_request_url
@@ -246,9 +260,9 @@ class MregClient:
         """Get a model manager for a specific model class."""
         return ModelManager(self, model)
 
-    def atom(self) -> ModelManager["Atom"]:
+    def atom(self) -> AtomManager:
         """Return a client-bound manager for Atom."""
-        return ModelManager(self, _get_client_model_map()["atom"])
+        return AtomManager(self, _get_client_model_map()["atom"])
 
     def bacnet_id(self) -> ModelManager["BacnetID"]:
         """Return a client-bound manager for BacnetID."""
@@ -258,17 +272,17 @@ class MregClient:
         """Return a client-bound manager for CNAME."""
         return ModelManager(self, _get_client_model_map()["cname"])
 
-    def community(self) -> ModelManager["Community"]:
+    def community(self) -> CommunityManager:
         """Return a client-bound manager for Community."""
-        return ModelManager(self, _get_client_model_map()["community"])
+        return CommunityManager(self, _get_client_model_map()["community"])
 
     def delegation(self) -> ModelManager["Delegation"]:
         """Return a client-bound manager for Delegation."""
         return ModelManager(self, _get_client_model_map()["delegation"])
 
-    def forward_zone(self) -> ModelManager["ForwardZone"]:
+    def forward_zone(self) -> ForwardZoneManager:
         """Return a client-bound manager for ForwardZone."""
-        return ModelManager(self, _get_client_model_map()["forward_zone"])
+        return ForwardZoneManager(self, _get_client_model_map()["forward_zone"])
 
     def forward_zone_delegation(self) -> ModelManager["ForwardZoneDelegation"]:
         """Return a client-bound manager for ForwardZoneDelegation."""
@@ -286,29 +300,29 @@ class MregClient:
         """Return a client-bound manager for HInfo."""
         return ModelManager(self, _get_client_model_map()["hinfo"])
 
-    def host(self) -> ModelManager["Host"]:
+    def host(self) -> HostManager:
         """Return a client-bound manager for Host."""
-        return ModelManager(self, _get_client_model_map()["host"])
+        return HostManager(self, _get_client_model_map()["host"])
 
-    def host_group(self) -> ModelManager["HostGroup"]:
+    def host_group(self) -> HostGroupManager:
         """Return a client-bound manager for HostGroup."""
-        return ModelManager(self, _get_client_model_map()["host_group"])
+        return HostGroupManager(self, _get_client_model_map()["host_group"])
 
     def host_list(self) -> ModelManager["HostList"]:
         """Return a client-bound manager for HostList."""
         return ModelManager(self, _get_client_model_map()["host_list"])
 
-    def host_policy(self) -> ModelManager["HostPolicy"]:
+    def host_policy(self) -> HostPolicyManager:
         """Return a client-bound manager for HostPolicy."""
-        return ModelManager(self, _get_client_model_map()["host_policy"])
+        return HostPolicyManager(self, _get_client_model_map()["host_policy"])
 
-    def ip_address(self) -> ModelManager["IPAddress"]:
+    def ip_address(self) -> IPAddressManager:
         """Return a client-bound manager for IPAddress."""
-        return ModelManager(self, _get_client_model_map()["ip_address"])
+        return IPAddressManager(self, _get_client_model_map()["ip_address"])
 
-    def label(self) -> ModelManager["Label"]:
+    def label(self) -> LabelManager:
         """Return a client-bound manager for Label."""
-        return ModelManager(self, _get_client_model_map()["label"])
+        return LabelManager(self, _get_client_model_map()["label"])
 
     def ldap_health(self) -> ModelManager["LDAPHealth"]:
         """Return a client-bound manager for LDAPHealth."""
@@ -330,37 +344,37 @@ class MregClient:
         """Return a client-bound manager for NAPTR."""
         return ModelManager(self, _get_client_model_map()["naptr"])
 
-    def network(self) -> ModelManager["Network"]:
+    def network(self) -> NetworkManager:
         """Return a client-bound manager for Network."""
-        return ModelManager(self, _get_client_model_map()["network"])
+        return NetworkManager(self, _get_client_model_map()["network"])
 
-    def network_policy(self) -> ModelManager["NetworkPolicy"]:
+    def network_policy(self) -> NetworkPolicyManager:
         """Return a client-bound manager for NetworkPolicy."""
-        return ModelManager(self, _get_client_model_map()["network_policy"])
+        return NetworkPolicyManager(self, _get_client_model_map()["network_policy"])
 
     def network_policy_attribute(self) -> ModelManager["NetworkPolicyAttribute"]:
         """Return a client-bound manager for NetworkPolicyAttribute."""
         return ModelManager(self, _get_client_model_map()["network_policy_attribute"])
 
-    def permission(self) -> ModelManager["Permission"]:
+    def permission(self) -> PermissionManager:
         """Return a client-bound manager for Permission."""
-        return ModelManager(self, _get_client_model_map()["permission"])
+        return PermissionManager(self, _get_client_model_map()["permission"])
 
     def ptr_override(self) -> ModelManager["PTR_override"]:
         """Return a client-bound manager for PTR_override."""
         return ModelManager(self, _get_client_model_map()["ptr_override"])
 
-    def reverse_zone(self) -> ModelManager["ReverseZone"]:
+    def reverse_zone(self) -> ReverseZoneManager:
         """Return a client-bound manager for ReverseZone."""
-        return ModelManager(self, _get_client_model_map()["reverse_zone"])
+        return ReverseZoneManager(self, _get_client_model_map()["reverse_zone"])
 
     def reverse_zone_delegation(self) -> ModelManager["ReverseZoneDelegation"]:
         """Return a client-bound manager for ReverseZoneDelegation."""
         return ModelManager(self, _get_client_model_map()["reverse_zone_delegation"])
 
-    def role(self) -> ModelManager["Role"]:
+    def role(self) -> RoleManager:
         """Return a client-bound manager for Role."""
-        return ModelManager(self, _get_client_model_map()["role"])
+        return RoleManager(self, _get_client_model_map()["role"])
 
     def server_libraries(self) -> ModelManager["ServerLibraries"]:
         """Return a client-bound manager for ServerLibraries."""
@@ -386,9 +400,9 @@ class MregClient:
         """Return a client-bound manager for UserInfo."""
         return ModelManager(self, _get_client_model_map()["user_info"])
 
-    def zone(self) -> ModelManager["Zone"]:
+    def zone(self) -> ZoneManager:
         """Return a client-bound manager for Zone."""
-        return ModelManager(self, _get_client_model_map()["zone"])
+        return ZoneManager(self, _get_client_model_map()["zone"])
 
     @property
     def timeout(self) -> float | None:

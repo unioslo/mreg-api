@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import Callable
@@ -122,6 +123,21 @@ def validate_patched_model(model: BaseModel, fields: dict[str, Any]) -> None:
             raise PatchError(
                 f"Patch failure! Tried to set {key} to {value!r}, but server returned {nval!r}."
             )
+
+
+def normalize_patch_fields(
+    fields: Mapping[str, Any] | None,
+    field_kwargs: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Normalize patch input from either a mapping or keyword arguments."""
+    if fields is not None and field_kwargs:
+        raise PatchError("Provide either `fields` or keyword patch arguments, not both.")
+
+    normalized: dict[str, Any] = dict(fields) if fields is not None else dict(field_kwargs)
+    if not normalized:
+        raise PatchError("No fields provided for patch operation.")
+
+    return normalized
 
 
 def _validate_lists(new: list[Any], old: list[Any]) -> bool:
@@ -579,8 +595,9 @@ class APIMixin(ABC):
 
     def patch(
         self,
-        fields: dict[str, Any],
+        fields: Mapping[str, Any] | None = None,
         validate: bool = True,
+        **field_kwargs: Any,
     ) -> Self:
         """Patch the object with the given values.
 
@@ -592,19 +609,25 @@ class APIMixin(ABC):
 
         :param fields: The values to patch.
         :param validate: Whether to validate the patched object.
+        :param field_kwargs: Keyword patch arguments.
         :returns: The object refetched from the server.
 
         """
+        patch_fields = normalize_patch_fields(fields, field_kwargs)
         client = self._require_client()
-        _ = client.patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
+        _ = client.patch(self.endpoint().with_id(self.id_for_endpoint()), **patch_fields)
         new_object = self.refetch()
 
         if validate:
             # __init_subclass__ guarantees we inherit from BaseModel
             # but we can't signal this to the type checker, so we cast here.
-            validate_patched_model(cast(BaseModel, new_object), fields)  # pyright: ignore[reportInvalidCast] # we know what we are doing here (...?!)
+            validate_patched_model(cast(BaseModel, new_object), patch_fields)  # pyright: ignore[reportInvalidCast] # we know what we are doing here (...?!)
 
         return new_object
+
+    def patch_raw(self, fields: dict[str, Any], validate: bool = True) -> Self:
+        """Patch the object using an explicit dictionary payload."""
+        return self.patch(fields=fields, validate=validate)
 
     def delete(self) -> bool:
         """Delete the object.
