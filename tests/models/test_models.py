@@ -11,6 +11,7 @@ from typing import Callable
 import pytest
 from inline_snapshot import snapshot
 
+from mreg_api.client import MregClient
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
@@ -21,17 +22,16 @@ from mreg_api.models import IPAddress
 from mreg_api.models import IPNetMode
 from mreg_api.models import Label
 from mreg_api.models import Network
-from mreg_api.models import NetworkPolicy
 from mreg_api.models import NetworkOrIP
+from mreg_api.models import NetworkPolicy
 from mreg_api.models import Permission
 from mreg_api.models import Role
 from mreg_api.models import Zone
-from mreg_api.models.models import Community
-from mreg_api.models.models import HostGroup
 from mreg_api.models.fields import HostName
+from mreg_api.models.models import Community
 from mreg_api.models.models import ContactEmail
+from mreg_api.models.models import HostGroup
 from mreg_api.types import IP_NetworkT
-from mreg_api.client import MregClient
 
 
 def test_host_contacts_compatibility() -> None:
@@ -129,7 +129,7 @@ def test_host_patch_typed_kwargs_and_raw(monkeypatch: pytest.MonkeyPatch) -> Non
         contacts=[],
         comment="hi",
     ).bind(client)
-    monkeypatch.setattr(Host, "refetch", lambda self: updated)
+    monkeypatch.setattr(Host, "refetch", lambda _self: updated)
 
     patched = host.patch_typed(comment="hi", validate=False)
     assert patched.comment == "hi"

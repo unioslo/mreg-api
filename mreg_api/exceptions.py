@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from functools import cached_property
+from typing import cast
 
 import httpx
 from httpx import Request
@@ -133,7 +134,7 @@ class APIError(MregApiBaseError):
         elif details := self.details:
             parts.append(details)
         elif self.args:
-            parts.append(str(self.args[0]))
+            parts.append(str(cast(object, self.args[0])))
 
         return "\n".join(p.strip() for p in parts if p.strip())
 
@@ -164,6 +165,7 @@ class MregValidationError(MregApiBaseError):
     Stems from Pydantic ValidationError but adds context about
     the API request that caused the validation to fail.
     """
+    pydantic_error: ValidationError | None
 
     def __init__(self, message: str, pydantic_error: ValidationError | None = None):
         """Initialize an MregValidationError.

@@ -3,14 +3,16 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Mapping
 from enum import Enum
-from typing import Any
 from typing import Self
+from typing import cast
 
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import ValidationError
 from pydantic import field_validator
+from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
@@ -35,8 +37,9 @@ class HistoryResource(str, Enum):
     HostPolicy_Role = "roles"
     HostPolicy_Atom = "atoms"
 
+    @override
     @classmethod
-    def _missing_(cls, value: Any) -> HistoryResource:
+    def _missing_(cls, value: object) -> HistoryResource:
         v = str(value).lower()
         for resource in cls:
             if resource.value == v:
@@ -65,15 +68,19 @@ class HistoryItem(BaseModel):
     mid: int = Field(alias="model_id")  # model_ is an internal pydantic namespace.
     model: str
     action: str
-    data: dict[str, Any]
+    data: dict[str, object]
 
     @field_validator("data", mode="before")
-    def parse_json_data(cls, v: Any) -> Any:
+    def parse_json_data(cls, v: object) -> dict[str, object]:
         """Parse the data field as JSON if it's a string."""
-        if isinstance(v, dict):
-            return v  # pyright: ignore[reportUnknownVariableType]
+        if isinstance(v, Mapping):
+            mapping_value = cast(Mapping[str, object], v)
+            return dict(mapping_value)
+        if not isinstance(v, str):
+            raise ValueError("Failed to parse history data as JSON")
         try:
-            return parse_json_mapping_string(v)
+            parsed = parse_json_mapping_string(v)
+            return cast(dict[str, object], dict(parsed))
         except ValidationError as e:
             raise ValueError("Failed to parse history data as JSON") from e
 

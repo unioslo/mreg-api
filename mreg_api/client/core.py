@@ -3,119 +3,46 @@
 from __future__ import annotations
 
 import functools
-import importlib
 import logging
 import re
 from collections import deque
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
 from contextvars import Token
 from enum import StrEnum
-from typing import TYPE_CHECKING
-from typing import Any
-from typing import Callable
-from typing import Concatenate
-from typing import Literal
-from typing import NamedTuple
-from typing import ParamSpec
-from typing import TypeVar
-from typing import get_origin
-from typing import overload
+from typing import Callable, Concatenate, Literal, NamedTuple, ParamSpec, TypeVar, cast, get_origin, overload
 from urllib.parse import urljoin
 from uuid import uuid4
 
 import httpx
-from httpx import Request
-from httpx import Response
-from pydantic import BaseModel
-from pydantic import TypeAdapter
-from pydantic import ValidationError
-from pydantic import field_validator
+from httpx import Request, Response
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from mreg_api.__about__ import __version__
-from mreg_api.cache import CacheConfig
-from mreg_api.cache import CacheInfo
-from mreg_api.cache import MregApiCache
+from mreg_api.cache import CacheConfig, CacheInfo, MregApiCache
+from mreg_api.client.model_access import ModelAccessMixin
+from mreg_api.client.transport import validate_list_response, validate_paginated_response
 from mreg_api.endpoints import Endpoint
-from mreg_api.exceptions import APIError
-from mreg_api.exceptions import CacheMiss
-from mreg_api.exceptions import DeleteError
-from mreg_api.exceptions import GetError
-from mreg_api.exceptions import InvalidAuthTokenError
-from mreg_api.exceptions import LoginFailedError
-from mreg_api.exceptions import MregValidationError
-from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.exceptions import PatchError
-from mreg_api.exceptions import PostError
-from mreg_api.exceptions import TooManyResults
-from mreg_api.exceptions import determine_http_error_class
+from mreg_api.exceptions import (
+    APIError,
+    CacheMiss,
+    DeleteError,
+    GetError,
+    InvalidAuthTokenError,
+    LoginFailedError,
+    MregValidationError,
+    MultipleEntitiesFound,
+    PatchError,
+    PostError,
+    TooManyResults,
+    determine_http_error_class,
+)
 from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.fields import hostname_domain
-from mreg_api.models.manager import AtomManager
-from mreg_api.models.manager import CommunityManager
-from mreg_api.models.manager import ForwardZoneManager
-from mreg_api.models.manager import HostManager
-from mreg_api.models.manager import HostGroupManager
-from mreg_api.models.manager import HostPolicyManager
-from mreg_api.models.manager import IPAddressManager
-from mreg_api.models.manager import LabelManager
-from mreg_api.models.manager import ModelManager
-from mreg_api.models.manager import NetworkManager
-from mreg_api.models.manager import NetworkPolicyManager
-from mreg_api.models.manager import PermissionManager
-from mreg_api.models.manager import ReverseZoneManager
-from mreg_api.models.manager import RoleManager
-from mreg_api.models.manager import ZoneManager
-from mreg_api.models.manager import client_model_map
-from mreg_api.request_context import last_request_method
-from mreg_api.request_context import last_request_url
-from mreg_api.types import HTTPMethod
-from mreg_api.types import Json
-from mreg_api.types import JsonMapping
-from mreg_api.types import QueryParams
-from mreg_api.types import get_type_adapter
+from mreg_api.request_context import last_request_method, last_request_url
+from mreg_api.types import HTTPMethod, Json, JsonMapping, QueryParams, get_type_adapter
 
 logger = logging.getLogger(__name__)
-
-_client_model_map_cache: dict[str, type] | None = None
-
-if TYPE_CHECKING:
-    from mreg_api.models import CNAME
-    from mreg_api.models import MX
-    from mreg_api.models import NAPTR
-    from mreg_api.models import SSHFP
-    from mreg_api.models import TXT
-    from mreg_api.models import Atom
-    from mreg_api.models import BacnetID
-    from mreg_api.models import Community
-    from mreg_api.models import Delegation
-    from mreg_api.models import ForwardZone
-    from mreg_api.models import ForwardZoneDelegation
-    from mreg_api.models import HealthInfo
-    from mreg_api.models import HeartbeatHealth
-    from mreg_api.models import HInfo
-    from mreg_api.models import Host
-    from mreg_api.models import HostGroup
-    from mreg_api.models import HostList
-    from mreg_api.models import HostPolicy
-    from mreg_api.models import IPAddress
-    from mreg_api.models import Label
-    from mreg_api.models import LDAPHealth
-    from mreg_api.models import Location
-    from mreg_api.models import NameServer
-    from mreg_api.models import Network
-    from mreg_api.models import NetworkPolicy
-    from mreg_api.models import NetworkPolicyAttribute
-    from mreg_api.models import Permission
-    from mreg_api.models import PTR_override
-    from mreg_api.models import ReverseZone
-    from mreg_api.models import ReverseZoneDelegation
-    from mreg_api.models import Role
-    from mreg_api.models import ServerLibraries
-    from mreg_api.models import ServerVersion
-    from mreg_api.models import Srv
-    from mreg_api.models import UserInfo
-    from mreg_api.models import Zone
 
 
 class _TokenAuthResponse(BaseModel):
@@ -124,16 +51,9 @@ class _TokenAuthResponse(BaseModel):
     token: str
 
 
-def _get_client_model_map() -> dict[str, type]:
-    global _client_model_map_cache
-    if _client_model_map_cache is None:
-        models_module = importlib.import_module("mreg_api.models")
-        _client_model_map_cache = client_model_map(models_module)
-    return _client_model_map_cache
-
-
 T = TypeVar("T")
 P = ParamSpec("P")
+BindT = TypeVar("BindT")
 
 JsonMappingValidator = TypeAdapter(JsonMapping)
 
@@ -192,7 +112,7 @@ def invalidate_cache(
     return wrapper
 
 
-class MregClient:
+class MregClient(ModelAccessMixin):
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
@@ -249,161 +169,6 @@ class MregClient:
         self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
 
-    def __getattr__(self, name: str) -> ModelManager[Any]:
-        """Return a client-bound model manager for the named resource."""
-        model = _get_client_model_map().get(name)
-        if model is None:
-            raise AttributeError(f"{self.__class__.__name__!s} object has no attribute {name!r}")
-        return ModelManager(self, model)
-
-    def manager(self, model: type[T]) -> ModelManager[T]:
-        """Get a model manager for a specific model class."""
-        return ModelManager(self, model)
-
-    def atom(self) -> AtomManager:
-        """Return a client-bound manager for Atom."""
-        return AtomManager(self, _get_client_model_map()["atom"])
-
-    def bacnet_id(self) -> ModelManager["BacnetID"]:
-        """Return a client-bound manager for BacnetID."""
-        return ModelManager(self, _get_client_model_map()["bacnet_id"])
-
-    def cname(self) -> ModelManager["CNAME"]:
-        """Return a client-bound manager for CNAME."""
-        return ModelManager(self, _get_client_model_map()["cname"])
-
-    def community(self) -> CommunityManager:
-        """Return a client-bound manager for Community."""
-        return CommunityManager(self, _get_client_model_map()["community"])
-
-    def delegation(self) -> ModelManager["Delegation"]:
-        """Return a client-bound manager for Delegation."""
-        return ModelManager(self, _get_client_model_map()["delegation"])
-
-    def forward_zone(self) -> ForwardZoneManager:
-        """Return a client-bound manager for ForwardZone."""
-        return ForwardZoneManager(self, _get_client_model_map()["forward_zone"])
-
-    def forward_zone_delegation(self) -> ModelManager["ForwardZoneDelegation"]:
-        """Return a client-bound manager for ForwardZoneDelegation."""
-        return ModelManager(self, _get_client_model_map()["forward_zone_delegation"])
-
-    def health_info(self) -> ModelManager["HealthInfo"]:
-        """Return a client-bound manager for HealthInfo."""
-        return ModelManager(self, _get_client_model_map()["health_info"])
-
-    def heartbeat_health(self) -> ModelManager["HeartbeatHealth"]:
-        """Return a client-bound manager for HeartbeatHealth."""
-        return ModelManager(self, _get_client_model_map()["heartbeat_health"])
-
-    def hinfo(self) -> ModelManager["HInfo"]:
-        """Return a client-bound manager for HInfo."""
-        return ModelManager(self, _get_client_model_map()["hinfo"])
-
-    def host(self) -> HostManager:
-        """Return a client-bound manager for Host."""
-        return HostManager(self, _get_client_model_map()["host"])
-
-    def host_group(self) -> HostGroupManager:
-        """Return a client-bound manager for HostGroup."""
-        return HostGroupManager(self, _get_client_model_map()["host_group"])
-
-    def host_list(self) -> ModelManager["HostList"]:
-        """Return a client-bound manager for HostList."""
-        return ModelManager(self, _get_client_model_map()["host_list"])
-
-    def host_policy(self) -> HostPolicyManager:
-        """Return a client-bound manager for HostPolicy."""
-        return HostPolicyManager(self, _get_client_model_map()["host_policy"])
-
-    def ip_address(self) -> IPAddressManager:
-        """Return a client-bound manager for IPAddress."""
-        return IPAddressManager(self, _get_client_model_map()["ip_address"])
-
-    def label(self) -> LabelManager:
-        """Return a client-bound manager for Label."""
-        return LabelManager(self, _get_client_model_map()["label"])
-
-    def ldap_health(self) -> ModelManager["LDAPHealth"]:
-        """Return a client-bound manager for LDAPHealth."""
-        return ModelManager(self, _get_client_model_map()["ldap_health"])
-
-    def location(self) -> ModelManager["Location"]:
-        """Return a client-bound manager for Location."""
-        return ModelManager(self, _get_client_model_map()["location"])
-
-    def mx(self) -> ModelManager["MX"]:
-        """Return a client-bound manager for MX."""
-        return ModelManager(self, _get_client_model_map()["mx"])
-
-    def name_server(self) -> ModelManager["NameServer"]:
-        """Return a client-bound manager for NameServer."""
-        return ModelManager(self, _get_client_model_map()["name_server"])
-
-    def naptr(self) -> ModelManager["NAPTR"]:
-        """Return a client-bound manager for NAPTR."""
-        return ModelManager(self, _get_client_model_map()["naptr"])
-
-    def network(self) -> NetworkManager:
-        """Return a client-bound manager for Network."""
-        return NetworkManager(self, _get_client_model_map()["network"])
-
-    def network_policy(self) -> NetworkPolicyManager:
-        """Return a client-bound manager for NetworkPolicy."""
-        return NetworkPolicyManager(self, _get_client_model_map()["network_policy"])
-
-    def network_policy_attribute(self) -> ModelManager["NetworkPolicyAttribute"]:
-        """Return a client-bound manager for NetworkPolicyAttribute."""
-        return ModelManager(self, _get_client_model_map()["network_policy_attribute"])
-
-    def permission(self) -> PermissionManager:
-        """Return a client-bound manager for Permission."""
-        return PermissionManager(self, _get_client_model_map()["permission"])
-
-    def ptr_override(self) -> ModelManager["PTR_override"]:
-        """Return a client-bound manager for PTR_override."""
-        return ModelManager(self, _get_client_model_map()["ptr_override"])
-
-    def reverse_zone(self) -> ReverseZoneManager:
-        """Return a client-bound manager for ReverseZone."""
-        return ReverseZoneManager(self, _get_client_model_map()["reverse_zone"])
-
-    def reverse_zone_delegation(self) -> ModelManager["ReverseZoneDelegation"]:
-        """Return a client-bound manager for ReverseZoneDelegation."""
-        return ModelManager(self, _get_client_model_map()["reverse_zone_delegation"])
-
-    def role(self) -> RoleManager:
-        """Return a client-bound manager for Role."""
-        return RoleManager(self, _get_client_model_map()["role"])
-
-    def server_libraries(self) -> ModelManager["ServerLibraries"]:
-        """Return a client-bound manager for ServerLibraries."""
-        return ModelManager(self, _get_client_model_map()["server_libraries"])
-
-    def server_version(self) -> ModelManager["ServerVersion"]:
-        """Return a client-bound manager for ServerVersion."""
-        return ModelManager(self, _get_client_model_map()["server_version"])
-
-    def srv(self) -> ModelManager["Srv"]:
-        """Return a client-bound manager for Srv."""
-        return ModelManager(self, _get_client_model_map()["srv"])
-
-    def sshfp(self) -> ModelManager["SSHFP"]:
-        """Return a client-bound manager for SSHFP."""
-        return ModelManager(self, _get_client_model_map()["sshfp"])
-
-    def txt(self) -> ModelManager["TXT"]:
-        """Return a client-bound manager for TXT."""
-        return ModelManager(self, _get_client_model_map()["txt"])
-
-    def user_info(self) -> ModelManager["UserInfo"]:
-        """Return a client-bound manager for UserInfo."""
-        return ModelManager(self, _get_client_model_map()["user_info"])
-
-    def zone(self) -> ZoneManager:
-        """Return a client-bound manager for Zone."""
-        return ZoneManager(self, _get_client_model_map()["zone"])
-
     @property
     def timeout(self) -> float | None:
         """Get the current timeout setting."""
@@ -417,10 +182,12 @@ class MregClient:
     def __del__(self) -> None:
         """Cleanup on deletion."""
         self._reset_contextvars()
+        session_obj: object | None
         try:
-            session = object.__getattribute__(self, "session")
+            session_obj = cast(object, object.__getattribute__(self, "session"))
         except AttributeError:
-            session = None
+            session_obj = None
+        session: httpx.Client | None = session_obj if isinstance(session_obj, httpx.Client) else None
         if session is not None:
             session.close()
 
@@ -429,26 +196,30 @@ class MregClient:
         _ = last_request_url.set(None)
         _ = last_request_method.set(None)
 
-    def _bind_client(self, value: Any) -> Any:
+    def _bind_client(self, value: BindT) -> BindT:
         """Bind this client to model instances returned from API calls."""
         if isinstance(value, list):
-            for item in value:
-                self._bind_client(item)
-            return value
+            items = cast(list[object], value)
+            for item in items:
+                _ = self._bind_client(item)
+            return cast(BindT, items)
         if isinstance(value, tuple):
-            for item in value:
-                self._bind_client(item)
-            return value
+            items = cast(tuple[object, ...], value)
+            for item in items:
+                _ = self._bind_client(item)
+            return cast(BindT, items)
         if isinstance(value, dict):
-            for item in value.values():
-                self._bind_client(item)
-            return value
+            values = cast(dict[object, object], value)
+            for item in values.values():
+                _ = self._bind_client(item)
+            return cast(BindT, values)
         if isinstance(value, APIMixin):
             value._set_client(self)
         if isinstance(value, BaseModel):
             for field in value.__class__.model_fields:
                 if field in value.__dict__:
-                    self._bind_client(value.__dict__[field])
+                    field_value = cast(object, value.__dict__[field])
+                    self._bind_client(field_value)
             return value
         return value
 
@@ -615,7 +386,9 @@ class MregClient:
             Current correlation ID or empty string
 
         """
-        return str(self.session.headers.get(Header.CORRELATION_ID, ""))
+        if Header.CORRELATION_ID in self.session.headers:
+            return self.session.headers[Header.CORRELATION_ID]
+        return ""
 
     def _add_to_history(
         self,
@@ -721,17 +494,17 @@ class MregClient:
         except httpx.HTTPStatusError as e:
             raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
 
-    def _strip_none(self, data: dict[str, Any]) -> dict[str, Any]:
+    def _strip_none(self, data: Mapping[str, Json]) -> dict[str, Json]:
         """Recursively strip None values from a dictionary."""
-        new: dict[str, Any] = {}
+        new: dict[str, Json] = {}
         for key, value in data.items():
             if value is not None:
-                if isinstance(value, dict):
-                    v = self._strip_none(value)  # pyright: ignore[reportUnknownArgumentType]
+                if isinstance(value, Mapping):
+                    v = self._strip_none(cast(Mapping[str, Json], value))
                     if v:
                         new[key] = v
                 else:
-                    new[key] = value
+                    new[key] = cast(Json, value)
         return new
 
     def _check_response(self, response: Response, operation_type: HTTPMethod, url: str) -> None:
@@ -756,7 +529,7 @@ class MregClient:
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **data: Any,
+        **data: Json,
     ) -> Response | None:
         """Make an HTTP request to the MREG API.
 
@@ -814,8 +587,8 @@ class MregClient:
         #     self.session.build_request(method=method, url=url, params=params, data=data or None)
 
         # Log response
-        request_id = result.headers.get(Header.REQUEST_ID, "?")
-        correlation_id = result.headers.get(Header.CORRELATION_ID, "?")
+        request_id = result.headers[Header.REQUEST_ID] if Header.REQUEST_ID in result.headers else "?"
+        correlation_id = result.headers[Header.CORRELATION_ID] if Header.CORRELATION_ID in result.headers else "?"
         id_str = f"[R:{request_id} C:{correlation_id}]"
         log_message = f"Response: {method} {request.url} {result.status_code} {id_str}"
 
@@ -886,19 +659,13 @@ class MregClient:
             raise GetError(e.details, e.response) from e
 
     @overload
-    def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
-    ) -> Response | None: ...
+    def post(self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json) -> Response | None: ...
 
     @overload
-    def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
-    ) -> Response: ...
+    def post(self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json) -> Response: ...
 
     @overload
-    def post(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+    def post(self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json) -> Response: ...
 
     @overload
     def post(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
@@ -920,19 +687,13 @@ class MregClient:
             raise PostError(e.details, e.response) from e
 
     @overload
-    def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
-    ) -> Response | None: ...
+    def patch(self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json) -> Response | None: ...
 
     @overload
-    def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
-    ) -> Response: ...
+    def patch(self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json) -> Response: ...
 
     @overload
-    def patch(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+    def patch(self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json) -> Response: ...
 
     @overload
     def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
@@ -954,19 +715,13 @@ class MregClient:
             raise PatchError(e.details, e.response) from e
 
     @overload
-    def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
-    ) -> Response | None: ...
+    def delete(self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json) -> Response | None: ...
 
     @overload
-    def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
-    ) -> Response: ...
+    def delete(self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json) -> Response: ...
 
     @overload
-    def delete(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+    def delete(self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json) -> Response: ...
 
     @overload
     def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
@@ -1173,9 +928,7 @@ class MregClient:
             if len(ret) == 0:
                 return {}
             if len(ret) > 1 and any(ret[0] != x for x in ret):
-                raise MultipleEntitiesFound(
-                    f"Expected a unique result, got {len(ret)} distinct results."
-                )
+                raise MultipleEntitiesFound(f"Expected a unique result, got {len(ret)} distinct results.")
             return ret[0]
         return ret
 
@@ -1207,59 +960,3 @@ class MregClient:
         else:
             resp = self.get(path, params=params)
             return self._bind_client(adapter.validate_json(resp.text))
-
-
-class PaginatedResponse(BaseModel):
-    """Paginated response data from the API."""
-
-    count: int
-    next: str | None  # noqa: A003
-    previous: str | None
-    results: list[Json]
-
-    @field_validator("count", mode="before")
-    @classmethod
-    def _none_count_is_0(cls, v: Any) -> Any:
-        """Ensure `count` is never `None`."""
-        # Django count doesn't seem to be guaranteed to be an integer.
-        # https://github.com/django/django/blob/bcbc4b9b8a4a47c8e045b060a9860a5c038192de/django/core/paginator.py#L105-L111
-        # Theoretically any callable can be passed to the "count" attribute of the paginator.
-        # Ensures here that None (and any falsey value) is treated as 0.
-        return v or 0
-
-    @classmethod
-    def from_response(cls, response: Response) -> PaginatedResponse:
-        """Create a PaginatedResponse from a Response."""
-        return cls.model_validate_json(response.text)
-
-
-ListResponse = TypeAdapter(list[Json])
-"""JSON list (array) response adapter."""
-
-
-# TODO: Provide better validation error introspection
-def validate_list_response(response: Response) -> list[Json]:
-    """Parse and validate that a response contains a JSON array.
-
-    :param response: The response to validate.
-    :raises MregValidationError: If the response does not contain a valid JSON array.
-    :returns: Parsed response data as a list of Python objects.
-    """
-    try:
-        return ListResponse.validate_json(response.text)
-    # NOTE: ValueError catches custom Pydantic errors too
-    except ValidationError as e:
-        raise MregValidationError.from_pydantic(e, "JSON list") from e
-
-
-def validate_paginated_response(response: Response) -> PaginatedResponse:
-    """Validate and parse that a response contains paginated JSON data.
-
-    :param response: The response to validate.
-    :raises MregValidationError: If the response does not contain valid paginated JSON.
-    :returns: Parsed response data as a PaginatedResponse object.
-    """
-    try:
-        return PaginatedResponse.from_response(response)
-    except ValidationError as e:
-        raise MregValidationError.from_pydantic(e, "paginated JSON") from e

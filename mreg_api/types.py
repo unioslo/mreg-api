@@ -34,19 +34,9 @@ IP_NetworkT = ipaddress.IPv4Network | ipaddress.IPv6Network
 
 
 if TYPE_CHECKING:
-    from typing import Union
-
     # NOTE: Json ported from Pydantic here, but with Sequence and Mapping
     #       instead of list and dict
-    Json: TypeAlias = Union[
-        Sequence["Json"],
-        Mapping[str, "Json"],
-        str,
-        bool,
-        int,
-        float,
-        None,
-    ]
+    Json: TypeAlias = Sequence["Json"] | Mapping[str, "Json"] | str | bool | int | float | None
 else:
     from pydantic import JsonValue
 

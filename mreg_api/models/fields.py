@@ -14,9 +14,10 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Mapping
 from contextvars import ContextVar
 from typing import Annotated
-from typing import Any
+from typing import cast
 
 from pydantic import AfterValidator
 from pydantic import BeforeValidator
@@ -38,7 +39,7 @@ class HostName(str):
     """Hostname string type."""
 
     @classmethod
-    def parse(cls, obj: Any) -> HostName | None:
+    def parse(cls, obj: object) -> HostName | None:
         """Parse a hostname from a string. Returns None if the hostname is invalid.
 
         :param obj: The object to parse.
@@ -50,7 +51,7 @@ class HostName(str):
             return None
 
     @classmethod
-    def parse_or_raise(cls, obj: Any) -> HostName:
+    def parse_or_raise(cls, obj: object) -> HostName:
         """Parse a hostname from a string. Returns the hostname as a string.
 
         :param obj: The object to parse.
@@ -87,7 +88,7 @@ class HostName(str):
 
     @classmethod
     def __get_pydantic_core_schema__(
-        cls, source: type[Any], handler: GetCoreSchemaHandler
+        cls, source: type[object], handler: GetCoreSchemaHandler
     ) -> core_schema.CoreSchema:
         """Return a Pydantic CoreSchema with the hostname validation.
 
@@ -102,7 +103,7 @@ class HostName(str):
         )
 
     @classmethod
-    def _validate(cls, __input_value: str, _: Any) -> str:
+    def _validate(cls, __input_value: str, _: object) -> str:
         """Validate a hostname from the provided str value.
 
         Args:
@@ -120,7 +121,7 @@ class MacAddress(PydanticMacAddress):
     """MAC address string type used in Pydantic models."""
 
     @classmethod
-    def parse(cls, obj: Any) -> MacAddress | None:
+    def parse(cls, obj: object) -> MacAddress | None:
         """Parse a MAC address from a string. Returns None if the MAC address is invalid.
 
         :param obj: The object to parse.
@@ -132,7 +133,7 @@ class MacAddress(PydanticMacAddress):
             return None
 
     @classmethod
-    def parse_or_raise(cls, obj: Any) -> MacAddress:
+    def parse_or_raise(cls, obj: object) -> MacAddress:
         """Parse a MAC address from a string. Returns the MAC address as a string.
 
         :param obj: The object to parse.
@@ -146,28 +147,30 @@ class MacAddress(PydanticMacAddress):
             raise InputFailure(f"Invalid MAC address '{obj}'") from e
 
 
-def _extract_name(value: Any) -> str:
+def _extract_name(value: object) -> object:
     """Extract the "name" value from a dictionary.
 
     :param v: Dictionary containing the name.
     :returns: Extracted name as a string.
     """
-    if isinstance(value, dict):
-        try:
-            return str(value["name"])  # pyright: ignore[reportUnknownArgumentType]
-        except KeyError:
-            logger.error("No 'name' key in %s", value)  # pyright: ignore[reportUnknownArgumentType]
+    if isinstance(value, Mapping):
+        mapping_value = cast(Mapping[str, object], value)
+        name_value = mapping_value.get("name")
+        if name_value is None:
+            logger.error("No 'name' key in %s", mapping_value)
             return ""
+        return str(name_value)
     return value
 
 
-def _remove_falsy_list_items(value: Any) -> Any:
+def _remove_falsy_list_items(value: object) -> object:
     """Remove falsy items from a list.
 
     For use in validators only.
     """
     if isinstance(value, list):
-        return [i for i in value if i]  # pyright: ignore[reportUnknownVariableType]
+        list_value = cast(list[object], value)
+        return [item for item in list_value if item]
     return value
 
 
