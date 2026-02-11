@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 from inline_snapshot import snapshot
 from pydantic import BaseModel
@@ -39,7 +41,7 @@ from mreg_api.models.fields import hostname_domain
     ],
 )
 def test_valid_hostname(hostname: str) -> None:
-    hostname_domain.set("example.com")
+    _ = hostname_domain.set("example.com")
     res = HostName.parse_or_raise(hostname)
     assert res
 
@@ -51,7 +53,7 @@ def test_valid_hostname(hostname: str) -> None:
     class TestModel(BaseModel):
         name: HostName
 
-    m = TestModel(name=hostname)
+    m = TestModel(name=cast(HostName, hostname))
     assert m.name == res  # Identical value to standalone validation
     assert isinstance(m.name, str)
     assert not isinstance(m.name, HostName)  # Core schema coerces this to str
@@ -120,7 +122,7 @@ def test_valid_hostname(hostname: str) -> None:
 )
 def test_invalid_hostname(hostname: str) -> None:
     with pytest.raises(InputFailure):
-        HostName.parse_or_raise(hostname)
+        _ = HostName.parse_or_raise(hostname)
 
     assert HostName.parse(hostname) is None
 
@@ -175,7 +177,7 @@ def test_mac_address_type(inp: str, expect: str) -> None:
     class TestModel(BaseModel):
         mac: MacAddress
 
-    m = TestModel(mac=inp)
+    m = TestModel(mac=cast(MacAddress, inp))
     assert m.mac == expect
     assert isinstance(m.mac, str)
     assert not isinstance(m.mac, MacAddress)  # Core schema coerces this to str
@@ -233,7 +235,7 @@ def test_name_list_invalid_type():
         hosts: NameList
 
     with pytest.raises(ValidationError) as exc_info:
-        TestModel.model_validate(inp)
+        _ = TestModel.model_validate(inp)
 
     assert exc_info.value.errors(include_url=False) == snapshot(
         [

@@ -61,32 +61,25 @@ dev = [
     "setuptools",
     "setuptools-scm",
     "build",
-    "basedpyright>=1.37.1",
+    "basedpyright>=1.37.4",
+    "pyright>=1.1.408",
 ]
 
 
 [tool.setuptools.packages.find]
 include = ["mreg_api*"]
 
-[tool.black]
-max-line-length = 99
-
 [tool.inline-snapshot]
 format-command = "ruff check --fix-only --stdin-filename {filename} | ruff format --stdin-filename {filename}"
 
 [tool.isort]
 profile = "black"
-line_length = 99
+line_length = 130
 
 [tool.ruff]
-line-length = 105
+line-length = 130
 # Assume Python 3.11.
 target-version = "py311"
-
-[tool.ruff.lint.isort]
-# Force one line per import to simplify diffing and merging
-force-single-line = true
-required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint]
 select = [
@@ -214,6 +207,11 @@ exclude = [
 
 # Allow unused variables when underscore-prefixed.
 dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+[tool.ruff.lint.isort]
+# Force one line per import to simplify diffing and merging
+force-single-line = true
+required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint.mccabe]
 # Unlike Flake8, default to a complexity level of 10.

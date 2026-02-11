@@ -6,105 +6,54 @@ import functools
 import logging
 import re
 from collections import deque
-from collections.abc import Generator
+from collections.abc import Generator, Mapping
 from contextlib import contextmanager
-from contextvars import ContextVar
 from contextvars import Token
 from enum import StrEnum
-from typing import Any
-from typing import Callable
-from typing import Concatenate
-from typing import Literal
-from typing import NamedTuple
-from typing import ParamSpec
-from typing import TypeVar
-from typing import get_origin
-from typing import overload
+from typing import Callable, Concatenate, Literal, NamedTuple, ParamSpec, TypeVar, cast, get_origin, overload
 from urllib.parse import urljoin
 from uuid import uuid4
 
 import httpx
-from httpx import Request
-from httpx import Response
-from pydantic import BaseModel
-from pydantic import TypeAdapter
-from pydantic import ValidationError
-from pydantic import field_validator
+from httpx import Request, Response
+from pydantic import BaseModel, TypeAdapter, ValidationError
 
 from mreg_api.__about__ import __version__
-from mreg_api.cache import CacheConfig
-from mreg_api.cache import CacheInfo
-from mreg_api.cache import MregApiCache
+from mreg_api.cache import CacheConfig, CacheInfo, MregApiCache
+from mreg_api.client.model_access import ModelAccessMixin
+from mreg_api.client.transport import validate_list_response, validate_paginated_response
 from mreg_api.endpoints import Endpoint
-from mreg_api.exceptions import APIError
-from mreg_api.exceptions import CacheMiss
-from mreg_api.exceptions import DeleteError
-from mreg_api.exceptions import GetError
-from mreg_api.exceptions import InvalidAuthTokenError
-from mreg_api.exceptions import LoginFailedError
-from mreg_api.exceptions import MregValidationError
-from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.exceptions import PatchError
-from mreg_api.exceptions import PostError
-from mreg_api.exceptions import TooManyResults
-from mreg_api.exceptions import determine_http_error_class
-from mreg_api.models import CNAME
-from mreg_api.models import MX
-from mreg_api.models import NAPTR
-from mreg_api.models import SSHFP
-from mreg_api.models import TXT
-from mreg_api.models import Atom
-from mreg_api.models import BacnetID
-from mreg_api.models import Community
-from mreg_api.models import Delegation
-from mreg_api.models import ExcludedRange
-from mreg_api.models import ForwardZone
-from mreg_api.models import ForwardZoneDelegation
-from mreg_api.models import HealthInfo
-from mreg_api.models import HeartbeatHealth
-from mreg_api.models import HInfo
-from mreg_api.models import Host
-from mreg_api.models import HostCommunity
-from mreg_api.models import HostGroup
-from mreg_api.models import HostList
-from mreg_api.models import HostPolicy
-from mreg_api.models import IPAddress
-from mreg_api.models import Label
-from mreg_api.models import LDAPHealth
-from mreg_api.models import Location
-from mreg_api.models import NameServer
-from mreg_api.models import Network
-from mreg_api.models import NetworkOrIP
-from mreg_api.models import NetworkPolicy
-from mreg_api.models import NetworkPolicyAttribute
-from mreg_api.models import NetworkPolicyAttributeValue
-from mreg_api.models import Permission
-from mreg_api.models import PTR_override
-from mreg_api.models import ReverseZone
-from mreg_api.models import ReverseZoneDelegation
-from mreg_api.models import Role
-from mreg_api.models import ServerLibraries
-from mreg_api.models import ServerVersion
-from mreg_api.models import Srv
-from mreg_api.models import UserInfo
-from mreg_api.models import Zone
+from mreg_api.exceptions import (
+    APIError,
+    CacheMiss,
+    DeleteError,
+    GetError,
+    InvalidAuthTokenError,
+    LoginFailedError,
+    MregValidationError,
+    MultipleEntitiesFound,
+    PatchError,
+    PostError,
+    TooManyResults,
+    determine_http_error_class,
+)
+from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.fields import hostname_domain
-from mreg_api.models.models import TokenAuth
-from mreg_api.types import HTTPMethod
-from mreg_api.types import Json
-from mreg_api.types import JsonMapping
-from mreg_api.types import QueryParams
-from mreg_api.types import get_type_adapter
+from mreg_api.request_context import last_request_method, last_request_url
+from mreg_api.types import HTTPMethod, Json, JsonMapping, QueryParams, get_type_adapter
 
 logger = logging.getLogger(__name__)
 
-# Context variables for tracking request info (used in error reporting)
-last_request_url: ContextVar[str | None] = ContextVar("last_request_url", default=None)
-last_request_method: ContextVar[str | None] = ContextVar("last_request_method", default=None)
+
+class _TokenAuthResponse(BaseModel):
+    """Response model for authentication token."""
+
+    token: str
 
 
 T = TypeVar("T")
 P = ParamSpec("P")
+BindT = TypeVar("BindT")
 
 JsonMappingValidator = TypeAdapter(JsonMapping)
 
@@ -115,25 +64,6 @@ class Header(StrEnum):
     AUTH = "Authorization"
     CORRELATION_ID = "X-Correlation-ID"
     REQUEST_ID = "X-Request-Id"
-
-
-class SingletonMeta(type):
-    """A metaclass for singleton classes."""
-
-    _instances: dict[type, object] = {}
-
-    def __call__(cls: type[Any], *args: Any, **kwargs: Any):
-        """Get the singleton instance of the class."""
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue] # TODO: fix typing for this
-        return cls._instances[cls]
-
-    def reset_instance(self) -> None:
-        """Reset the singleton instance (useful for testing)."""
-        try:
-            del self._instances[self]
-        except KeyError:
-            pass
 
 
 class RequestRecord(NamedTuple):
@@ -176,18 +106,17 @@ def invalidate_cache(
     def wrapper(self: MregClient, *args: P.args, **kwargs: P.kwargs) -> T:
         result = func(self, *args, **kwargs)
         # Clear cache after successful mutation (if it exists)
-        self.clear_cache()
+        _ = self.clear_cache()
         return result
 
     return wrapper
 
 
-class MregClient(metaclass=SingletonMeta):
+class MregClient(ModelAccessMixin):
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
-    methods for making API requests. It is designed to be used as
-    a singleton.
+    methods for making API requests.
 
     Authentication modes:
     1. Token: Provide token directly via set_token()
@@ -196,57 +125,13 @@ class MregClient(metaclass=SingletonMeta):
     Example:
         >>> client = MregClient()
         >>> client.login("username", "password")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
+        >>> host = client.host().get_by_any_means("example.uio.no")
 
         Or with token:
         >>> client = MregClient()
         >>> client.set_token("your-token-here")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
+        >>> host = client.host().get_by_any_means("example.uio.no")
     """
-
-    # Compose models on client for easy access
-    atom: type[Atom] = Atom
-    bacnet_id: type[BacnetID] = BacnetID
-    cname: type[CNAME] = CNAME
-    community: type[Community] = Community
-    delegation: type[Delegation] = Delegation
-    excluded_range: type[ExcludedRange] = ExcludedRange
-    forward_zone: type[ForwardZone] = ForwardZone
-    forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation
-    hinfo: type[HInfo] = HInfo
-    host: type[Host] = Host
-    host_community: type[HostCommunity] = HostCommunity
-    host_group: type[HostGroup] = HostGroup
-    host_list: type[HostList] = HostList
-    host_policy: type[HostPolicy] = HostPolicy
-    ip_address: type[IPAddress] = IPAddress
-    label: type[Label] = Label
-    location: type[Location] = Location
-    mx: type[MX] = MX
-    name_server: type[NameServer] = NameServer
-    naptr: type[NAPTR] = NAPTR
-    network: type[Network] = Network
-    network_or_ip: type[NetworkOrIP] = NetworkOrIP
-    network_policy: type[NetworkPolicy] = NetworkPolicy
-    network_policy_attribute: type[NetworkPolicyAttribute] = NetworkPolicyAttribute
-    network_policy_attribute_value: type[NetworkPolicyAttributeValue] = NetworkPolicyAttributeValue
-    permission: type[Permission] = Permission
-    ptr_override: type[PTR_override] = PTR_override
-    reverse_zone: type[ReverseZone] = ReverseZone
-    reverse_zone_delegation: type[ReverseZoneDelegation] = ReverseZoneDelegation
-    role: type[Role] = Role
-    srv: type[Srv] = Srv
-    sshfp: type[SSHFP] = SSHFP
-    txt: type[TXT] = TXT
-    zone: type[Zone] = Zone
-    health_info: type[HealthInfo] = HealthInfo
-    heartbeat_health: type[HeartbeatHealth] = HeartbeatHealth
-    ldap_health: type[LDAPHealth] = LDAPHealth
-    server_libraries: type[ServerLibraries] = ServerLibraries
-    server_version: type[ServerVersion] = ServerVersion
-    user_info: type[UserInfo] = UserInfo
 
     def __init__(
         self,
@@ -259,7 +144,7 @@ class MregClient(metaclass=SingletonMeta):
         page_size: int | None = None,
         history_size: int | None = 100,
     ) -> None:
-        """Initialize the client (only once for singleton)."""
+        """Initialize the client."""
         self.session: httpx.Client = httpx.Client(
             headers={"User-Agent": f"mreg-api-{__version__}"},
             follow_redirects=follow_redirects,
@@ -280,6 +165,7 @@ class MregClient(metaclass=SingletonMeta):
         # State setup/reset
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
+        self._manager_call_depth: int = 0
         self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
 
@@ -296,12 +182,46 @@ class MregClient(metaclass=SingletonMeta):
     def __del__(self) -> None:
         """Cleanup on deletion."""
         self._reset_contextvars()
-        self.session.close()
+        session_obj: object | None
+        try:
+            session_obj = cast(object, object.__getattribute__(self, "session"))
+        except AttributeError:
+            session_obj = None
+        session: httpx.Client | None = session_obj if isinstance(session_obj, httpx.Client) else None
+        if session is not None:
+            session.close()
 
     def _reset_contextvars(self) -> None:
         """Reset context variables used for request tracking."""
         _ = last_request_url.set(None)
         _ = last_request_method.set(None)
+
+    def _bind_client(self, value: BindT) -> BindT:
+        """Bind this client to model instances returned from API calls."""
+        if isinstance(value, list):
+            items = cast(list[object], value)
+            for item in items:
+                _ = self._bind_client(item)
+            return cast(BindT, items)
+        if isinstance(value, tuple):
+            items = cast(tuple[object, ...], value)
+            for item in items:
+                _ = self._bind_client(item)
+            return cast(BindT, items)
+        if isinstance(value, dict):
+            values = cast(dict[object, object], value)
+            for item in values.values():
+                _ = self._bind_client(item)
+            return cast(BindT, values)
+        if isinstance(value, APIMixin):
+            value._set_client(self)
+        if isinstance(value, BaseModel):
+            for field in value.__class__.model_fields:
+                if field in value.__dict__:
+                    field_value = cast(object, value.__dict__[field])
+                    self._bind_client(field_value)
+            return value
+        return value
 
     def set_domain(self, domain: str) -> Token[str]:
         """Set the default domain for hostname validation.
@@ -371,7 +291,7 @@ class MregClient(metaclass=SingletonMeta):
                       If False, leave the cache data intact.
         """
         if clear:
-            self.clear_cache()
+            _ = self.clear_cache()
         self.cache.disable()
 
     def clear_cache(self) -> int:
@@ -441,7 +361,7 @@ class MregClient(metaclass=SingletonMeta):
 
     def unset_token(self) -> None:
         """Unset the current authorization token."""
-        self.session.headers.pop(Header.AUTH, None)
+        _ = self.session.headers.pop(Header.AUTH, None)
         self._token = None
 
     def set_correlation_id(self, suffix: str) -> str:
@@ -466,7 +386,9 @@ class MregClient(metaclass=SingletonMeta):
             Current correlation ID or empty string
 
         """
-        return str(self.session.headers.get(Header.CORRELATION_ID, ""))
+        if Header.CORRELATION_ID in self.session.headers:
+            return self.session.headers[Header.CORRELATION_ID]
+        return ""
 
     def _add_to_history(
         self,
@@ -532,7 +454,7 @@ class MregClient(metaclass=SingletonMeta):
         if not (json_str := response.text):
             raise LoginFailedError("No token received from server")
         try:
-            token = TokenAuth.model_validate_json(json_str).token
+            token = _TokenAuthResponse.model_validate_json(json_str).token
         except ValidationError as e:
             raise LoginFailedError(f"Failed to parse authentication token: {e}") from e
 
@@ -546,7 +468,7 @@ class MregClient(metaclass=SingletonMeta):
         """Logout from MREG (invalidate token on server)."""
         path = urljoin(self.url, Endpoint.TokenLogout)
         try:
-            self.session.post(path, timeout=self.timeout)
+            _ = self.session.post(path, timeout=self.timeout)
         except httpx.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
@@ -568,21 +490,21 @@ class MregClient(metaclass=SingletonMeta):
                 params={"page_size": 1},
                 timeout=self.timeout,
             )
-            ret.raise_for_status()
+            _ = ret.raise_for_status()
         except httpx.HTTPStatusError as e:
             raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
 
-    def _strip_none(self, data: dict[str, Any]) -> dict[str, Any]:
+    def _strip_none(self, data: Mapping[str, Json]) -> dict[str, Json]:
         """Recursively strip None values from a dictionary."""
-        new: dict[str, Any] = {}
+        new: dict[str, Json] = {}
         for key, value in data.items():
             if value is not None:
-                if isinstance(value, dict):
-                    v = self._strip_none(value)  # pyright: ignore[reportUnknownArgumentType]
+                if isinstance(value, Mapping):
+                    v = self._strip_none(cast(Mapping[str, Json], value))
                     if v:
                         new[key] = v
                 else:
-                    new[key] = value
+                    new[key] = cast(Json, value)
         return new
 
     def _check_response(self, response: Response, operation_type: HTTPMethod, url: str) -> None:
@@ -607,7 +529,7 @@ class MregClient(metaclass=SingletonMeta):
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **data: Any,
+        **data: Json,
     ) -> Response | None:
         """Make an HTTP request to the MREG API.
 
@@ -653,8 +575,8 @@ class MregClient(metaclass=SingletonMeta):
         logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
 
         # Update context variables for error reporting
-        last_request_url.set(str(request.url))
-        last_request_method.set(method)
+        _ = last_request_url.set(str(request.url))
+        _ = last_request_method.set(method)
 
         result = self.session.send(request)
         # Log response in response log
@@ -665,8 +587,8 @@ class MregClient(metaclass=SingletonMeta):
         #     self.session.build_request(method=method, url=url, params=params, data=data or None)
 
         # Log response
-        request_id = result.headers.get(Header.REQUEST_ID, "?")
-        correlation_id = result.headers.get(Header.CORRELATION_ID, "?")
+        request_id = result.headers[Header.REQUEST_ID] if Header.REQUEST_ID in result.headers else "?"
+        correlation_id = result.headers[Header.CORRELATION_ID] if Header.CORRELATION_ID in result.headers else "?"
         id_str = f"[R:{request_id} C:{correlation_id}]"
         log_message = f"Response: {method} {request.url} {result.status_code} {id_str}"
 
@@ -737,19 +659,13 @@ class MregClient(metaclass=SingletonMeta):
             raise GetError(e.details, e.response) from e
 
     @overload
-    def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
-    ) -> Response | None: ...
+    def post(self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json) -> Response | None: ...
 
     @overload
-    def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
-    ) -> Response: ...
+    def post(self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json) -> Response: ...
 
     @overload
-    def post(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+    def post(self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json) -> Response: ...
 
     @overload
     def post(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
@@ -771,19 +687,13 @@ class MregClient(metaclass=SingletonMeta):
             raise PostError(e.details, e.response) from e
 
     @overload
-    def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
-    ) -> Response | None: ...
+    def patch(self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json) -> Response | None: ...
 
     @overload
-    def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
-    ) -> Response: ...
+    def patch(self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json) -> Response: ...
 
     @overload
-    def patch(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+    def patch(self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json) -> Response: ...
 
     @overload
     def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
@@ -805,19 +715,13 @@ class MregClient(metaclass=SingletonMeta):
             raise PatchError(e.details, e.response) from e
 
     @overload
-    def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
-    ) -> Response | None: ...
+    def delete(self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json) -> Response | None: ...
 
     @overload
-    def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
-    ) -> Response: ...
+    def delete(self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json) -> Response: ...
 
     @overload
-    def delete(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+    def delete(self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json) -> Response: ...
 
     @overload
     def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
@@ -1024,9 +928,7 @@ class MregClient(metaclass=SingletonMeta):
             if len(ret) == 0:
                 return {}
             if len(ret) > 1 and any(ret[0] != x for x in ret):
-                raise MultipleEntitiesFound(
-                    f"Expected a unique result, got {len(ret)} distinct results."
-                )
+                raise MultipleEntitiesFound(f"Expected a unique result, got {len(ret)} distinct results.")
             return ret[0]
         return ret
 
@@ -1054,63 +956,7 @@ class MregClient(metaclass=SingletonMeta):
         adapter = get_type_adapter(type_)
         if type_ is list or get_origin(type_) is list:
             resp = self.get_list(path, params=params, limit=limit)
-            return adapter.validate_python(resp)
+            return self._bind_client(adapter.validate_python(resp))
         else:
             resp = self.get(path, params=params)
-            return adapter.validate_json(resp.text)
-
-
-class PaginatedResponse(BaseModel):
-    """Paginated response data from the API."""
-
-    count: int
-    next: str | None  # noqa: A003
-    previous: str | None
-    results: list[Json]
-
-    @field_validator("count", mode="before")
-    @classmethod
-    def _none_count_is_0(cls, v: Any) -> Any:
-        """Ensure `count` is never `None`."""
-        # Django count doesn't seem to be guaranteed to be an integer.
-        # https://github.com/django/django/blob/bcbc4b9b8a4a47c8e045b060a9860a5c038192de/django/core/paginator.py#L105-L111
-        # Theoretically any callable can be passed to the "count" attribute of the paginator.
-        # Ensures here that None (and any falsey value) is treated as 0.
-        return v or 0
-
-    @classmethod
-    def from_response(cls, response: Response) -> PaginatedResponse:
-        """Create a PaginatedResponse from a Response."""
-        return cls.model_validate_json(response.text)
-
-
-ListResponse = TypeAdapter(list[Json])
-"""JSON list (array) response adapter."""
-
-
-# TODO: Provide better validation error introspection
-def validate_list_response(response: Response) -> list[Json]:
-    """Parse and validate that a response contains a JSON array.
-
-    :param response: The response to validate.
-    :raises MregValidationError: If the response does not contain a valid JSON array.
-    :returns: Parsed response data as a list of Python objects.
-    """
-    try:
-        return ListResponse.validate_json(response.text)
-    # NOTE: ValueError catches custom Pydantic errors too
-    except ValidationError as e:
-        raise MregValidationError.from_pydantic(e, "JSON list") from e
-
-
-def validate_paginated_response(response: Response) -> PaginatedResponse:
-    """Validate and parse that a response contains paginated JSON data.
-
-    :param response: The response to validate.
-    :raises MregValidationError: If the response does not contain valid paginated JSON.
-    :returns: Parsed response data as a PaginatedResponse object.
-    """
-    try:
-        return PaginatedResponse.from_response(response)
-    except ValidationError as e:
-        raise MregValidationError.from_pydantic(e, "paginated JSON") from e
+            return self._bind_client(adapter.validate_json(resp.text))

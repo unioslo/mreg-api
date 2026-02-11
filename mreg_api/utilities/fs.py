@@ -6,7 +6,6 @@ import functools
 import logging
 import os
 from pathlib import Path
-from typing import Any
 
 from mreg_api.exceptions import InputFailure
 
@@ -56,7 +55,7 @@ def get_writable_file_or_tempfile(path: Path) -> Path:
 
 def check_writable(path: Path) -> None:
     """Check if user has write access to the given path."""
-    os.access(path, os.W_OK)
+    _ = os.access(path, os.W_OK)
 
 
 @functools.cache
@@ -71,10 +70,20 @@ def get_temp_dir() -> Path:
     return Path(temp_dir)
 
 
-def to_path(value: Any) -> Path:
+def to_path(value: object) -> Path:
     """Convert a value to a Path object with expanded user and resolved symlinks."""
     try:
-        p = Path(value)
+        if isinstance(value, Path):
+            p = value
+        elif isinstance(value, str):
+            p = Path(value)
+        elif isinstance(value, os.PathLike):
+            path_value = os.fspath(value)
+            if isinstance(path_value, bytes):
+                raise TypeError("Path value must be text, not bytes")
+            p = Path(path_value)
+        else:
+            raise TypeError("Path value must be str or os.PathLike")
         try:
             p = p.expanduser()
         except RuntimeError:  # no homedir

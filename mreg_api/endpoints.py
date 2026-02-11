@@ -7,6 +7,8 @@ from typing import Literal
 from urllib.parse import quote
 from urllib.parse import urljoin
 
+from typing_extensions import override
+
 
 class Endpoint(str, Enum):
     """API endpoints."""
@@ -99,7 +101,8 @@ class Endpoint(str, Enum):
     HealthHeartbeat = "/api/meta/health/heartbeat"
     HealthLDAP = "/api/meta/health/ldap"
 
-    def __str__(self):
+    @override
+    def __str__(self) -> str:
         """Prevent direct usage without parameters where needed."""
         if "{}" in self.value:
             raise ValueError(f"Endpoint {self.name} requires parameters. Use `with_params`.")

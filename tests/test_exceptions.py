@@ -41,8 +41,6 @@ def make_mock_response(
 
 def test_validation_error_get_host(httpserver: HTTPServer) -> None:
     """Test a validation error stemming from a GET request."""
-    if MregClient._instances:  # pyright: ignore[reportPrivateUsage]
-        MregClient.reset_instance()
     client = MregClient(url=httpserver.url_for("/"), domain="example.com")
 
     httpserver.expect_oneshot_request("/hosts/foobar").respond_with_json(
@@ -76,7 +74,7 @@ def test_validation_error_get_host(httpserver: HTTPServer) -> None:
     )
     resp = client.get("/hosts/foobar")
     with pytest.raises(PydanticValidationError) as exc_info:
-        Host.model_validate_json(resp.text)
+        _ = Host.model_validate_json(resp.text)
 
     assert exc_info.value.error_count() == snapshot(1)
     assert [repr(err) for err in exc_info.value.errors(include_url=False)] == snapshot(
@@ -94,10 +92,10 @@ def test_validation_error_get_host(httpserver: HTTPServer) -> None:
 
 def test_validation_error_no_request() -> None:
     """Test a validation error that did not originate from an API request."""
-    last_request_url.set(None)  # Ensure no last request URL is set
+    _ = last_request_url.set(None)  # Ensure no last request URL is set
 
     with pytest.raises(PydanticValidationError) as exc_info:
-        Host.model_validate({"name": "test"})  # Missing required fields
+        _ = Host.model_validate({"name": "test"})  # Missing required fields
 
     assert exc_info.value.error_count() == snapshot(5)
     assert [repr(err) for err in exc_info.value.errors(include_url=False)] == snapshot(

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from functools import cached_property
+from typing import cast
 
 import httpx
 from httpx import Request
@@ -11,6 +12,8 @@ from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 
+from mreg_api.request_context import last_request_method
+from mreg_api.request_context import last_request_url
 from mreg_api.types import HTTPMethod
 
 logger = logging.getLogger(__name__)
@@ -131,7 +134,7 @@ class APIError(MregApiBaseError):
         elif details := self.details:
             parts.append(details)
         elif self.args:
-            parts.append(str(self.args[0]))
+            parts.append(str(cast(object, self.args[0])))
 
         return "\n".join(p.strip() for p in parts if p.strip())
 
@@ -162,6 +165,7 @@ class MregValidationError(MregApiBaseError):
     Stems from Pydantic ValidationError but adds context about
     the API request that caused the validation to fail.
     """
+    pydantic_error: ValidationError | None
 
     def __init__(self, message: str, pydantic_error: ValidationError | None = None):
         """Initialize an MregValidationError.
@@ -179,9 +183,6 @@ class MregValidationError(MregApiBaseError):
         :param context: What was being validated (e.g., "JSON", "string", "object").
         :returns: The created MregValidationError.
         """
-        from mreg_api.client import last_request_method  # noqa: PLC0415
-        from mreg_api.client import last_request_url  # noqa: PLC0415
-
         # Display a title containing the HTTP method and URL if available
         method = last_request_method.get()
         url = last_request_url.get()

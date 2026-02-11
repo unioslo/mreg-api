@@ -5,11 +5,12 @@ from __future__ import annotations
 import logging
 from typing import Generic
 from typing import ParamSpec
+from typing import Protocol
 from typing import TypeVar
 from typing import cast
 from typing import final
 
-from diskcache import Cache
+from diskcache import Cache  # pyright: ignore[reportMissingTypeStubs]
 from pydantic import BaseModel
 from pydantic import ByteSize
 from pydantic import field_serializer
@@ -29,6 +30,36 @@ DEFAULT_CACHE_TTL = 300  # seconds
 _CACHE_MISS = object()
 
 
+class CacheBackend(Protocol):
+    """Structural subset of methods used from diskcache.Cache."""
+
+    directory: str
+
+    def stats(self) -> tuple[int, int]:
+        """Return cache hit/miss stats."""
+        ...
+
+    def volume(self) -> int:
+        """Return backend size in bytes."""
+        ...
+
+    def __len__(self) -> int:
+        """Return item count."""
+        ...
+
+    def set(self, key: object, value: object, **kwargs: object) -> bool:
+        """Set a cached value."""
+        ...
+
+    def get(self, key: object, default: object = ..., **kwargs: object) -> object:
+        """Get a cached value."""
+        ...
+
+    def evict(self, tag: object, **kwargs: object) -> int:
+        """Evict entries by tag."""
+        ...
+
+
 class CacheInfo(BaseModel):
     """Information about the cache."""
 
@@ -44,7 +75,7 @@ class CacheInfo(BaseModel):
         return value.human_readable()
 
 
-def _create_cache(config: CacheConfig) -> Cache | None:
+def _create_cache(config: CacheConfig) -> CacheBackend | None:
     """Create a diskcache.Cache based on the provided configuration.
 
     If the diskcache.Cache cannot be created (e.g., filesystem access denied),
@@ -61,7 +92,7 @@ def _create_cache(config: CacheConfig) -> Cache | None:
         return None
 
     try:
-        return Cache(directory=config.directory, timeout=config.timeout)
+        return cast(CacheBackend, cast(object, Cache(directory=config.directory, timeout=config.timeout)))
     except Exception as e:
         logger.warning("Failed to create diskcache.Cache: %s. Cache will be disabled.", e)
         return None
@@ -88,7 +119,7 @@ class MregApiCache(Generic[T]):
     The disabled mode allows callers to use the cache interface without null checks.
     """
 
-    _cache: Cache | None
+    _cache: CacheBackend | None
     """The underlying diskcache.Cache instance, or None if disabled.
 
     Warning:
@@ -97,7 +128,7 @@ class MregApiCache(Generic[T]):
         `if self._cache is None` instead.
     """
 
-    def __init__(self, cache: Cache | None, config: CacheConfig) -> None:
+    def __init__(self, cache: CacheBackend | None, config: CacheConfig) -> None:
         """Initialize the cache wrapper.
 
         Args:
@@ -155,10 +186,10 @@ class MregApiCache(Generic[T]):
         hits, misses = self._cache.stats()
 
         return CacheInfo(
-            size=self._cache.volume(),  # pyright: ignore[reportAny]
-            hits=hits,  # pyright: ignore[reportArgumentType]
-            misses=misses,  # pyright: ignore[reportArgumentType]
-            items=len(self._cache),  # pyright: ignore[reportArgumentType]
+            size=ByteSize(self._cache.volume()),
+            hits=hits,
+            misses=misses,
+            items=len(self._cache),
             directory=self._cache.directory,
             ttl=self.config.ttl,
         )
@@ -171,7 +202,7 @@ class MregApiCache(Generic[T]):
         if not self.is_enabled or self._cache is None:
             return
         try:
-            self._cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
+            _ = self._cache.set(key, value, expire=expire or self.config.ttl, tag=self.config.tag)
         except Exception as e:
             raise CacheError(f"Failed to set cache key {key}: {e}") from e
 
@@ -186,7 +217,7 @@ class MregApiCache(Generic[T]):
 
         # Use sentinel to distinguish between None and missing key
         try:
-            value = self._cache.get(key, default=_CACHE_MISS)  # pyright: ignore[reportReturnType, reportUnknownVariableType]
+            value = self._cache.get(key, default=_CACHE_MISS)
         except Exception as e:
             raise CacheError(f"Failed to get cache key {key}: {e}") from e
 
