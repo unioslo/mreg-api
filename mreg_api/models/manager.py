@@ -114,7 +114,7 @@ class ModelList(list[T], Generic[T]):
         )
 
 
-class HostModelList(ModelList[Host]):
+class HostModelList(ModelList["Host"]):
     """Host-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[HostPatch]) -> HostModelList:
@@ -122,7 +122,7 @@ class HostModelList(ModelList[Host]):
         return cast(HostModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class PermissionModelList(ModelList[Permission]):
+class PermissionModelList(ModelList["Permission"]):
     """Permission-specialized model list with typed bulk patch support."""
 
     def patch_typed(
@@ -132,7 +132,7 @@ class PermissionModelList(ModelList[Permission]):
         return cast(PermissionModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class ZoneModelList(ModelList[Zone]):
+class ZoneModelList(ModelList["Zone"]):
     """Zone-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[ZonePatch]) -> ZoneModelList:
@@ -140,7 +140,7 @@ class ZoneModelList(ModelList[Zone]):
         return cast(ZoneModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class ForwardZoneModelList(ModelList[ForwardZone]):
+class ForwardZoneModelList(ModelList["ForwardZone"]):
     """ForwardZone-specialized model list with typed bulk patch support."""
 
     def patch_typed(
@@ -150,7 +150,7 @@ class ForwardZoneModelList(ModelList[ForwardZone]):
         return cast(ForwardZoneModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class ReverseZoneModelList(ModelList[ReverseZone]):
+class ReverseZoneModelList(ModelList["ReverseZone"]):
     """ReverseZone-specialized model list with typed bulk patch support."""
 
     def patch_typed(
@@ -160,7 +160,7 @@ class ReverseZoneModelList(ModelList[ReverseZone]):
         return cast(ReverseZoneModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class HostPolicyModelList(ModelList[HostPolicy]):
+class HostPolicyModelList(ModelList["HostPolicy"]):
     """HostPolicy-specialized model list with typed bulk patch support."""
 
     def patch_typed(
@@ -170,7 +170,7 @@ class HostPolicyModelList(ModelList[HostPolicy]):
         return cast(HostPolicyModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class RoleModelList(ModelList[Role]):
+class RoleModelList(ModelList["Role"]):
     """Role-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[HostPolicyPatch]) -> RoleModelList:
@@ -178,7 +178,7 @@ class RoleModelList(ModelList[Role]):
         return cast(RoleModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class AtomModelList(ModelList[Atom]):
+class AtomModelList(ModelList["Atom"]):
     """Atom-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[HostPolicyPatch]) -> AtomModelList:
@@ -186,7 +186,7 @@ class AtomModelList(ModelList[Atom]):
         return cast(AtomModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class LabelModelList(ModelList[Label]):
+class LabelModelList(ModelList["Label"]):
     """Label-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[LabelPatch]) -> LabelModelList:
@@ -194,7 +194,7 @@ class LabelModelList(ModelList[Label]):
         return cast(LabelModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class NetworkModelList(ModelList[Network]):
+class NetworkModelList(ModelList["Network"]):
     """Network-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[NetworkPatch]) -> NetworkModelList:
@@ -202,7 +202,7 @@ class NetworkModelList(ModelList[Network]):
         return cast(NetworkModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class CommunityModelList(ModelList[Community]):
+class CommunityModelList(ModelList["Community"]):
     """Community-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[CommunityPatch]) -> CommunityModelList:
@@ -210,7 +210,7 @@ class CommunityModelList(ModelList[Community]):
         return cast(CommunityModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class NetworkPolicyModelList(ModelList[NetworkPolicy]):
+class NetworkPolicyModelList(ModelList["NetworkPolicy"]):
     """NetworkPolicy-specialized model list with typed bulk patch support."""
 
     def patch_typed(
@@ -220,7 +220,7 @@ class NetworkPolicyModelList(ModelList[NetworkPolicy]):
         return cast(NetworkPolicyModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class IPAddressModelList(ModelList[IPAddress]):
+class IPAddressModelList(ModelList["IPAddress"]):
     """IPAddress-specialized model list with typed bulk patch support."""
 
     def patch_typed(self, *, validate: bool = True, **field_kwargs: Unpack[IPAddressPatch]) -> IPAddressModelList:
@@ -228,7 +228,7 @@ class IPAddressModelList(ModelList[IPAddress]):
         return cast(IPAddressModelList, super().patch_typed(validate=validate, **field_kwargs))
 
 
-class HostGroupModelList(ModelList[HostGroup]):
+class HostGroupModelList(ModelList["HostGroup"]):
     """HostGroup-specialized model list with typed bulk patch support."""
 
     def patch_typed(
@@ -522,85 +522,85 @@ class TypedListManager(ModelManager[T], Generic[T, LT]):
         return cast(LT, super().get_list_by_field(field=field, value=value, ordering=ordering, limit=limit))
 
 
-class HostManager(TypedListManager[Host, HostModelList]):
+class HostManager(TypedListManager["Host", HostModelList]):
     """Typed manager specialization for Host."""
 
     _list_type: type[HostModelList] = HostModelList
 
 
-class PermissionManager(TypedListManager[Permission, PermissionModelList]):
+class PermissionManager(TypedListManager["Permission", PermissionModelList]):
     """Typed manager specialization for Permission."""
 
     _list_type: type[PermissionModelList] = PermissionModelList
 
 
-class ZoneManager(TypedListManager[Zone, ZoneModelList]):
+class ZoneManager(TypedListManager["Zone", ZoneModelList]):
     """Typed manager specialization for Zone."""
 
     _list_type: type[ZoneModelList] = ZoneModelList
 
 
-class ForwardZoneManager(TypedListManager[ForwardZone, ForwardZoneModelList]):
+class ForwardZoneManager(TypedListManager["ForwardZone", ForwardZoneModelList]):
     """Typed manager specialization for ForwardZone."""
 
     _list_type: type[ForwardZoneModelList] = ForwardZoneModelList
 
 
-class ReverseZoneManager(TypedListManager[ReverseZone, ReverseZoneModelList]):
+class ReverseZoneManager(TypedListManager["ReverseZone", ReverseZoneModelList]):
     """Typed manager specialization for ReverseZone."""
 
     _list_type: type[ReverseZoneModelList] = ReverseZoneModelList
 
 
-class HostPolicyManager(TypedListManager[HostPolicy, HostPolicyModelList]):
+class HostPolicyManager(TypedListManager["HostPolicy", HostPolicyModelList]):
     """Typed manager specialization for HostPolicy."""
 
     _list_type: type[HostPolicyModelList] = HostPolicyModelList
 
 
-class RoleManager(TypedListManager[Role, RoleModelList]):
+class RoleManager(TypedListManager["Role", RoleModelList]):
     """Typed manager specialization for Role."""
 
     _list_type: type[RoleModelList] = RoleModelList
 
 
-class AtomManager(TypedListManager[Atom, AtomModelList]):
+class AtomManager(TypedListManager["Atom", AtomModelList]):
     """Typed manager specialization for Atom."""
 
     _list_type: type[AtomModelList] = AtomModelList
 
 
-class LabelManager(TypedListManager[Label, LabelModelList]):
+class LabelManager(TypedListManager["Label", LabelModelList]):
     """Typed manager specialization for Label."""
 
     _list_type: type[LabelModelList] = LabelModelList
 
 
-class NetworkManager(TypedListManager[Network, NetworkModelList]):
+class NetworkManager(TypedListManager["Network", NetworkModelList]):
     """Typed manager specialization for Network."""
 
     _list_type: type[NetworkModelList] = NetworkModelList
 
 
-class CommunityManager(TypedListManager[Community, CommunityModelList]):
+class CommunityManager(TypedListManager["Community", CommunityModelList]):
     """Typed manager specialization for Community."""
 
     _list_type: type[CommunityModelList] = CommunityModelList
 
 
-class NetworkPolicyManager(TypedListManager[NetworkPolicy, NetworkPolicyModelList]):
+class NetworkPolicyManager(TypedListManager["NetworkPolicy", NetworkPolicyModelList]):
     """Typed manager specialization for NetworkPolicy."""
 
     _list_type: type[NetworkPolicyModelList] = NetworkPolicyModelList
 
 
-class IPAddressManager(TypedListManager[IPAddress, IPAddressModelList]):
+class IPAddressManager(TypedListManager["IPAddress", IPAddressModelList]):
     """Typed manager specialization for IPAddress."""
 
     _list_type: type[IPAddressModelList] = IPAddressModelList
 
 
-class HostGroupManager(TypedListManager[HostGroup, HostGroupModelList]):
+class HostGroupManager(TypedListManager["HostGroup", HostGroupModelList]):
     """Typed manager specialization for HostGroup."""
 
     _list_type: type[HostGroupModelList] = HostGroupModelList
