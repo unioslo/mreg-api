@@ -48,6 +48,7 @@ from mreg_api.models.models import UserInfo
 from mreg_api.models.models import UserMregStatus
 from mreg_api.models.models import UserPermission
 from mreg_api.models.models import Zone
+from mreg_api.models.models import ZoneFile
 
 __all__ = [
     "Atom",
@@ -96,4 +97,5 @@ __all__ = [
     "UserMregStatus",
     "UserPermission",
     "Zone",
+    "ZoneFile",
 ]

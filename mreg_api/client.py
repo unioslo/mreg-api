@@ -88,6 +88,7 @@ from mreg_api.models import ServerVersion
 from mreg_api.models import Srv
 from mreg_api.models import UserInfo
 from mreg_api.models import Zone
+from mreg_api.models import ZoneFile
 from mreg_api.models.fields import hostname_domain
 from mreg_api.models.models import TokenAuth
 from mreg_api.types import HTTPMethod
@@ -241,6 +242,9 @@ class MregClient(metaclass=SingletonMeta):
     sshfp: type[SSHFP] = SSHFP
     txt: type[TXT] = TXT
     zone: type[Zone] = Zone
+    zonefile: type[ZoneFile] = ZoneFile
+
+    # Fetch-based types for meta endpoints
     health_info: type[HealthInfo] = HealthInfo
     heartbeat_health: type[HeartbeatHealth] = HeartbeatHealth
     ldap_health: type[LDAPHealth] = LDAPHealth

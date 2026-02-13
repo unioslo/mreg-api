@@ -24,6 +24,7 @@ from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
 from pydantic import Field
+from pydantic import RootModel
 from pydantic import ValidationError as PydanticValidationError
 from pydantic import computed_field
 from pydantic import field_validator
@@ -1032,6 +1033,57 @@ class ReverseZoneDelegation(Delegation, APIMixin):
     def is_reverse(cls) -> bool:
         """Return True if the delegation is for a reverse zone."""
         return True
+
+
+class ZoneFile(RootModel[str]):
+    """Zone file model.
+
+    Uses a RootModel-based approach that does not inherit from
+    FrozenModel and APIMixin, because the endpoint itself just
+    returns text blobs.
+    """
+
+    root: str
+
+    def __str__(self) -> str:
+        """Return the zone file contents."""
+        return self.root
+
+    @classmethod
+    def get_by_name_or_raise(cls, name: str) -> Self:
+        """Get a zone file by name, raising if not found.
+
+        Args:
+            name (str): Name of the zone to retrieve zone file for.
+
+        Raises:
+            EntityNotFound: Zone not found.
+
+        Returns:
+            Self: Zone file object
+        """
+        zonefile = cls.get_by_name(name)
+        if not zonefile:
+            raise EntityNotFound(f"Zone file {name!r} not found.")
+        return zonefile
+
+    @classmethod
+    def get_by_name(cls, name: str) -> Self | None:
+        """Get a zone file by name.
+
+        Args:
+            name (str): Name of the zone to retrieve zone file for.
+
+        Returns:
+            Self | None: Zone if found, else None.
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        client = MregClient()
+        resp = client.get(Endpoint.Zonefiles.with_id(name), ok404=True)
+        if not resp:
+            return None
+        return cls.model_validate(resp.text)
 
 
 class HostPolicy(FrozenModel, WithName, ABC):

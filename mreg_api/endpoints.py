@@ -17,7 +17,7 @@ class Endpoint(str, Enum):
     Hinfos = "/api/v1/hinfos/"
     Cnames = "/api/v1/cnames/"
     Sshfps = "/api/v1/sshfps/"
-    Zones = "/api/v1/zones/"
+
     History = "/api/v1/history/"
     Txts = "/api/v1/txts/"
     PTR_overrides = "/api/v1/ptroverrides/"
@@ -72,21 +72,20 @@ class Endpoint(str, Enum):
 
     PermissionNetgroupRegex = "/api/v1/permissions/netgroupregex/"
 
+    Zones = "/api/v1/zones/"
     ForwardZones = f"{Zones}forward/"
     ReverseZones = f"{Zones}reverse/"
-
     # NOTE: Delegations endpoints MUST have a trailing slash
     ForwardZonesDelegations = f"{ForwardZones}{{}}/delegations/"
     ReverseZonesDelegations = f"{ReverseZones}{{}}/delegations/"
-
     ForwardZonesDelegationsZone = f"{ForwardZones}{{}}/delegations/{{}}"
     ReverseZonesDelegationsZone = f"{ReverseZones}{{}}/delegations/{{}}"
-
     # NOTE: Nameservers endpoints must NOT have a trailing slash
     ForwardZonesNameservers = f"{ForwardZones}{{}}/nameservers"
     ReverseZonesNameservers = f"{ReverseZones}{{}}/nameservers"
-
     ForwardZoneForHost = f"{ForwardZones}hostname/"
+
+    Zonefiles = "/api/v1/zonefiles/"
 
     TokenIsValid = "/api/token-is-valid/"
     TokenAuth = "/api/token-auth/"
