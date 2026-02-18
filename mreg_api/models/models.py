@@ -1050,40 +1050,45 @@ class ZoneFile(RootModel[str]):
         return self.root
 
     @classmethod
-    def get_by_name_or_raise(cls, name: str) -> Self:
+    def get_by_name_or_raise(cls, name: str, exclude_private: bool = False) -> str:
         """Get a zone file by name, raising if not found.
 
         Args:
             name (str): Name of the zone to retrieve zone file for.
+            exclude_private (bool): Exclude private ranges from the zone file.
 
         Raises:
             EntityNotFound: Zone not found.
 
         Returns:
-            Self: Zone file object
+            str: Zone file string.
         """
-        zonefile = cls.get_by_name(name)
+        zonefile = cls.get_by_name(name, exclude_private=exclude_private)
         if not zonefile:
             raise EntityNotFound(f"Zone file {name!r} not found.")
         return zonefile
 
     @classmethod
-    def get_by_name(cls, name: str) -> Self | None:
+    def get_by_name(cls, name: str, exclude_private: bool = False) -> str | None:
         """Get a zone file by name.
 
         Args:
             name (str): Name of the zone to retrieve zone file for.
+            exclude_private (bool): Exclude private ranges from the zone file.
 
         Returns:
-            Self | None: Zone if found, else None.
+            str | None: Zone file string if found, else None.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         client = MregClient()
-        resp = client.get(Endpoint.Zonefiles.with_id(name), ok404=True)
+        params: QueryParams = {}
+        if exclude_private:
+            params["excludePrivate"] = "1"
+        resp = client.get(Endpoint.Zonefiles.with_id(name), params=params, ok404=True)
         if not resp:
             return None
-        return cls.model_validate(resp.text)
+        return cls.model_validate(resp.text).root
 
 
 class HostPolicy(FrozenModel, WithName, ABC):
