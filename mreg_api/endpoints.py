@@ -87,6 +87,12 @@ class Endpoint(str, Enum):
 
     Zonefiles = "/api/v1/zonefiles/"
 
+    DhcpHostsByRange = "/api/v1/dhcphosts/{}/{}"
+    DhcpHostsIpv4 = "/api/v1/dhcphosts/ipv4/"
+    DhcpHostsIpv6 = "/api/v1/dhcphosts/ipv6/"
+    DhcpHostsIpv6ByIpv4 = "/api/v1/dhcphosts/ipv6byipv4/"
+    DhcpHostsIpv6ByIpv4ByRange = "/api/v1/dhcphosts/ipv6byipv4/{}/{}"
+
     TokenIsValid = "/api/token-is-valid/"
     TokenAuth = "/api/token-auth/"
     TokenLogout = "/api/token-logout/"

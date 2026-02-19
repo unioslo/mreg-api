@@ -318,19 +318,30 @@ class APIMixin(ABC):
         return None
 
     @classmethod
-    def get_list(cls, params: QueryParams | None = None, limit: int | None = None) -> list[Self]:
+    def get_list(
+        cls,
+        params: QueryParams | None = None,
+        limit: int | None = None,
+        endpoint: Endpoint | str | None = None,
+    ) -> list[Self]:
         """Get a list of all objects.
 
         Optionally filtered by query parameters and limited by limit.
 
         :param params: The query parameters to filter by.
-        :param limit: The maximum number of hits to allow (default 500)
+        :param limit: The maximum number of hits to allow.
+        :param endpoint: Override default model endpoint.
+
 
         :returns: A list of objects if found, an empty list otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        return MregClient().get_typed(cls.endpoint(), list[cls], params=params, limit=limit)
+        # Use default endpoint if omitted
+        if endpoint is None:
+            endpoint = cls.endpoint()
+
+        return MregClient().get_typed(endpoint, list[cls], params=params, limit=limit)
 
     @classmethod
     def get_by_query(

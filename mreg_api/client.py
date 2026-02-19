@@ -57,6 +57,7 @@ from mreg_api.models import Atom
 from mreg_api.models import BacnetID
 from mreg_api.models import Community
 from mreg_api.models import Delegation
+from mreg_api.models import DhcpHost
 from mreg_api.models import ExcludedRange
 from mreg_api.models import ForwardZone
 from mreg_api.models import ForwardZoneDelegation
@@ -213,6 +214,7 @@ class MregClient(metaclass=SingletonMeta):
     cname: type[CNAME] = CNAME
     community: type[Community] = Community
     delegation: type[Delegation] = Delegation
+    dhcphost: type[DhcpHost] = DhcpHost
     excluded_range: type[ExcludedRange] = ExcludedRange
     forward_zone: type[ForwardZone] = ForwardZone
     forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation

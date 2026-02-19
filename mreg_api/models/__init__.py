@@ -11,6 +11,7 @@ from mreg_api.models.models import Atom
 from mreg_api.models.models import BacnetID
 from mreg_api.models.models import Community
 from mreg_api.models.models import Delegation
+from mreg_api.models.models import DhcpHost
 from mreg_api.models.models import ExcludedRange
 from mreg_api.models.models import ForwardZone
 from mreg_api.models.models import ForwardZoneDelegation
@@ -56,6 +57,7 @@ __all__ = [
     "CNAME",
     "Community",
     "Delegation",
+    "DhcpHost",
     "ExcludedRange",
     "ForwardZone",
     "ForwardZoneDelegation",
