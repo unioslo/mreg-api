@@ -75,7 +75,6 @@ from mreg_api.models import LDAPHealth
 from mreg_api.models import Location
 from mreg_api.models import NameServer
 from mreg_api.models import Network
-from mreg_api.models import NetworkOrIP
 from mreg_api.models import NetworkPolicy
 from mreg_api.models import NetworkPolicyAttribute
 from mreg_api.models import NetworkPolicyAttributeValue
@@ -231,7 +230,6 @@ class MregClient(metaclass=SingletonMeta):
     name_server: type[NameServer] = NameServer
     naptr: type[NAPTR] = NAPTR
     network: type[Network] = Network
-    network_or_ip: type[NetworkOrIP] = NetworkOrIP
     network_policy: type[NetworkPolicy] = NetworkPolicy
     network_policy_attribute: type[NetworkPolicyAttribute] = NetworkPolicyAttribute
     network_policy_attribute_value: type[NetworkPolicyAttributeValue] = NetworkPolicyAttributeValue
