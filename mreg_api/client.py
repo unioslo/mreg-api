@@ -57,7 +57,9 @@ from mreg_api.models import Atom
 from mreg_api.models import BacnetID
 from mreg_api.models import Community
 from mreg_api.models import Delegation
-from mreg_api.models import DhcpHost
+from mreg_api.models import DhcpHostIPv4
+from mreg_api.models import DhcpHostIPv6
+from mreg_api.models import DhcpHostIPv6ByIPv4
 from mreg_api.models import ExcludedRange
 from mreg_api.models import ForwardZone
 from mreg_api.models import ForwardZoneDelegation
@@ -213,7 +215,9 @@ class MregClient(metaclass=SingletonMeta):
     cname: type[CNAME] = CNAME
     community: type[Community] = Community
     delegation: type[Delegation] = Delegation
-    dhcp_host: type[DhcpHost] = DhcpHost
+    dhcp_host_ipv4: type[DhcpHostIPv4] = DhcpHostIPv4
+    dhcp_host_ipv6: type[DhcpHostIPv6] = DhcpHostIPv6
+    dhcp_host_ipv6byipv4: type[DhcpHostIPv6ByIPv4] = DhcpHostIPv6ByIPv4
     excluded_range: type[ExcludedRange] = ExcludedRange
     forward_zone: type[ForwardZone] = ForwardZone
     forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation
@@ -949,14 +953,21 @@ class MregClient(metaclass=SingletonMeta):
     def get_count(self, path: str) -> int:
         """Get the count of items from a list endpoint.
 
-        WARNING: will fail for endpoints that do not implement pagination
-                 via a `count` field.
+        WARNING: Returns the length of the results if the endpoint does not implement pagination.
 
         :returns: The count of items.
         """
         response = self.get(path, params={"page_size": 1})
-        resp = validate_paginated_response(response)
-        return resp.count
+        try:
+            resp = validate_paginated_response(response)
+            return resp.count
+        except MregValidationError:
+            content = validate_list_response(response)
+            logger.warning(
+                "Endpoint %s did not return a paginated response, returning length of results as count",
+                path,
+            )
+            return len(content)
 
     @overload
     def get_list_generic(

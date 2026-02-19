@@ -19,6 +19,7 @@ from typing import Self
 from typing import TypeVar
 from typing import cast
 from typing import overload
+from typing import override
 
 from pydantic import AliasChoices
 from pydantic import BaseModel
@@ -3438,8 +3439,8 @@ class HostList(FrozenModel):
         return len(self.results)
 
 
-class DhcpHost(FrozenModel, APIMixin):
-    """Model for a DHCP host."""
+class DhcpHost(FrozenModel, APIMixin, ABC):
+    """Base model for all DHCP hosts."""
 
     # NOTE: no timestamps from this endpoint
     name: str = Field(validation_alias="host__name")
@@ -3447,35 +3448,42 @@ class DhcpHost(FrozenModel, APIMixin):
     macaddress: MacAddress
     zone: str | None = Field(default=None, validation_alias="host__zone__name")  # Name of the zone
 
+
+class DhcpHostIPv4(DhcpHost):
+    """Model for a DHCP host with an IPv4 address."""
+
     @classmethod
+    @override
     def endpoint(cls) -> Endpoint:
-        """Return the endpoint for the class."""
         return Endpoint.DhcpHostsIpv4
-
-    @classmethod
-    def get_list_ipv4(cls) -> list[Self]:
-        """Get all IPv4 DHCP hosts."""
-        return cls.get_list(endpoint=Endpoint.DhcpHostsIpv4)
-
-    @classmethod
-    def get_list_ipv6(cls) -> list[Self]:
-        """Get all IPv6 DHCP hosts."""
-        return cls.get_list(endpoint=Endpoint.DhcpHostsIpv6)
-
-    @classmethod
-    def get_list_ipv6byipv4(cls) -> list[Self]:
-        """Get all IPv6 DHCP hosts by IPv4."""
-        return cls.get_list(endpoint=Endpoint.DhcpHostsIpv6ByIpv4)
 
     @classmethod
     def get_list_by_range(cls, ip: IP_AddressT | str, range: str) -> list[Self]:  # noqa: A002
         """Get all DHCP hosts by ip and range."""
         return cls.get_list(endpoint=Endpoint.DhcpHostsByRange.with_params(str(ip), range))
 
+
+class DhcpHostIPv6(DhcpHost):
+    """Model for a DHCP host with an IPv6 address."""
+
     @classmethod
-    def get_list_ipv6byipv4_by_range(cls, ip: IP_AddressT | str, range: str) -> list[Self]:  # noqa: A002
+    @override
+    def endpoint(cls) -> Endpoint:
+        return Endpoint.DhcpHostsIpv6
+
+
+class DhcpHostIPv6ByIPv4(DhcpHost):
+    """Model for a DHCP hosts with an IPv6 address via IPv4 address."""
+
+    @classmethod
+    @override
+    def endpoint(cls) -> Endpoint:
+        return Endpoint.DhcpHostsIpv6ByIpv4
+
+    @classmethod
+    def get_list_by_range(cls, ip: IP_AddressT | str, range: str) -> list[Self]:  # noqa: A002
         """Get all IPv6 DHCP hosts by ipv4 and range."""
-        return cls.get_list(endpoint=Endpoint.DhcpHostsByRange.with_params(str(ip), range))
+        return cls.get_list(endpoint=Endpoint.DhcpHostsIpv6ByIpv4ByRange.with_params(str(ip), range))
 
 
 class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):

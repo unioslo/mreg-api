@@ -12,6 +12,9 @@ from mreg_api.models.models import BacnetID
 from mreg_api.models.models import Community
 from mreg_api.models.models import Delegation
 from mreg_api.models.models import DhcpHost
+from mreg_api.models.models import DhcpHostIPv4
+from mreg_api.models.models import DhcpHostIPv6
+from mreg_api.models.models import DhcpHostIPv6ByIPv4
 from mreg_api.models.models import ExcludedRange
 from mreg_api.models.models import ForwardZone
 from mreg_api.models.models import ForwardZoneDelegation
@@ -58,6 +61,9 @@ __all__ = [
     "Community",
     "Delegation",
     "DhcpHost",
+    "DhcpHostIPv4",
+    "DhcpHostIPv6",
+    "DhcpHostIPv6ByIPv4",
     "ExcludedRange",
     "ForwardZone",
     "ForwardZoneDelegation",
