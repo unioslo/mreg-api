@@ -3443,10 +3443,12 @@ class DhcpHost(FrozenModel, APIMixin, ABC):
     """Base model for all DHCP hosts."""
 
     # NOTE: no timestamps from this endpoint
-    name: str = Field(validation_alias="host__name")
+    name: str = Field(validation_alias=AliasChoices("name", "host__name"))
     ipaddress: IP_AddressT
     macaddress: MacAddress
-    zone: str | None = Field(default=None, validation_alias="host__zone__name")  # Name of the zone
+    zone: str | None = Field(
+        default=None, validation_alias=AliasChoices("zone", "host__zone__name")
+    )  # Name of the zone
 
 
 class DhcpHostIPv4(DhcpHost):
