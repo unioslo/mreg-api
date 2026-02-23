@@ -51,9 +51,10 @@ class Endpoint(str, Enum):
     NetworksFirstUnused = "/api/v1/networks/{}/first_unused"
     NetworksReservedList = "/api/v1/networks/{}/reserved_list"
     NetworksUsedHostList = "/api/v1/networks/{}/used_host_list"
-    NetworksPTROverrideHostList = "/api/v1/networks/{}/ptroverride_host_list"
     NetworksAddExcludedRanges = "/api/v1/networks/{}/excluded_ranges/"
     NetworksRemoveExcludedRanges = "/api/v1/networks/{}/excluded_ranges/{}"
+    NetworksPTROverrideHostList = "/api/v1/networks/{}/ptroverride_host_list"
+    NetworksPTROverrideList = "/api/v1/networks/{}/ptroverride_list"
 
     # Network policies, attributes, and communities
     NetworkCommunities = "/api/v1/networks/{}/communities/"

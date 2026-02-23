@@ -1677,6 +1677,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
             Endpoint.NetworksPTROverrideHostList.with_params(self.network), dict[str, str]
         )
 
+    def get_ptr_overrides(self) -> list[IP_AddressT]:
+        """Return a list of IP addresses that have PTR overrides."""
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        return MregClient().get_typed(
+            Endpoint.NetworksPTROverrideList.with_params(self.network), list[IP_AddressT]
+        )
+
     def is_reserved_ip(self, ip: IP_AddressT) -> bool:
         """Return True if the IP address is in the reserved list.
 
