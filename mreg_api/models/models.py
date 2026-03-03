@@ -3414,13 +3414,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             Host | None: The refetched Host object if refetch is True, otherwise None.
         """
         mx_obj = MX.get_by_all(self.id, mx, priority)
-        if not mx_obj:
-            raise EntityNotFound(
-                f"{self} has no MX record with priority {priority} and mail exchange {mx}"
-            )
-
         if mx_obj.delete():
-            self.add_note(f"deleted MX {mx} with priority {priority} from {self.name}.")
+            self.add_note(f"Deleted MX {mx} with priority {priority} from {self.name}.")
         else:
             raise DeleteError(f"Failed to remove MX {mx} with priority {priority} from {self.name}.")
         if refetch:
