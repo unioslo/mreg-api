@@ -118,6 +118,11 @@ class FrozenModel(BaseModel):
         """Add a note regarding the object."""
         self._notes.append(note)
 
+    def merge_notes(self, notes: list[str]) -> None:
+        """Merge a list of notes with the object's notes."""
+        # NOTE: not handling duplicates here!
+        self._notes.extend(notes)
+
     def get_notes(self) -> list[str]:
         """Get all notes regarding the object."""
         return self._notes
@@ -502,7 +507,13 @@ class APIMixin(ABC):
         obj = self.__class__.get_by_id(lookup)
         if not obj:
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
-
+        if isinstance(obj, FrozenModel) and isinstance(self, FrozenModel):
+            # FIXME: APIMixin has no concept of notes.
+            # Where should notes be defined? FrozenModel or APIMixin?
+            # Currently, we have to pass in the notes themselves, not `self`,
+            # because a Self annotation in `FrozenModel` is not valid for
+            # the narrowed `self` here.
+            obj.merge_notes(self.get_notes())
         return obj
 
     def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:
