@@ -2343,6 +2343,22 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
             raise EntityNotFound(f"MX record for {mx} not found.")
         return MX.model_validate(data)
 
+    @classmethod
+    def create_mx(
+        cls, host: Host, mx: str, priority: int, *, fetch_after_create: bool = True
+    ) -> MX | None:
+        """Create an MX record.
+
+        :param host: The host to associate the MX record with.
+        :param mx: The MX record.
+        :param priority: The priority.
+        :returns: The created MX record.
+        """
+        return cls.create(
+            {"host": host.id, "mx": mx, "priority": priority},
+            fetch_after_create=fetch_after_create,
+        )
+
     def has_mx_with_priority(self, mx: str, priority: int) -> bool:
         """Return True if the MX record has the given MX and priority.
 
@@ -3368,6 +3384,48 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         :returns: True if the host has the MX record, False otherwise.
         """
         return next((mx for mx in self.mxs if mx.has_mx_with_priority(mx_arg, priority)), None)
+
+    def add_mx(self, mx: str, priority: int) -> Host:
+        """Add an MX record to the host.
+
+        :param mx: The MX record to add.
+        :param priority: The priority of the MX record.
+
+        :returns: A new Host object fetched from the API with the updated MX record.
+        """
+        if self.has_mx_with_priority(mx, priority):
+            raise EntityAlreadyExists(f"{self} already has that MX defined.")
+        MX.create_mx(self, mx, priority, fetch_after_create=False)
+        return self.refetch()
+
+    def remove_mx(self, mx: str, priority: int, *, refetch: bool = True) -> Host | None:
+        """Remove an MX record for the host.
+
+        Args:
+            mx (str): MX record to remove.
+            priority (int): Priority of the MX record to remove.
+            refetch (bool, optional): Whether to refetch the host after removal. Defaults to True.
+
+        Raises:
+            EntityNotFound: If the MX record does not exist.
+            DeleteError: If the MX record could not be deleted.
+
+        Returns:
+            Host | None: The refetched Host object if refetch is True, otherwise None.
+        """
+        mx_obj = MX.get_by_all(self.id, mx, priority)
+        if not mx_obj:
+            raise EntityNotFound(
+                f"{self} has no MX record with priority {priority} and mail exchange {mx}"
+            )
+
+        if mx_obj.delete():
+            self.add_note(f"deleted MX {mx} with priority {priority} from {self.name}.")
+        else:
+            raise DeleteError(f"Failed to remove MX {mx} with priority {priority} from {self.name}.")
+        if refetch:
+            return self.refetch()
+        return None
 
     def __str__(self) -> str:
         """Return the host name as a string."""
