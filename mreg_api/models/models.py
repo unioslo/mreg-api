@@ -2340,7 +2340,7 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
             Endpoint.Mxs, params={"host": str(host), "mx": mx, "priority": str(priority)}
         )
         if not data:
-            raise EntityNotFound(f"MX record for {mx} not found.")
+            raise EntityNotFound(f"MX record for {mx} with priority {priority} not found.")
         return MX.model_validate(data)
 
     @classmethod
