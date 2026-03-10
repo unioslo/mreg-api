@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
+from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import Callable
@@ -60,7 +61,7 @@ def get_model_aliases(model: BaseModel) -> dict[str, str]:
     return fields
 
 
-def validate_patched_model(model: BaseModel, fields: dict[str, Any]) -> None:
+def validate_patched_model(model: BaseModel, fields: Mapping[str, Any]) -> None:
     """Validate that model fields were patched correctly."""
     aliases = get_model_aliases(model)
 
@@ -516,7 +517,7 @@ class APIMixin(ABC):
             obj.merge_notes(self.get_notes())
         return obj
 
-    def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:
+    def patch(self, fields: Mapping[str, Any], validate: bool = True) -> Self:
         """Patch the object with the given values.
 
         Notes:

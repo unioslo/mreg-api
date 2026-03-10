@@ -6,6 +6,7 @@ import ipaddress
 import logging
 import warnings
 from abc import ABC
+from collections.abc import Mapping
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -1889,7 +1890,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
         return MregClient().get_typed(self.endpoint_with_id, self.__class__)
 
-    def patch(self, fields: dict[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
+    def patch(self, fields: Mapping[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
         """Patch the community.
 
         :param fields: The fields to patch.

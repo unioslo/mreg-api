@@ -7,6 +7,7 @@ import logging
 import re
 from collections import deque
 from collections.abc import Generator
+from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
 from contextvars import Token
@@ -580,7 +581,7 @@ class MregClient(metaclass=SingletonMeta):
         except httpx.HTTPStatusError as e:
             raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
 
-    def _strip_none(self, data: dict[str, Any]) -> dict[str, Any]:
+    def _strip_none(self, data: Mapping[str, Any]) -> dict[str, Any]:
         """Recursively strip None values from a dictionary."""
         new: dict[str, Any] = {}
         for key, value in data.items():
