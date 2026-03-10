@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import inspect
 from typing import Any
 
 import pytest
@@ -767,6 +768,9 @@ def _to_snake_case(name: str) -> str:
         "PTR_override": "ptr_override",
         "SSHFP": "sshfp",
         "TXT": "txt",
+        "DhcpHostIPv4": "dhcp_host_ipv4",
+        "DhcpHostIPv6": "dhcp_host_ipv6",
+        "DhcpHostIPv6ByIPv4": "dhcp_host_ipv6byipv4",
     }
     if name in special_cases:
         return special_cases[name]
@@ -776,10 +780,14 @@ def _to_snake_case(name: str) -> str:
 def _client_models() -> list[type]:
     client_models: list[type] = []
     for model in models.__all__:
-        model_obj = getattr(models, model)
+        model_cls = getattr(models, model)
+        if not isinstance(model_cls, type):
+            continue  # Skip exported names that aren't classes
+        elif inspect.isabstract(model_cls):  # Skip any ABCs that are exported
+            continue
         # All models with a get or fetch method should be accessible via the client
-        if any(hasattr(model_obj, attr) for attr in ["get", "fetch"]):
-            client_models.append(model_obj)
+        if any(hasattr(model_cls, attr) for attr in ["get", "fetch"]):
+            client_models.append(model_cls)
     return client_models
 
 
@@ -789,3 +797,13 @@ def test_client_model_composition_dynamic(model: type, client: MregClient) -> No
     attr_name = _to_snake_case(model.__name__)
     assert hasattr(client, attr_name)
     assert getattr(client, attr_name) is model
+
+
+def test_exported_abcs() -> None:
+    """Snapshot test to verify which ABCs are exported from the models module."""
+    abcs: list[str] = []  # names
+    for name in models.__all__:
+        obj = getattr(models, name)
+        if inspect.isabstract(obj):
+            abcs.append(name)
+    assert abcs == snapshot(["DhcpHost", "HostPolicy"])
