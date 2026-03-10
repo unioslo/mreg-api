@@ -3386,20 +3386,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         return next((mx for mx in self.mxs if mx.has_mx_with_priority(mx_arg, priority)), None)
 
-    def add_mx(self, mx: str, priority: int) -> Host:
+    def add_mx(self, mx: str, priority: int) -> None:
         """Add an MX record to the host.
 
         :param mx: The MX record to add.
         :param priority: The priority of the MX record.
-
-        :returns: A new Host object fetched from the API with the updated MX record.
+        :param refetch: Whether to refetch the host after adding the MX record. Defaults to True.
         """
         if self.has_mx_with_priority(mx, priority):
             raise EntityAlreadyExists(f"{self} already has that MX defined.")
         MX.create_mx(self, mx, priority, fetch_after_create=False)
-        return self.refetch()
 
-    def remove_mx(self, mx: str, priority: int, *, refetch: bool = True) -> Host | None:
+    def remove_mx(self, mx: str, priority: int) -> None:
         """Remove an MX record for the host.
 
         Args:
@@ -3410,18 +3408,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Raises:
             EntityNotFound: If the MX record does not exist.
             DeleteError: If the MX record could not be deleted.
-
-        Returns:
-            Host | None: The refetched Host object if refetch is True, otherwise None.
         """
         mx_obj = MX.get_by_all(self.id, mx, priority)
         if mx_obj.delete():
             self.add_note(f"Deleted MX {mx} with priority {priority} from {self.name}.")
         else:
             raise DeleteError(f"Failed to remove MX {mx} with priority {priority} from {self.name}.")
-        if refetch:
-            return self.refetch()
-        return None
 
     def __str__(self) -> str:
         """Return the host name as a string."""
