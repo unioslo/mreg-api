@@ -2356,7 +2356,7 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
         :returns: The created MX record.
         """
         return cls.create(
-            {"host": host.id, "mx": mx, "priority": priority},
+            {"host": host.id, "priority": priority, "mx": mx},
             fetch_after_create=fetch_after_create,
         )
 
