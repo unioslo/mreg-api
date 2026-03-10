@@ -517,7 +517,7 @@ class APIMixin(ABC):
             obj.merge_notes(self.get_notes())
         return obj
 
-    def patch(self, fields: Mapping[str, Any], validate: bool = True) -> Self:
+    def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:
         """Patch the object with the given values.
 
         Notes:

@@ -1890,7 +1890,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
         return MregClient().get_typed(self.endpoint_with_id, self.__class__)
 
-    def patch(self, fields: Mapping[str, Any], validate: bool = True) -> Self:  # noqa: ARG002 # validate not implemented
+    def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:  # noqa: ARG002 # validate not implemented
         """Patch the community.
 
         :param fields: The fields to patch.
