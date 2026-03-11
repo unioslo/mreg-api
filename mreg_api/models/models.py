@@ -20,7 +20,6 @@ from typing import Self
 from typing import TypeVar
 from typing import cast
 from typing import overload
-from typing import override
 
 from pydantic import AliasChoices
 from pydantic import BaseModel
@@ -32,6 +31,7 @@ from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import model_validator
 from typing_extensions import Unpack
+from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import APIError
