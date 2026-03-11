@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from mreg_api import cache
-from mreg_api import dirs
 from mreg_api import endpoints
 from mreg_api import exceptions
 from mreg_api import models
@@ -17,7 +16,6 @@ __all__ = [
     "MregClient",
     "CacheConfig",
     "cache",
-    "dirs",
     "endpoints",
     "exceptions",
     "models",
