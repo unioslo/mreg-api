@@ -6,24 +6,8 @@ build-backend = "setuptools.build_meta"
 name = "mreg-api"
 description = "MREG API"
 readme = "README.md"
-maintainers = [
-    # Active maintainers
-    { name = "Terje Kvernes", email = "terjekv@uio.no" },
-    { name = "Peder Hovdan Andresen", email = "pederhan@uio.no" },
-]
-authors = [
-    # Historical authors
-    { name = "Øyvind Kolbu", email = "oyvind.kolbu@usit.uio.no" },
-    { name = "Safet A", email = "amedov@usit.uio.no" },
-    { name = "Magnus Hirth", email = "mhmorgan42@gmail.com" },
-    { name = "Nico", email = "nicolaydmohebi@gmail.com" },
-    { name = "Marius Bakke", email = "marius.bakke@usit.uio.no" },
-    { name = "Fredrik Larsen", email = "fredrik.larsen@usit.uio.no" },
-    { name = "Paal Braathen", email = "paal.braathen@usit.uio.no" },
-    { name = "Nils Hiorth", email = "nils@nls.me" },
-    { name = "Dmytro Karpenko", email = "dmytrok@usit.uio.no" },
-    { name = "Others (see AUTHORS)" },
-]
+maintainers = [{ name = "Peder Hovdan Andresen", email = "pederhan@uio.no" }]
+authors = [{ name = "Terje Kvernes", email = "terjekv@uio.no" }]
 
 requires-python = ">=3.11"
 license = { file = "LICENSE" }
@@ -50,7 +34,7 @@ dynamic = ["version"]
 
 
 [project.urls]
-Repository = 'https://github.com/unioslo/mreg-cli/'
+Repository = 'https://github.com/unioslo/mreg-api/'
 
 [dependency-groups]
 dev = [
