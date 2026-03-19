@@ -511,9 +511,10 @@ class APIMixin(ABC):
         if isinstance(obj, FrozenModel) and isinstance(self, FrozenModel):
             # FIXME: APIMixin has no concept of notes.
             # Where should notes be defined? FrozenModel or APIMixin?
-            # Currently, we have to pass in the notes themselves, not `self`,
-            # because a Self annotation in `FrozenModel` is not valid for
-            # the narrowed `self` here.
+            # Currently, we have to pass in the notes themselves to `merge_notes`,
+            # instead of doing `obj.merge_notes(self)`, because
+            # a Self annotation in `FrozenModel` is not valid for the
+            # narrowed `self` type here.
             obj.merge_notes(self.get_notes())
         return obj
 
