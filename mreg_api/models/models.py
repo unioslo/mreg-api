@@ -34,6 +34,9 @@ from typing_extensions import Unpack
 from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
+from mreg_api.events import Event
+from mreg_api.events import EventKind
+from mreg_api.events import ObjectRef
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
@@ -2604,8 +2607,19 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         if not hosts:
             hosts = cls.get_list_by_field("ptr_overrides__ipaddress", str(ip))
             if hosts and inform_as_ptr:
+                from mreg_api.client import MregClient  # noqa: PLC0415
+
+                client = MregClient()
                 for host in hosts:
-                    host.add_note(f"{ip} is a PTR override for {host.name}")
+                    client.events.emit(
+                        Event(
+                            kind=EventKind.RESOLUTION,
+                            message=f"{ip} is a PTR override for {host.name}",
+                            subject=ObjectRef("Host", host.name),
+                            related=(ObjectRef("PTROverride", str(ip)),),
+                            correlation_id=client.get_correlation_id(),
+                        )
+                    )
         return hosts
 
     @classmethod
@@ -2634,7 +2648,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             if not host:
                 host = cls.get_by_field("ptr_overrides__ipaddress", str(ip))
                 if host and inform_as_ptr:
-                    host.add_note(f"{ip} is a PTR override for {host.name}")
+                    from mreg_api.client import MregClient  # noqa: PLC0415
+
+                    client = MregClient()
+                    client.events.emit(
+                        Event(
+                            kind=EventKind.RESOLUTION,
+                            message=f"{ip} is a PTR override for {host.name}",
+                            subject=ObjectRef("Host", host.name),
+                            related=(ObjectRef("PTROverride", str(ip)),),
+                            correlation_id=client.get_correlation_id(),
+                        )
+                    )
             return host
         except MultipleEntitiesFound as e:
             raise MultipleEntitiesFound(f"Multiple hosts found with IP address {ip}.") from e
@@ -2777,7 +2802,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             host = Host.get_by_id(cname.host)
 
             if host and inform_as_cname:
-                host.add_note(f"{identifier} is a CNAME for {host.name}")
+                from mreg_api.client import MregClient  # noqa: PLC0415
+
+                client = MregClient()
+                client.events.emit(
+                    Event(
+                        kind=EventKind.RESOLUTION,
+                        message=f"{identifier} is a CNAME for {host.name}",
+                        subject=ObjectRef("Host", host.name),
+                        related=(ObjectRef("CNAME", identifier),),
+                        correlation_id=client.get_correlation_id(),
+                    )
+                )
 
         return host
 
@@ -2861,7 +2897,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         if cname := CNAME.get_by_field("name", identifier):
             host = cls.get_by_id(cname.host)
             if host and inform_as_cname:
-                host.add_note(f"{identifier} is a CNAME for {host.name}")
+                from mreg_api.client import MregClient  # noqa: PLC0415
+
+                client = MregClient()
+                client.events.emit(
+                    Event(
+                        kind=EventKind.RESOLUTION,
+                        message=f"{identifier} is a CNAME for {host.name}",
+                        subject=ObjectRef("Host", host.name),
+                        related=(ObjectRef("CNAME", identifier),),
+                        correlation_id=client.get_correlation_id(),
+                    )
+                )
                 return [host]
 
         return []
@@ -3411,7 +3458,18 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         mx_obj = MX.get_by_all(self.id, mx, priority)
         if mx_obj.delete():
-            self.add_note(f"Deleted MX {mx} with priority {priority} from {self.name}.")
+            from mreg_api.client import MregClient  # noqa: PLC0415
+
+            client = MregClient()
+            client.events.emit(
+                Event(
+                    kind=EventKind.MUTATION,
+                    message=f"Deleted MX {mx} with priority {priority} from {self.name}.",
+                    subject=ObjectRef("Host", self.name),
+                    related=(ObjectRef("MX", mx),),
+                    correlation_id=client.get_correlation_id(),
+                )
+            )
         else:
             raise DeleteError(f"Failed to remove MX {mx} with priority {priority} from {self.name}.")
 

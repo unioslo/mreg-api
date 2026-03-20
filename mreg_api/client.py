@@ -37,6 +37,7 @@ from mreg_api.cache import CacheConfig
 from mreg_api.cache import CacheInfo
 from mreg_api.cache import MregApiCache
 from mreg_api.endpoints import Endpoint
+from mreg_api.events import EventLog
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
 from mreg_api.exceptions import DeleteError
@@ -267,6 +268,7 @@ class MregClient(metaclass=SingletonMeta):
         follow_redirects: bool = False,
         page_size: int | None = None,
         history_size: int | None = 100,
+        event_log_size: int | None = 100,
     ) -> None:
         """Initialize the client (only once for singleton)."""
         self.session: httpx.Client = httpx.Client(
@@ -289,6 +291,7 @@ class MregClient(metaclass=SingletonMeta):
         # State setup/reset
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
+        self.events: EventLog = EventLog(max_size=event_log_size)
         self._original_domain_token: Token[str] = self.set_domain(self._domain)
         self._reset_contextvars()
 

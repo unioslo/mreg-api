@@ -14,7 +14,6 @@ from typing import cast
 from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
-from pydantic import PrivateAttr
 from pydantic.fields import FieldInfo
 
 from mreg_api.endpoints import Endpoint
@@ -111,22 +110,6 @@ def _validate_default(new: Any, old: Any) -> bool:
 
 class FrozenModel(BaseModel):
     """Model for an immutable object."""
-
-    _notes: list[str] = PrivateAttr(default_factory=list)
-    """Internal notes for the object."""
-
-    def add_note(self, note: str) -> None:
-        """Add a note regarding the object."""
-        self._notes.append(note)
-
-    def merge_notes(self, notes: list[str]) -> None:
-        """Merge a list of notes with the object's notes."""
-        # NOTE: not handling duplicates here!
-        self._notes.extend(notes)
-
-    def get_notes(self) -> list[str]:
-        """Get all notes regarding the object."""
-        return self._notes
 
     def __setattr__(self, name: str, value: Any):
         """Raise an exception when trying to set an attribute."""
@@ -508,14 +491,6 @@ class APIMixin(ABC):
         obj = self.__class__.get_by_id(lookup)
         if not obj:
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
-        if isinstance(obj, FrozenModel) and isinstance(self, FrozenModel):
-            # FIXME: APIMixin has no concept of notes.
-            # Where should notes be defined? FrozenModel or APIMixin?
-            # Currently, we have to pass in the notes themselves to `merge_notes`,
-            # instead of doing `obj.merge_notes(self)`, because
-            # a Self annotation in `FrozenModel` is not valid for the
-            # narrowed `self` type here.
-            obj.merge_notes(self.get_notes())
         return obj
 
     def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:
