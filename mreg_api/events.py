@@ -7,7 +7,8 @@ from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
 from enum import Enum
-from typing import override
+
+from typing_extensions import override
 
 
 class EventKind(str, Enum):
