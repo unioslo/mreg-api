@@ -31,6 +31,7 @@ from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import model_validator
 from typing_extensions import Unpack
+from typing_extensions import deprecated
 from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
@@ -2951,6 +2952,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """
         return self.patch(fields={"comment": comment})
 
+    @deprecated("Use set_contacts instead")
     def set_contact(self, contact: str) -> Host:
         """DEPRECATED: Set the contact for the host.
 
