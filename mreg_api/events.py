@@ -84,6 +84,10 @@ class Event:
     """Client correlation ID active at the time the event was emitted."""
 
 
+EventHandler = Callable[[Event], None]
+"""Callable invoked whenever an event is recorded to an EventLog."""
+
+
 class EventLog:
     """Append-only event log with querying and optional subscriber callbacks.
 
@@ -94,7 +98,7 @@ class EventLog:
     def __init__(self, max_size: int | None = 100) -> None:
         """Initialise the log with an optional maximum size."""
         self._events: deque[Event] = deque(maxlen=max_size)
-        self._handlers: list[Callable[[Event], None]] = []
+        self._handlers: list[EventHandler] = []
 
     def record(self, event: Event) -> None:
         """Record an event, evicting the oldest entry if *max_size* is reached.
@@ -105,11 +109,11 @@ class EventLog:
         for handler in self._handlers:
             handler(event)
 
-    def subscribe(self, handler: Callable[[Event], None]) -> None:
+    def subscribe(self, handler: EventHandler) -> None:
         """Register a callback invoked for every new event."""
         self._handlers.append(handler)
 
-    def unsubscribe(self, handler: Callable[[Event], None]) -> None:
+    def unsubscribe(self, handler: EventHandler) -> None:
         """Remove a previously registered callback."""
         self._handlers.remove(handler)
 
