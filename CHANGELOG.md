@@ -5,7 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Added
+
+- Event log functionality to MREG API client, including event recording and retrieval, with the ability for consumers to subscribe to events.
+
+### Removed
+
+- `FrozenModel` note system, replaced with the more comprehensive and flexible event log system.
 
 ## [0.1.2](https://github.com/unioslo/mreg-api/releases/tag/0.1.2) - 2026-03-18
 
