@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
@@ -70,14 +71,11 @@ class EventLog:
 
     def __init__(self, max_size: int | None = 100) -> None:
         """Initialise the log with an optional maximum size."""
-        self._events: list[Event] = []
-        self._max_size: int | None = max_size
+        self._events: deque[Event] = deque(maxlen=max_size)
         self._handlers: list[Callable[[Event], None]] = []
 
     def emit(self, event: Event) -> None:
         """Record an event, evicting the oldest entry if *max_size* is reached."""
-        if self._max_size is not None and len(self._events) >= self._max_size:
-            _ = self._events.pop(0)
         self._events.append(event)
         for handler in self._handlers:
             handler(event)
@@ -113,4 +111,4 @@ class EventLog:
     @override
     def __repr__(self) -> str:
         """Return a developer-readable representation."""
-        return f"EventLog(len={len(self._events)}, max_size={self._max_size})"
+        return f"EventLog(len={len(self._events)}, max_size={self._events.maxlen})"
