@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
+import logging
 from collections import deque
 from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
 from enum import Enum
+from typing import TYPE_CHECKING
+from typing import Self
 
 from typing_extensions import override
+
+if TYPE_CHECKING:
+    from mreg_api.models.abstracts import APIMixin
+
+logger = logging.getLogger(__name__)
 
 
 class EventKind(str, Enum):
@@ -39,6 +47,20 @@ class ObjectRef:
 
     type: str
     id: str
+
+    @classmethod
+    def new(cls, obj: APIMixin) -> Self:
+        """Create a reference to an object with an ID attribute.
+
+        Cannot fail. Logs and defaults to str(obj) for id on failure.
+        """
+        try:
+            id_field = obj.endpoint().external_id_field()
+            id_val = str(getattr(obj, id_field))  # pyright: ignore[reportAny]
+            return cls(type=obj.__class__.__name__, id=id_val)
+        except Exception:
+            logger.exception("Failed to instantiate ObjectRef from %s", obj)
+            return cls(type=obj.__class__.__name__, id=str(obj))
 
     @override
     def __str__(self) -> str:

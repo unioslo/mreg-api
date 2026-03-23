@@ -2615,8 +2615,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                         Event(
                             kind=EventKind.RESOLUTION,
                             message=f"{ip} is a PTR override for {host.name}",
-                            subject=ObjectRef("Host", host.name),
-                            related=(ObjectRef("PTROverride", str(ip)),),
+                            subject=ObjectRef.new(host),
+                            related=(ObjectRef("PTR_override__ipaddress", str(ip)),),
                             correlation_id=client.get_correlation_id(),
                         )
                     )
@@ -2655,8 +2655,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                         Event(
                             kind=EventKind.RESOLUTION,
                             message=f"{ip} is a PTR override for {host.name}",
-                            subject=ObjectRef("Host", host.name),
-                            related=(ObjectRef("PTROverride", str(ip)),),
+                            subject=ObjectRef.new(host),
+                            related=(ObjectRef("PTR_override__ipaddress", str(ip)),),
                             correlation_id=client.get_correlation_id(),
                         )
                     )
@@ -2809,8 +2809,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                     Event(
                         kind=EventKind.RESOLUTION,
                         message=f"{identifier} is a CNAME for {host.name}",
-                        subject=ObjectRef("Host", host.name),
-                        related=(ObjectRef("CNAME", identifier),),
+                        subject=ObjectRef.new(host),
+                        related=(ObjectRef.new(cname),),
                         correlation_id=client.get_correlation_id(),
                     )
                 )
@@ -2904,8 +2904,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                     Event(
                         kind=EventKind.RESOLUTION,
                         message=f"{identifier} is a CNAME for {host.name}",
-                        subject=ObjectRef("Host", host.name),
-                        related=(ObjectRef("CNAME", identifier),),
+                        subject=ObjectRef.new(host),
+                        related=(ObjectRef.new(cname),),
                         correlation_id=client.get_correlation_id(),
                     )
                 )
@@ -3465,8 +3465,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                 Event(
                     kind=EventKind.MUTATION,
                     message=f"Deleted MX {mx} with priority {priority} from {self.name}.",
-                    subject=ObjectRef("Host", self.name),
-                    related=(ObjectRef("MX", mx),),
+                    subject=ObjectRef.new(self),
+                    related=(ObjectRef.new(mx_obj),),
                     correlation_id=client.get_correlation_id(),
                 )
             )
