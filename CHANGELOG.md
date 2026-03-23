@@ -5,11 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+<!-- ## Unreleased -->
+
+## [0.1.3](https://github.com/unioslo/mreg-api/releases/tag/0.1.3) - 2026-03-23
 
 ### Added
 
 - Event log functionality to MREG API client, including event recording and retrieval, with the ability for consumers to subscribe to events.
+  - Accessed via `MregClient.events`, which is an instance of `mreg_api.events.EventLog`.
+  - Event log max size can be controlled via the `event_log_size` parameter to `MregClient` (default: 100). Passing in `None` means unlimited size.
 
 ### Removed
 
