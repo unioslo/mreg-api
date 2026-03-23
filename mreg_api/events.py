@@ -96,8 +96,11 @@ class EventLog:
         self._events: deque[Event] = deque(maxlen=max_size)
         self._handlers: list[Callable[[Event], None]] = []
 
-    def emit(self, event: Event) -> None:
-        """Record an event, evicting the oldest entry if *max_size* is reached."""
+    def record(self, event: Event) -> None:
+        """Record an event, evicting the oldest entry if *max_size* is reached.
+
+        Calls all registered handlers with the new event as the argument.
+        """
         self._events.append(event)
         for handler in self._handlers:
             handler(event)

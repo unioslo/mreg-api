@@ -2611,7 +2611,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
                 client = MregClient()
                 for host in hosts:
-                    client.events.emit(
+                    client.events.record(
                         Event(
                             kind=EventKind.RESOLUTION,
                             message=f"{ip} is a PTR override for {host.name}",
@@ -2651,7 +2651,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                     from mreg_api.client import MregClient  # noqa: PLC0415
 
                     client = MregClient()
-                    client.events.emit(
+                    client.events.record(
                         Event(
                             kind=EventKind.RESOLUTION,
                             message=f"{ip} is a PTR override for {host.name}",
@@ -2805,7 +2805,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                 from mreg_api.client import MregClient  # noqa: PLC0415
 
                 client = MregClient()
-                client.events.emit(
+                client.events.record(
                     Event(
                         kind=EventKind.RESOLUTION,
                         message=f"{identifier} is a CNAME for {host.name}",
@@ -2900,7 +2900,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                 from mreg_api.client import MregClient  # noqa: PLC0415
 
                 client = MregClient()
-                client.events.emit(
+                client.events.record(
                     Event(
                         kind=EventKind.RESOLUTION,
                         message=f"{identifier} is a CNAME for {host.name}",
@@ -3461,7 +3461,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             from mreg_api.client import MregClient  # noqa: PLC0415
 
             client = MregClient()
-            client.events.emit(
+            client.events.record(
                 Event(
                     kind=EventKind.MUTATION,
                     message=f"Deleted MX {mx} with priority {priority} from {self.name}.",
