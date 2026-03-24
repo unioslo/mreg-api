@@ -6,6 +6,7 @@ import pytest
 
 from mreg_api.events import Event
 from mreg_api.events import EventKind
+from mreg_api.events import EventLevel
 from mreg_api.events import EventLog
 from mreg_api.events import ObjectRef
 from mreg_api.models import CNAME
@@ -28,7 +29,7 @@ def test_eventlog_subscription():
     log.subscribe(subscriber)
 
     test_event = Event(
-        kind=EventKind.INFO,
+        kind=EventKind.NOTICE,
         message="Test event",
         subject=ObjectRef(type="TestModel", id="1"),
         related=(),
@@ -55,7 +56,7 @@ def test_eventlog_subscription_multiple_handlers():
     log.subscribe(another_subscriber)
 
     test_event = Event(
-        kind=EventKind.INFO,
+        kind=EventKind.RESOLUTION,
         message="Test event",
         subject=ObjectRef(type="TestModel", id="1"),
         related=(),
@@ -70,7 +71,7 @@ def test_eventlog_subscription_multiple_handlers():
     # Unsubscribe the first handler and record another event
     log.unsubscribe(subscriber)
     another_test_event = Event(
-        kind=EventKind.INFO,
+        kind=EventKind.NOTICE,
         message="Another test event",
         subject=ObjectRef(type="TestModel", id="1"),
         related=(),
@@ -87,14 +88,14 @@ def test_eventlog_clear():
     log = EventLog()
 
     test_event1 = Event(
-        kind=EventKind.INFO,
+        kind=EventKind.NOTICE,
         message="Test event 1",
         subject=ObjectRef(type="TestModel", id="1"),
         related=(),
         correlation_id="test-correlation-id-1",
     )
     test_event2 = Event(
-        kind=EventKind.INFO,
+        kind=EventKind.MUTATION,
         message="Test event 2",
         subject=ObjectRef(type="TestModel", id="2"),
         related=(),
@@ -114,9 +115,13 @@ def test_eventlog_max_size() -> None:
     """Test eviction of events when max size is exceeded."""
     log = EventLog(max_size=2)
 
-    event1 = Event(kind=EventKind.INFO, message="Test event 1", subject=ObjectRef("TestModel", id="1"))
-    event2 = Event(kind=EventKind.INFO, message="Test event 2", subject=ObjectRef("TestModel", id="2"))
-    event3 = Event(kind=EventKind.INFO, message="Test event 3", subject=ObjectRef("TestModel", id="3"))
+    event1 = Event(kind=EventKind.NOTICE, message="Test event 1", subject=ObjectRef("TestModel", id="1"))
+    event2 = Event(
+        kind=EventKind.MUTATION, message="Test event 2", subject=ObjectRef("TestModel", id="2")
+    )
+    event3 = Event(
+        kind=EventKind.RESOLUTION, message="Test event 3", subject=ObjectRef("TestModel", id="3")
+    )
     for event in [event1, event2, event3]:
         log.record(event)
 
@@ -133,10 +138,10 @@ def test_eventlog_get_for() -> None:
     ref1 = ObjectRef(type="TestModel", id="1")
     ref2 = ObjectRef(type="TestModel", id="2")
 
-    event1 = Event(kind=EventKind.INFO, message="Event for ref1", subject=ref1)
-    event2 = Event(kind=EventKind.INFO, message="Event for ref2", subject=ref2)
+    event1 = Event(kind=EventKind.NOTICE, message="Event for ref1", subject=ref1)
+    event2 = Event(kind=EventKind.MUTATION, message="Event for ref2", subject=ref2)
     event3 = Event(
-        kind=EventKind.INFO, message="Event involving ref1 and ref2", subject=ref1, related=(ref2,)
+        kind=EventKind.RESOLUTION, message="Event involving ref1 and ref2", subject=ref1, related=(ref2,)
     )
     for event in [event1, event2, event3]:
         log.record(event)
@@ -156,38 +161,94 @@ def test_get_by_kind() -> None:
     """Test retrieval of events by kind."""
     log = EventLog()
 
-    event1 = Event(kind=EventKind.INFO, message="Info event", subject=ObjectRef("TestModel", id="1"))
-    event2 = Event(
-        kind=EventKind.WARNING, message="Warning event", subject=ObjectRef("TestModel", id="1")
+    notice_event1 = Event(
+        kind=EventKind.NOTICE, message="Notice event", subject=ObjectRef("TestModel", id="1")
     )
-    event3 = Event(
-        kind=EventKind.INFO, message="Another info event", subject=ObjectRef("TestModel", id="1")
+    notice_event2 = Event(
+        kind=EventKind.NOTICE, message="Another notice event", subject=ObjectRef("TestModel", id="1")
     )
-    event4 = Event(
+    resolution_event = Event(
         kind=EventKind.RESOLUTION, message="A resolution event", subject=ObjectRef("TestModel", id="1")
     )
-    event5 = Event(
+    mutation_event = Event(
         kind=EventKind.MUTATION, message="A mutation event", subject=ObjectRef("TestModel", id="1")
     )
-    for event in [event1, event2, event3, event4, event5]:
+    for event in [notice_event1, notice_event2, resolution_event, mutation_event]:
         log.record(event)
 
-    info_events = log.get_by_kind(EventKind.INFO)
-    assert len(info_events) == 2
-    assert event1 in info_events
-    assert event3 in info_events
-
-    warning_events = log.get_by_kind(EventKind.WARNING)
-    assert len(warning_events) == 1
-    assert event2 in warning_events
+    notice_events = log.get_by_kind(EventKind.NOTICE)
+    assert len(notice_events) == 2
+    assert notice_event1 in notice_events
+    assert notice_event2 in notice_events
 
     resolution_events = log.get_by_kind(EventKind.RESOLUTION)
     assert len(resolution_events) == 1
-    assert event4 in resolution_events
+    assert resolution_event in resolution_events
 
     mutation_events = log.get_by_kind(EventKind.MUTATION)
     assert len(mutation_events) == 1
-    assert event5 in mutation_events
+    assert mutation_event in mutation_events
+
+
+def test_get_by_level() -> None:
+    """Test retrieval of events by severity level."""
+    log = EventLog()
+
+    debug_event = Event(
+        kind=EventKind.NOTICE,
+        message="Debug event",
+        subject=ObjectRef("TestModel", id="1"),
+        level=EventLevel.DEBUG,
+    )
+    info_event = Event(
+        kind=EventKind.NOTICE,
+        message="Info event",
+        subject=ObjectRef("TestModel", id="1"),
+        level=EventLevel.INFO,
+    )
+    warning_event = Event(
+        kind=EventKind.NOTICE,
+        message="Warning event",
+        subject=ObjectRef("TestModel", id="1"),
+        level=EventLevel.WARNING,
+    )
+    error_event = Event(
+        kind=EventKind.NOTICE,
+        message="Error event",
+        subject=ObjectRef("TestModel", id="1"),
+        level=EventLevel.ERROR,
+    )
+    for event in [debug_event, info_event, warning_event, error_event]:
+        log.record(event)
+
+    debug_events = log.get_by_level(EventLevel.DEBUG)
+    assert len(debug_events) == 1
+    assert debug_event in debug_events
+
+    info_events = log.get_by_level(EventLevel.INFO)
+    assert len(info_events) == 1
+    assert info_event in info_events
+
+    warning_events = log.get_by_level(EventLevel.WARNING)
+    assert len(warning_events) == 1
+    assert warning_event in warning_events
+
+    error_events = log.get_by_level(EventLevel.ERROR)
+    assert len(error_events) == 1
+    assert error_event in error_events
+
+    # Test retrieval of events at or above a certain level
+    warning_and_above = log.get_at_or_above(EventLevel.WARNING)
+    assert len(warning_and_above) == 2
+    assert warning_event in warning_and_above
+    assert error_event in warning_and_above
+
+    all_events = log.get_at_or_above(EventLevel.DEBUG)
+    assert len(all_events) == 4
+    assert debug_event in all_events
+    assert info_event in all_events
+    assert warning_event in all_events
+    assert error_event in all_events
 
 
 def test_objectref_equality():

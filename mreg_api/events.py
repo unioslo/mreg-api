@@ -8,7 +8,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from dataclasses import field
 from datetime import datetime
-from enum import Enum
+from enum import IntEnum
+from enum import StrEnum
 from typing import TYPE_CHECKING
 from typing import Self
 
@@ -20,7 +21,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-class EventKind(str, Enum):
+class EventKind(StrEnum):
     """Classification of an event."""
 
     RESOLUTION = "resolution"
@@ -29,11 +30,21 @@ class EventKind(str, Enum):
     MUTATION = "mutation"
     """Object was created, patched, or deleted."""
 
-    INFO = "info"
+    NOTICE = "notice"
     """General informational event."""
 
-    WARNING = "warning"
-    """Something notable but not an error."""
+
+class EventLevel(IntEnum):
+    """Severity level of an event.
+
+    Handlers can use this to filter which events to react to.
+    """
+
+    DEBUG = 10
+    INFO = 20
+    WARNING = 30
+    ERROR = 40
+    CRITICAL = 50
 
 
 @dataclass(frozen=True)
@@ -76,6 +87,7 @@ class Event:
     message: str
     """Human-readable description of the event."""
     subject: ObjectRef
+    level: EventLevel = EventLevel.INFO
     """Primary object this event concerns."""
     timestamp: datetime = field(default_factory=datetime.now)
     related: tuple[ObjectRef, ...] = ()
@@ -128,6 +140,14 @@ class EventLog:
     def get_by_kind(self, kind: EventKind) -> list[Event]:
         """Return all events of the given kind."""
         return [e for e in self._events if e.kind == kind]
+
+    def get_by_level(self, level: EventLevel) -> list[Event]:
+        """Return all events with exactly the given level."""
+        return [e for e in self._events if e.level == level]
+
+    def get_at_or_above(self, level: EventLevel) -> list[Event]:
+        """Return all events at or above the given severity level."""
+        return [e for e in self._events if e.level >= level]
 
     def clear(self) -> None:
         """Remove all recorded events."""

@@ -5,7 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Added
+
+- `mreg_api.events.EventLevel` enum with values DEBUG, INFO, WARNING, ERROR, CRITICAL to represent the severity level of events.
+- `mreg_api.events.EventLog.get_by_level(level: EventLevel)` method to retrieve events with exactly the given level.
+- `mreg_api.events.EventLog.get_at_or_above(level: EventLevel)` method to retrieve events at or above the given severity level.
+
+### Changed
+
+- `mreg_api.events.Event` now has a `level` attribute of type `EventLevel` in addition to the existing `kind` attribute. This allows for more granular categorization of events by severity level in handlers.
+- `mreg_api.events.EventKind` now only describes the type of the event, not its severity.
+- `mreg_api.events.EventKind.INFO` renamed to `EventKind.NOTICE` to avoid ambiguity with `EventLevel.INFO`.
+
+### Removed
+
+- `mreg_api.events.EventKind.WARNING`. Moved to `EventLevel` enum.
 
 ## [0.1.3](https://github.com/unioslo/mreg-api/releases/tag/0.1.3) - 2026-03-23
 
