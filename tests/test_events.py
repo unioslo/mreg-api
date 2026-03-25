@@ -156,6 +156,25 @@ def test_eventlog_get_for() -> None:
     assert event2 in events_for_ref2
     assert event3 in events_for_ref2
 
+    # Get for a non-id field ObjectRef
+    host_ref = ObjectRef("Host", id="123")
+    ptr_ref = ObjectRef("PTR_override", "192.168.0.1", field="ipaddress")
+    ptr_event = Event(
+        kind=EventKind.RESOLUTION,
+        message="192.168.0.1 is a PTR override for Host 123",
+        subject=host_ref,
+        related=(ptr_ref,),
+    )
+    log.record(ptr_event)
+
+    # Not passing in field name returns 0 hits
+    assert len(log.get_for(ObjectRef("PTR_override", "192.168.0.1"))) == 0
+
+    # Using the correct field name (`ipaddress`) returns hits
+    ptr_events = log.get_for(ptr_ref)
+    assert len(ptr_events) == 1
+    assert ptr_events[0] == ptr_event
+
 
 def test_get_by_kind() -> None:
     """Test retrieval of events by kind."""
