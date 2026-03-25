@@ -2601,7 +2601,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """Get a list of hosts by IP address.
 
         :param ip: The IP address to search for.
-        :param check_ptr: If True, check for PTR overrides as well.
+        :param inform_as_ptr: Record event if resolved through PTR override.
         :returns: A list of Host objects.
         """
         hosts = cls.get_list_by_field("ipaddresses__ipaddress", str(ip))
@@ -2617,7 +2617,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                             kind=EventKind.RESOLUTION,
                             message=f"{ip} is a PTR override for {host.name}",
                             subject=ObjectRef.new(host),
-                            related=(ObjectRef("PTR_override__ipaddress", str(ip)),),
+                            related=(ObjectRef("PTR_override", str(ip), field="ipaddress"),),
                             correlation_id=client.get_correlation_id(),
                         )
                     )
@@ -2629,7 +2629,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :param ip: The IP address to search for.
         :returns: A list of Host objects.
-        :param check_ptr: If True, check for PTR overrides as well.
+        :param inform_as_ptr: Record event if resolved through PTR override.
         """
         hosts = cls.get_list_by_ip(ip, inform_as_ptr=inform_as_ptr)
         if not hosts:
@@ -2641,7 +2641,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         """Get a host by IP address.
 
         :param ip: The IP address to search for.
-        :param check_ptr: If True, check for PTR overrides as well.
+        :param inform_as_ptr: Record event if resolved through PTR override.
         :returns: The Host object if found, None otherwise.
         """
         try:
@@ -2657,7 +2657,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
                             kind=EventKind.RESOLUTION,
                             message=f"{ip} is a PTR override for {host.name}",
                             subject=ObjectRef.new(host),
-                            related=(ObjectRef("PTR_override__ipaddress", str(ip)),),
+                            related=(ObjectRef("PTR_override", str(ip), field="ipaddress"),),
                             correlation_id=client.get_correlation_id(),
                         )
                     )
@@ -2671,7 +2671,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         :param ip: The IP address to search for.
         :returns: The Host object if found.
-        :param check_ptr: If True, check for PTR overrides as well.
+        :param inform_as_ptr: Record event if resolved through PTR override.
         """
         host = cls.get_by_ip(ip, inform_as_ptr=inform_as_ptr)
         if not host:
@@ -2682,7 +2682,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_by_mac(cls, mac: MacAddress) -> Host | None:
         """Get a host by MAC address.
 
-        :param ip: The MAC address to search for.
+        :param mac: The MAC address to search for.
         :returns: The Host object if found, None otherwise.
         """
         return cls.get_by_field("ipaddresses__macaddress", str(mac))
@@ -2691,7 +2691,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_by_mac_or_raise(cls, mac: MacAddress) -> Host:
         """Get a host by MAC address or raise EntityNotFound.
 
-        :param ip: The MAC address to search for.
+        :param mac: The MAC address to search for.
         :returns: The Host object if found.
         """
         host = cls.get_by_mac(mac)
@@ -2703,7 +2703,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_list_by_mac(cls, mac: MacAddress) -> list[Self]:
         """Get a list of host by MAC address.
 
-        :param ip: The MAC address to search for.
+        :param mac: The MAC address to search for.
         :returns: The Host object if found, None otherwise.
         """
         return cls.get_list_by_field("ipaddresses__macaddress", str(mac))
@@ -2712,7 +2712,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_list_by_mac_or_raise(cls, mac: MacAddress) -> list[Self]:
         """Get a list of hosts by MAC address or raise EntityNotFound.
 
-        :param ip: The MAC address to search for.
+        :param mac: The MAC address to search for.
         :returns: The Host object if found.
         """
         hosts = cls.get_list_by_mac(mac)

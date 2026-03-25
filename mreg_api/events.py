@@ -49,26 +49,29 @@ class EventLevel(IntEnum):
 
 @dataclass(frozen=True)
 class ObjectRef:
-    """Lightweight reference to an mreg API object, used for event correlation.
+    """Lightweight reference to an MREG API object, used for event correlation.
 
-    ``type`` is the model class name (e.g. ``"Host"``, ``"MX"``).
-    ``id`` is always a string: pass named objects directly and convert numeric
-    IDs with ``str()``.
+    `type` is the model class name (e.g. `"Host"`, `"MX"`).
+    `id` is always a string. ID field values are converted to strings.
+    `field` is the specific field within the object that the ID reference pertains to.
     """
 
     type: str
     id: str
+    field: str = "id"
 
     @classmethod
     def new(cls, obj: APIMixin) -> Self:
-        """Create a reference to an object with an ID attribute.
+        """Create a reference to an API object.
+
+        Uses the object's endpoint to determine the ID field to use.
 
         Cannot fail. Logs and defaults to str(obj) for id on failure.
         """
         try:
             id_field = obj.endpoint().external_id_field()
             id_val = str(getattr(obj, id_field))  # pyright: ignore[reportAny]
-            return cls(type=obj.__class__.__name__, id=id_val)
+            return cls(type=obj.__class__.__name__, id=id_val, field=id_field)
         except Exception:
             logger.exception("Failed to instantiate ObjectRef from %s", obj)
             return cls(type=obj.__class__.__name__, id=str(obj))
@@ -76,12 +79,12 @@ class ObjectRef:
     @override
     def __str__(self) -> str:
         """Return a human-readable representation of the reference."""
-        return f"{self.type}({self.id!r})"
+        return f"{self.type}({self.field}={self.id!r})"
 
 
 @dataclass(frozen=True)
 class Event:
-    """Structured record of something that happened to or around an mreg object."""
+    """Structured record of something that happened to or around an MREG API object."""
 
     kind: EventKind
     message: str
