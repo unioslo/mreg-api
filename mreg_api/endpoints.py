@@ -144,10 +144,15 @@ class Endpoint(str, Enum):
     def with_params(self, *params: str | int) -> str:
         """Construct and return an endpoint URL by inserting parameters.
 
-        :param params: A sequence of parameters to be inserted into the URL.
-        :raises ValueError: If the number of provided parameters does not match the
-                            number of placeholders.
-        :returns: A fully constructed endpoint URL with parameters.
+        Args:
+            params: A sequence of parameters to be inserted into the URL.
+
+        Raises:
+            ValueError: If the number of provided parameters does not match the
+                number of placeholders.
+
+        Returns:
+            A fully constructed endpoint URL with parameters.
         """
         placeholders_count = self.value.count("{}")
         if placeholders_count != len(params):

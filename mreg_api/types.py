@@ -60,9 +60,11 @@ T = TypeVar("T")
 def get_type_adapter(t: type[T]) -> TypeAdapter[T]:
     """Get the type adapter for a given type.
 
-    :param t: The type to get the adapter for.
-    :returns: The type adapter.
+    Args:
+        t: The type to get the adapter for.
 
+    Returns:
+        The type adapter.
     """
     return TypeAdapter(t)
 
@@ -70,9 +72,11 @@ def get_type_adapter(t: type[T]) -> TypeAdapter[T]:
 def parse_json_string(json_string: str) -> Json:
     """Parse a JSON string into a Python object.
 
-    :param json_string: The JSON string to parse.
-    :returns: The parsed Python object.
+    Args:
+        json_string: The JSON string to parse.
 
+    Returns:
+        The parsed Python object.
     """
     adapter = get_type_adapter(Json)
     return adapter.validate_json(json_string)
@@ -81,9 +85,11 @@ def parse_json_string(json_string: str) -> Json:
 def parse_json_mapping_string(json_string: str) -> JsonMapping:
     """Parse a JSON string into a Python mapping.
 
-    :param json_string: The JSON string to parse.
-    :returns: The parsed Python mapping.
+    Args:
+        json_string: The JSON string to parse.
 
+    Returns:
+        The parsed Python mapping.
     """
     adapter = get_type_adapter(JsonMapping)
     return adapter.validate_json(json_string)

@@ -8,10 +8,14 @@ def convert_wildcard_to_regex(param: str, arg: str, autoWildcards: bool = False)
 
     E.g. "foo*bar*" -> "?name__regex=$foo.*bar.*"
 
-    :param param: The parameter to filter on
-    :param arg: The argument to filter on
-    :param autoWildcards: If True, add wildcards to the beginning and end of the argument if
-                          they are not already present.
+    Args:
+        param: The parameter to filter on.
+        arg: The argument to filter on.
+        autoWildcards: If True, add wildcards to the beginning and end of the argument if
+            they are not already present.
+
+    Returns:
+        A tuple of (parameter_name, regex_value).
     """
     if "*" not in arg:
         if autoWildcards:

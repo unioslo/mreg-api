@@ -41,8 +41,11 @@ class HostName(str):
     def parse(cls, obj: Any) -> HostName | None:
         """Parse a hostname from a string. Returns None if the hostname is invalid.
 
-        :param obj: The object to parse.
-        :returns: The hostname as a string or None if it is invalid.
+        Args:
+            obj: The object to parse.
+
+        Returns:
+            The hostname as a string or None if it is invalid.
         """
         try:
             return cls.parse_or_raise(obj)
@@ -53,9 +56,14 @@ class HostName(str):
     def parse_or_raise(cls, obj: Any) -> HostName:
         """Parse a hostname from a string. Returns the hostname as a string.
 
-        :param obj: The object to parse.
-        :returns: The hostname as a string.
-        :raises ValueError: If the object is not a valid hostname.
+        Args:
+            obj: The object to parse.
+
+        Returns:
+            The hostname as a string.
+
+        Raises:
+            ValueError: If the object is not a valid hostname.
         """
         try:
             adapter = get_type_adapter(cls)
@@ -91,10 +99,12 @@ class HostName(str):
     ) -> core_schema.CoreSchema:
         """Return a Pydantic CoreSchema with the hostname validation.
 
-        :param source: The source type to be converted.
-        :param handler: The handler to get the CoreSchema.
-        :returns: A Pydantic CoreSchema with the hostname validation.
+        Args:
+            source: The source type to be converted.
+            handler: The handler to get the CoreSchema.
 
+        Returns:
+            A Pydantic CoreSchema with the hostname validation.
         """
         return core_schema.with_info_before_validator_function(
             cls._validate,
@@ -110,8 +120,7 @@ class HostName(str):
             _: The source type to be converted.
 
         Returns:
-            str: The parsed hostname.
-
+            The parsed hostname.
         """
         return cls.validate_hostname(__input_value)
 
@@ -123,8 +132,11 @@ class MacAddress(PydanticMacAddress):
     def parse(cls, obj: Any) -> MacAddress | None:
         """Parse a MAC address from a string. Returns None if the MAC address is invalid.
 
-        :param obj: The object to parse.
-        :returns: The MAC address as a string or None if it is invalid.
+        Args:
+            obj: The object to parse.
+
+        Returns:
+            The MAC address as a string or None if it is invalid.
         """
         try:
             return cls.parse_or_raise(obj)
@@ -135,9 +147,14 @@ class MacAddress(PydanticMacAddress):
     def parse_or_raise(cls, obj: Any) -> MacAddress:
         """Parse a MAC address from a string. Returns the MAC address as a string.
 
-        :param obj: The object to parse.
-        :returns: The MAC address as a string.
-        :raises ValueError: If the object is not a valid MAC address.
+        Args:
+            obj: The object to parse.
+
+        Returns:
+            The MAC address as a string.
+
+        Raises:
+            ValueError: If the object is not a valid MAC address.
         """
         try:
             adapter = get_type_adapter(cls)
@@ -149,8 +166,11 @@ class MacAddress(PydanticMacAddress):
 def _extract_name(value: Any) -> str:
     """Extract the "name" value from a dictionary.
 
-    :param v: Dictionary containing the name.
-    :returns: Extracted name as a string.
+    Args:
+        value: Dictionary containing the name.
+
+    Returns:
+        Extracted name as a string.
     """
     if isinstance(value, dict):
         try:
