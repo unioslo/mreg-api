@@ -3829,8 +3829,6 @@ class HostList(FrozenModel):
     """
 
     results: list[Host]
-    is_ptr: bool = False  # FIXME: unused
-    is_cname: bool = False  # FIXME: unused
 
     @classmethod
     def endpoint(cls) -> Endpoint:
