@@ -7,10 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `ObjectRef.field` field to declare the name of the field the `value` pertains to. Defaults to `"id"`. This allows referencing objects by fields other than their primary ID (e.g. `field="ipaddress"`).
+
 ### Changed
 
 - Docstrings converted from Sphinx-style to Google-style.
 - `Community.remove_host()` `ipaddress` parameter now defaults to `None`.
+- `ObjectRef.id` renamed to `ObjectRef.value`. Since `field` can now point to non-ID fields, `value` more accurately describes the attribute as the value of whichever field is referenced.
 
 ## [0.1.4](https://github.com/unioslo/mreg-api/releases/tag/0.1.4) - 2026-03-24
 

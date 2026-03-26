@@ -31,7 +31,7 @@ def test_eventlog_subscription():
     test_event = Event(
         kind=EventKind.NOTICE,
         message="Test event",
-        subject=ObjectRef(type="TestModel", id="1"),
+        subject=ObjectRef(type="TestModel", value="1"),
         related=(),
         correlation_id="test-correlation-id",
     )
@@ -58,7 +58,7 @@ def test_eventlog_subscription_multiple_handlers():
     test_event = Event(
         kind=EventKind.RESOLUTION,
         message="Test event",
-        subject=ObjectRef(type="TestModel", id="1"),
+        subject=ObjectRef(type="TestModel", value="1"),
         related=(),
         correlation_id="test-correlation-id",
     )
@@ -73,7 +73,7 @@ def test_eventlog_subscription_multiple_handlers():
     another_test_event = Event(
         kind=EventKind.NOTICE,
         message="Another test event",
-        subject=ObjectRef(type="TestModel", id="1"),
+        subject=ObjectRef(type="TestModel", value="1"),
         related=(),
         correlation_id="test-correlation-id-2",
     )
@@ -90,14 +90,14 @@ def test_eventlog_clear():
     test_event1 = Event(
         kind=EventKind.NOTICE,
         message="Test event 1",
-        subject=ObjectRef(type="TestModel", id="1"),
+        subject=ObjectRef(type="TestModel", value="1"),
         related=(),
         correlation_id="test-correlation-id-1",
     )
     test_event2 = Event(
         kind=EventKind.MUTATION,
         message="Test event 2",
-        subject=ObjectRef(type="TestModel", id="2"),
+        subject=ObjectRef(type="TestModel", value="2"),
         related=(),
         correlation_id="test-correlation-id-2",
     )
@@ -115,12 +115,14 @@ def test_eventlog_max_size() -> None:
     """Test eviction of events when max size is exceeded."""
     log = EventLog(max_size=2)
 
-    event1 = Event(kind=EventKind.NOTICE, message="Test event 1", subject=ObjectRef("TestModel", id="1"))
+    event1 = Event(
+        kind=EventKind.NOTICE, message="Test event 1", subject=ObjectRef("TestModel", value="1")
+    )
     event2 = Event(
-        kind=EventKind.MUTATION, message="Test event 2", subject=ObjectRef("TestModel", id="2")
+        kind=EventKind.MUTATION, message="Test event 2", subject=ObjectRef("TestModel", value="2")
     )
     event3 = Event(
-        kind=EventKind.RESOLUTION, message="Test event 3", subject=ObjectRef("TestModel", id="3")
+        kind=EventKind.RESOLUTION, message="Test event 3", subject=ObjectRef("TestModel", value="3")
     )
     for event in [event1, event2, event3]:
         log.record(event)
@@ -135,8 +137,8 @@ def test_eventlog_get_for() -> None:
     """Test retrieval of events for a specific object reference."""
     log = EventLog()
 
-    ref1 = ObjectRef(type="TestModel", id="1")
-    ref2 = ObjectRef(type="TestModel", id="2")
+    ref1 = ObjectRef(type="TestModel", value="1")
+    ref2 = ObjectRef(type="TestModel", value="2")
 
     event1 = Event(kind=EventKind.NOTICE, message="Event for ref1", subject=ref1)
     event2 = Event(kind=EventKind.MUTATION, message="Event for ref2", subject=ref2)
@@ -157,7 +159,7 @@ def test_eventlog_get_for() -> None:
     assert event3 in events_for_ref2
 
     # Get for a non-id field ObjectRef
-    host_ref = ObjectRef("Host", id="123")
+    host_ref = ObjectRef("Host", value="123")
     ptr_ref = ObjectRef("PTR_override", "192.168.0.1", field="ipaddress")
     ptr_event = Event(
         kind=EventKind.RESOLUTION,
@@ -181,16 +183,18 @@ def test_get_by_kind() -> None:
     log = EventLog()
 
     notice_event1 = Event(
-        kind=EventKind.NOTICE, message="Notice event", subject=ObjectRef("TestModel", id="1")
+        kind=EventKind.NOTICE, message="Notice event", subject=ObjectRef("TestModel", value="1")
     )
     notice_event2 = Event(
-        kind=EventKind.NOTICE, message="Another notice event", subject=ObjectRef("TestModel", id="1")
+        kind=EventKind.NOTICE, message="Another notice event", subject=ObjectRef("TestModel", value="1")
     )
     resolution_event = Event(
-        kind=EventKind.RESOLUTION, message="A resolution event", subject=ObjectRef("TestModel", id="1")
+        kind=EventKind.RESOLUTION,
+        message="A resolution event",
+        subject=ObjectRef("TestModel", value="1"),
     )
     mutation_event = Event(
-        kind=EventKind.MUTATION, message="A mutation event", subject=ObjectRef("TestModel", id="1")
+        kind=EventKind.MUTATION, message="A mutation event", subject=ObjectRef("TestModel", value="1")
     )
     for event in [notice_event1, notice_event2, resolution_event, mutation_event]:
         log.record(event)
@@ -216,25 +220,25 @@ def test_get_by_level() -> None:
     debug_event = Event(
         kind=EventKind.NOTICE,
         message="Debug event",
-        subject=ObjectRef("TestModel", id="1"),
+        subject=ObjectRef("TestModel", value="1"),
         level=EventLevel.DEBUG,
     )
     info_event = Event(
         kind=EventKind.NOTICE,
         message="Info event",
-        subject=ObjectRef("TestModel", id="1"),
+        subject=ObjectRef("TestModel", value="1"),
         level=EventLevel.INFO,
     )
     warning_event = Event(
         kind=EventKind.NOTICE,
         message="Warning event",
-        subject=ObjectRef("TestModel", id="1"),
+        subject=ObjectRef("TestModel", value="1"),
         level=EventLevel.WARNING,
     )
     error_event = Event(
         kind=EventKind.NOTICE,
         message="Error event",
-        subject=ObjectRef("TestModel", id="1"),
+        subject=ObjectRef("TestModel", value="1"),
         level=EventLevel.ERROR,
     )
     for event in [debug_event, info_event, warning_event, error_event]:
@@ -271,11 +275,11 @@ def test_get_by_level() -> None:
 
 
 def test_objectref_equality():
-    ref1 = ObjectRef(type="model", id="123")
-    ref2 = ObjectRef(type="model", id="123")
+    ref1 = ObjectRef(type="model", value="123")
+    ref2 = ObjectRef(type="model", value="123")
     assert ref1 == ref2
 
-    ref3 = ObjectRef(type="model", id="456")
+    ref3 = ObjectRef(type="model", value="456")
     assert ref1 != ref3
 
 
@@ -352,5 +356,5 @@ def test_objectref_new(obj: APIMixin, id_: str):
     assert ref.type == obj.__class__.__name__
 
     # The inferred ID field is correct and the value matches the object's ID
-    assert ref.id == str(getattr(obj, obj.endpoint().external_id_field()))
-    assert ref.id == id_
+    assert ref.value == str(getattr(obj, obj.endpoint().external_id_field()))
+    assert ref.value == id_

@@ -52,12 +52,12 @@ class ObjectRef:
     """Lightweight reference to an MREG API object, used for event correlation.
 
     `type` is the model class name (e.g. `"Host"`, `"MX"`).
-    `id` is always a string. ID field values are converted to strings.
-    `field` is the specific field within the object that the ID reference pertains to.
+    `value` is always a string. Field values are converted to strings.
+    `field` is the specific field within the object that the value pertains to.
     """
 
     type: str
-    id: str
+    value: str
     field: str = "id"
 
     @classmethod
@@ -66,20 +66,20 @@ class ObjectRef:
 
         Uses the object's endpoint to determine the ID field to use.
 
-        Cannot fail. Logs and defaults to str(obj) for id on failure.
+        Cannot fail. Logs and defaults to str(obj) for value on failure.
         """
         try:
             id_field = obj.endpoint().external_id_field()
             id_val = str(getattr(obj, id_field))  # pyright: ignore[reportAny]
-            return cls(type=obj.__class__.__name__, id=id_val, field=id_field)
+            return cls(type=obj.__class__.__name__, value=id_val, field=id_field)
         except Exception:
             logger.exception("Failed to instantiate ObjectRef from %s", obj)
-            return cls(type=obj.__class__.__name__, id=str(obj))
+            return cls(type=obj.__class__.__name__, value=str(obj))
 
     @override
     def __str__(self) -> str:
         """Return a human-readable representation of the reference."""
-        return f"{self.type}({self.field}={self.id!r})"
+        return f"{self.type}({self.field}={self.value!r})"
 
 
 @dataclass(frozen=True)
