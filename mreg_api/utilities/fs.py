@@ -19,8 +19,11 @@ def get_writable_file_or_tempfile(path: Path) -> Path:
 
     Creates parent directories as needed.
 
-    :param path: The desired file path.
-    :returns: The original path if writable, otherwise a temporary file path.
+    Args:
+        path: The desired file path.
+
+    Returns:
+        The original path if writable, otherwise a temporary file path.
     """
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

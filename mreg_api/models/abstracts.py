@@ -144,7 +144,8 @@ class APIMixin(ABC):
     def id_for_endpoint(self) -> int | str:
         """Return the appropriate id for the object for its endpoint.
 
-        :returns: The correct identifier for the endpoint.
+        Returns:
+            The correct identifier for the endpoint.
         """
         field = self.endpoint().external_id_field()
         return getattr(self, field)
@@ -162,8 +163,11 @@ class APIMixin(ABC):
         This function is at its base a wrapper around the get_by_id function,
         but it can be overridden to provide more specific functionality.
 
-        :param _id: The ID of the object.
-        :returns: The object if found, None otherwise.
+        Args:
+            _id: The ID of the object.
+
+        Returns:
+            The object if found, None otherwise.
         """
         return cls.get_by_id(_id)
 
@@ -171,8 +175,11 @@ class APIMixin(ABC):
     def get_list_by_id(cls, _id: int) -> list[Self]:
         """Get a list of objects by their ID.
 
-        :param _id: The ID of the object.
-        :returns: A list of objects if found, an empty list otherwise.
+        Args:
+            _id: The ID of the object.
+
+        Returns:
+            A list of objects if found, an empty list otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -192,8 +199,11 @@ class APIMixin(ABC):
 
         Note that for Hosts, the ID is the name of the host.
 
-        :param _id: The ID of the object.
-        :returns: The object if found, None otherwise.
+        Args:
+            _id: The ID of the object.
+
+        Returns:
+            The object if found, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -231,10 +241,12 @@ class APIMixin(ABC):
         result in a search, but a direct lookup at ../endpoint/name which is what
         the mreg server expects for Hosts (and similar for Network).
 
-        :param field: The field to search by.
-        :param value: The value to search for.
+        Args:
+            field: The field to search by.
+            value: The value to search for.
 
-        :returns: The object if found, None otherwise.
+        Returns:
+            The object if found, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -266,12 +278,14 @@ class APIMixin(ABC):
 
         Used for cases where the object must exist for the operation to continue.
 
-        :param field: The field to search by.
-        :param value: The value to search for.
-        :param exc_type: The exception type to raise.
-        :param exc_message: The exception message. Overrides the default message.
+        Args:
+            field: The field to search by.
+            value: The value to search for.
+            exc_type: The exception type to raise.
+            exc_message: The exception message. Overrides the default message.
 
-        :returns: The object if found.
+        Returns:
+            The object if found.
         """
         obj = cls.get_by_field(field, value)
         if not obj:
@@ -292,12 +306,14 @@ class APIMixin(ABC):
 
         Used for cases where the object must NOT exist for the operation to continue.
 
-        :param field: The field to search by.
-        :param value: The value to search for.
-        :param exc_type: The exception type to raise.
-        :param exc_message: The exception message. Overrides the default message.
+        Args:
+            field: The field to search by.
+            value: The value to search for.
+            exc_type: The exception type to raise.
+            exc_message: The exception message. Overrides the default message.
 
-        :raises Exception: If the object is found.
+        Raises:
+            Exception: If the object is found.
         """
         obj = cls.get_by_field(field, value)
         if obj:
@@ -317,12 +333,13 @@ class APIMixin(ABC):
 
         Optionally filtered by query parameters and limited by limit.
 
-        :param params: The query parameters to filter by.
-        :param limit: The maximum number of hits to allow.
-        :param endpoint: Override default model endpoint.
+        Args:
+            params: The query parameters to filter by.
+            limit: The maximum number of hits to allow.
+            endpoint: Override default model endpoint.
 
-
-        :returns: A list of objects if found, an empty list otherwise.
+        Returns:
+            A list of objects if found, an empty list otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -338,11 +355,13 @@ class APIMixin(ABC):
     ) -> list[Self]:
         """Get a list of objects by a query.
 
-        :param query: The query to search by.
-        :param ordering: The ordering to use when fetching the list.
-        :param limit: The maximum number of hits to allow (default 500)
+        Args:
+            query: The query to search by.
+            ordering: The ordering to use when fetching the list.
+            limit: The maximum number of hits to allow (default 500).
 
-        :returns: A list of objects if found, an empty list otherwise.
+        Returns:
+            A list of objects if found, an empty list otherwise.
         """
         if ordering:
             query["ordering"] = ordering
@@ -354,12 +373,14 @@ class APIMixin(ABC):
     ) -> list[Self]:
         """Get a list of objects by a field.
 
-        :param field: The field to search by.
-        :param value: The value to search for.
-        :param ordering: The ordering to use when fetching the list.
-        :param limit: The maximum number of hits to allow (default 500)
+        Args:
+            field: The field to search by.
+            value: The value to search for.
+            ordering: The ordering to use when fetching the list.
+            limit: The maximum number of hits to allow (default 500).
 
-        :returns: A list of objects if found, an empty list otherwise.
+        Returns:
+            A list of objects if found, an empty list otherwise.
         """
         query: QueryParams = {field: value}
         return cls.get_by_query(query=query, ordering=ordering, limit=limit)
@@ -375,11 +396,13 @@ class APIMixin(ABC):
 
         Used for cases where the object must exist for the operation to continue.
 
-        :param query: The query to search by.
-        :param exc_type: The exception type to raise.
-        :param exc_message: The exception message. Overrides the default message.
+        Args:
+            query: The query to search by.
+            exc_type: The exception type to raise.
+            exc_message: The exception message. Overrides the default message.
 
-        :returns: The object if found.
+        Returns:
+            The object if found.
         """
         obj = cls.get_by_query_unique(query)
         if not obj:
@@ -399,11 +422,13 @@ class APIMixin(ABC):
 
         Used for cases where the object must NOT exist for the operation to continue.
 
-        :param query: The query to search by.
-        :param exc_type: The exception type to raise.
-        :param exc_message: The exception message. Overrides the default message.
+        Args:
+            query: The query to search by.
+            exc_type: The exception type to raise.
+            exc_message: The exception message. Overrides the default message.
 
-        :raises Exception: If the object is found.
+        Raises:
+            Exception: If the object is found.
         """
         obj = cls.get_by_query_unique(query)
         if obj:
@@ -416,8 +441,11 @@ class APIMixin(ABC):
     def get_by_query_unique(cls, data: QueryParams) -> Self | None:
         """Get an object with the given data.
 
-        :param data: The data to search for.
-        :returns: The object if found, None otherwise.
+        Args:
+            data: The data to search for.
+
+        Returns:
+            The object if found, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -430,8 +458,8 @@ class APIMixin(ABC):
     def get_first(cls) -> Self | None:
         """Get the first object from the list.
 
-        :raises EntityNotFound: If no items are found.
-        :returns: The first item from the list.
+        Returns:
+            The first item from the list, or None if no items are found.
         """
         try:
             return cls.get_first_or_raise()
@@ -442,8 +470,11 @@ class APIMixin(ABC):
     def get_first_or_raise(cls) -> Self:
         """Get the first object from the list.
 
-        :raises EntityNotFound: If no items are found.
-        :returns: The first item from the list.
+        Raises:
+            EntityNotFound: If no items are found.
+
+        Returns:
+            The first item from the list.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -456,7 +487,8 @@ class APIMixin(ABC):
     def get_count(cls) -> int:
         """Get the count of items from the list.
 
-        :returns: The count of items.
+        Returns:
+            The count of items.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -468,7 +500,8 @@ class APIMixin(ABC):
         Note that the caller (self) of this method will remain unchanged and can contain
         outdated information. The returned object will be the updated version.
 
-        :returns: The fetched object.
+        Returns:
+            The fetched object.
         """
         id_field = self.endpoint().external_id_field()
         identifier = getattr(self, id_field, None)
@@ -496,16 +529,17 @@ class APIMixin(ABC):
     def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:
         """Patch the object with the given values.
 
-        Notes:
-        -----
-          1. Depending on the endpoint, the server may not return the patched object.
-          2. Patching with None may not clear the field if it isn't nullable (which few fields
-             are). Odds are you want to pass an empty string instead.
+        Note:
+            1. Depending on the endpoint, the server may not return the patched object.
+            2. Patching with None may not clear the field if it isn't nullable (which few fields
+               are). Odds are you want to pass an empty string instead.
 
-        :param fields: The values to patch.
-        :param validate: Whether to validate the patched object.
-        :returns: The object refetched from the server.
+        Args:
+            fields: The values to patch.
+            validate: Whether to validate the patched object.
 
+        Returns:
+            The object refetched from the server.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -522,7 +556,8 @@ class APIMixin(ABC):
     def delete(self) -> bool:
         """Delete the object.
 
-        :returns: True if the object was deleted, False otherwise.
+        Returns:
+            True if the object was deleted, False otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -541,10 +576,16 @@ class APIMixin(ABC):
         so we can't fetch the object after creation. In these cases, we return None even
         if the object was created successfully...
 
-        :param params: The parameters to create the object with.
-        :raises CreateError: If the object could not be created.
-        :raises GetError: If the object could not be fetched after creation.
-        :returns: The object if created and its fetchable, None otherwise.
+        Args:
+            params: The parameters to create the object with.
+            fetch_after_create: Whether to fetch the object after creation.
+
+        Raises:
+            PostError: If the object could not be created.
+            GetError: If the object could not be fetched after creation.
+
+        Returns:
+            The object if created and fetchable, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 

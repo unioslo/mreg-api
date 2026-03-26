@@ -379,8 +379,9 @@ class MregClient(metaclass=SingletonMeta):
     def disable_cache(self, *, clear: bool = True) -> None:
         """Disable caching of GET responses for this client.
 
-        :param clear: If True, clear the existing cache data.
-                      If False, leave the cache data intact.
+        Args:
+            clear: If True, clear the existing cache data.
+                If False, leave the cache data intact.
         """
         if clear:
             self.clear_cache()
@@ -862,15 +863,16 @@ class MregClient(metaclass=SingletonMeta):
         Will iterate over paginated results and return result as list. If the number of hits is
         greater than limit, the function will raise an exception.
 
-        :param path: The path to the API endpoint.
-        :param params: The parameters to pass to the API endpoint.
-        :param ok404: Whether to allow 404 responses.
-        :param limit: The maximum number of hits to allow.
-            If the number of hits is greater than this, the function will raise an exception.
-            Set to None to disable this check.
-        :raises CliError: If the result from get_list_generic is not a list.
+        Args:
+            path: The path to the API endpoint.
+            params: The parameters to pass to the API endpoint.
+            ok404: Whether to allow 404 responses.
+            limit: The maximum number of hits to allow. If the number of hits is greater
+                than this, the function will raise an exception. Set to None to disable
+                this check.
 
-        :returns: A list of dictionaries.
+        Returns:
+            A list of dictionaries.
         """
         return self.get_list_generic(path, params, ok404, limit, expect_one_result=False)
 
@@ -883,12 +885,14 @@ class MregClient(metaclass=SingletonMeta):
     ) -> list[Json]:
         """Get a list of items by a key value pair.
 
-        :param path: The path to the API endpoint.
-        :param search_field: The field to search for.
-        :param search_values: The values to search for.
-        :param ok404: Whether to allow 404 responses.
+        Args:
+            path: The path to the API endpoint.
+            search_field: The field to search for.
+            search_values: The values to search for.
+            ok404: Whether to allow 404 responses.
 
-        :returns: A list of dictionaries.
+        Returns:
+            A list of dictionaries.
         """
         return self.get_list(
             path,
@@ -905,14 +909,14 @@ class MregClient(metaclass=SingletonMeta):
     ) -> None | JsonMapping:
         """Get an item by a key value pair.
 
-        :param path: The path to the API endpoint.
-        :param search_field: The field to search for.
-        :param search_value: The value to search for.
-        :param ok404: Whether to allow 404 responses.
+        Args:
+            path: The path to the API endpoint.
+            search_field: The field to search for.
+            search_value: The value to search for.
+            ok404: Whether to allow 404 responses.
 
-        :raises CliWarning: If no result was found and ok404 is False.
-
-        :returns: A single dictionary, or None if no result was found and ok404 is True.
+        Returns:
+            A single dictionary, or None if no result was found and ok404 is True.
         """
         return self.get_list_unique(path, params={search_field: search_value}, ok404=ok404)
 
@@ -924,13 +928,13 @@ class MregClient(metaclass=SingletonMeta):
     ) -> None | JsonMapping:
         """Do a get request that returns a single result from a search.
 
-        :param path: The path to the API endpoint.
-        :param params: The parameters to pass to the API endpoint.
-        :param ok404: Whether to allow 404 responses.
+        Args:
+            path: The path to the API endpoint.
+            params: The parameters to pass to the API endpoint.
+            ok404: Whether to allow 404 responses.
 
-        :raises CliWarning: If no result was found and ok404 is False.
-
-        :returns: A single dictionary, or None if no result was found and ok404 is True.
+        Returns:
+            A single dictionary, or None if no result was found and ok404 is True.
         """
         ret = self.get_list_generic(path, params, ok404, expect_one_result=True)
         if not ret:
@@ -957,9 +961,11 @@ class MregClient(metaclass=SingletonMeta):
     def get_count(self, path: str) -> int:
         """Get the count of items from a list endpoint.
 
-        WARNING: Returns the length of the results if the endpoint does not implement pagination.
+        Warning:
+            Returns the length of the results if the endpoint does not implement pagination.
 
-        :returns: The count of items.
+        Returns:
+            The count of items.
         """
         response = self.get(path, params={"page_size": 1})
         try:
@@ -1006,19 +1012,22 @@ class MregClient(metaclass=SingletonMeta):
         Will iterate over paginated results and return result as list. If the number of hits is
         greater than limit, the function will raise an exception.
 
-        :param path: The path to the API endpoint.
-        :param params: The parameters to pass to the API endpoint.
-        :param ok404: Whether to allow 404 responses.
-        :param limit: The maximum number of hits to allow.
-            If the number of hits is greater than this, the function will raise an exception.
-            Set to None to disable this check.
-        :param expect_one_result: If True, expect exactly one result and return it as a list.
+        Args:
+            path: The path to the API endpoint.
+            params: The parameters to pass to the API endpoint.
+            ok404: Whether to allow 404 responses.
+            limit: The maximum number of hits to allow. If the number of hits is greater
+                than this, the function will raise an exception. Set to None to disable
+                this check.
+            expect_one_result: If True, expect exactly one result and return it as a list.
 
-        :raises CliError: If expect_one_result is True and the number of results is not zero or one.
-        :raises CliError: If expect_one_result is True and there is a response without a 'results' key.
-        :raises CliError: If the number of hits is greater than limit.
+        Raises:
+            MultipleEntitiesFound: If expect_one_result is True and the number of results
+                is greater than one with distinct results.
+            TooManyResults: If the number of hits is greater than limit.
 
-        :returns: A list of dictionaries or a dictionary if expect_one_result is True.
+        Returns:
+            A list of dictionaries or a dictionary if expect_one_result is True.
         """
         response = self.get(path, params)
 
@@ -1061,14 +1070,17 @@ class MregClient(metaclass=SingletonMeta):
         This function is a wrapper over the `get()` function, adding the additional
         functionality of validating and converting the response data to the specified type.
 
-        :param path: The path to the API endpoint.
-        :param type_: The type to which the response data should be deserialized.
-        :param params: The parameters to pass to the API endpoint.
-        :param limit: The maximum number of hits to allow for paginated responses.
+        Args:
+            path: The path to the API endpoint.
+            type_: The type to which the response data should be deserialized.
+            params: The parameters to pass to the API endpoint.
+            limit: The maximum number of hits to allow for paginated responses.
 
-        :raises pydantic.ValidationError: If the response cannot be deserialized into the given type.
+        Raises:
+            pydantic.ValidationError: If the response cannot be deserialized into the given type.
 
-        :returns: An instance of `type_` populated with data from the response.
+        Returns:
+            An instance of `type_` populated with data from the response.
         """
         adapter = get_type_adapter(type_)
         if type_ is list or get_origin(type_) is list:
@@ -1111,9 +1123,14 @@ ListResponse = TypeAdapter(list[Json])
 def validate_list_response(response: Response) -> list[Json]:
     """Parse and validate that a response contains a JSON array.
 
-    :param response: The response to validate.
-    :raises MregValidationError: If the response does not contain a valid JSON array.
-    :returns: Parsed response data as a list of Python objects.
+    Args:
+        response: The response to validate.
+
+    Raises:
+        MregValidationError: If the response does not contain a valid JSON array.
+
+    Returns:
+        Parsed response data as a list of Python objects.
     """
     try:
         return ListResponse.validate_json(response.text)
@@ -1125,9 +1142,14 @@ def validate_list_response(response: Response) -> list[Json]:
 def validate_paginated_response(response: Response) -> PaginatedResponse:
     """Validate and parse that a response contains paginated JSON data.
 
-    :param response: The response to validate.
-    :raises MregValidationError: If the response does not contain valid paginated JSON.
-    :returns: Parsed response data as a PaginatedResponse object.
+    Args:
+        response: The response to validate.
+
+    Raises:
+        MregValidationError: If the response does not contain valid paginated JSON.
+
+    Returns:
+        Parsed response data as a PaginatedResponse object.
     """
     try:
         return PaginatedResponse.from_response(response)

@@ -33,8 +33,9 @@ class APIError(MregApiBaseError):
     def __init__(self, message: str, response: Response | None = None):
         """Initialize an APIError exception.
 
-        :param message: The exception message.
-        :param response: The response object that triggered the exception.
+        Args:
+            message: The exception message.
+            response: The response object that triggered the exception.
         """
         super().__init__(message)
         self._response: Response | None = response
@@ -43,7 +44,8 @@ class APIError(MregApiBaseError):
     def errors(self) -> MREGErrorResponse | None:
         """Get the parsed MREG errors from the response.
 
-        :returns: The MREGErrorResponse object or None if not available.
+        Returns:
+            The MREGErrorResponse object or None if not available.
         """
         if self.response:
             return parse_mreg_error(self.response)
@@ -70,7 +72,9 @@ class APIError(MregApiBaseError):
         """Get the request that triggered the exception.
 
         Uses the request from the cause if not set directly.
-        :returns: The request object or None if not set.
+
+        Returns:
+            The request object or None if not set.
         """
         if self._response:
             return self._response.request
@@ -90,7 +94,8 @@ class APIError(MregApiBaseError):
 
         Uses the response from the cause if not set directly.
 
-        :returns: The response object or None if not set.
+        Returns:
+            The response object or None if not set.
         """
         if self._response:
             return self._response
@@ -166,7 +171,9 @@ class MregValidationError(MregApiBaseError):
     def __init__(self, message: str, pydantic_error: ValidationError | None = None):
         """Initialize an MregValidationError.
 
-        :param message: The error message.
+        Args:
+            message: The error message.
+            pydantic_error: The Pydantic validation error, if any.
         """
         super().__init__(message)
         self.pydantic_error = pydantic_error
@@ -175,9 +182,12 @@ class MregValidationError(MregApiBaseError):
     def from_pydantic(cls, e: ValidationError, context: str | None = None) -> MregValidationError:
         """Create an MregValidationError from a Pydantic MregValidationError.
 
-        :param e: The Pydantic MregValidationError.
-        :param context: What was being validated (e.g., "JSON", "string", "object").
-        :returns: The created MregValidationError.
+        Args:
+            e: The Pydantic MregValidationError.
+            context: What was being validated (e.g., "JSON", "string", "object").
+
+        Returns:
+            The created MregValidationError.
         """
         from mreg_api.client import last_request_method  # noqa: PLC0415
         from mreg_api.client import last_request_url  # noqa: PLC0415
@@ -276,8 +286,11 @@ class CacheMiss(CacheError):
 def fmt_error_code(code: str) -> str:
     """Format the error code.
 
-    :param code: The error code to format.
-    :returns: The formatted error code.
+    Args:
+        code: The error code to format.
+
+    Returns:
+        The formatted error code.
     """
     return code.replace("_", " ").title()
 
@@ -306,9 +319,8 @@ class MREGError(BaseModel):
     def fmt_error(self) -> str:
         """Format the error message.
 
-        :param field: The field name.
-        :param messages: The list of error messages.
-        :returns: A formatted error message.
+        Returns:
+            A formatted error message.
         """
         msg = f"{fmt_error_code(self.code)} - {self.detail}"
         if self.attr:
@@ -325,7 +337,8 @@ class MREGErrorResponse(BaseModel):
     def as_str(self) -> str:
         """Convert the error response to a string.
 
-        :returns: A string representation of the error response.
+        Returns:
+            A string representation of the error response.
         """
         errors = "; ".join([error.fmt_error() for error in self.errors])
         # NOTE: could result in colon followed by no errors, but it's unlikely
@@ -334,8 +347,11 @@ class MREGErrorResponse(BaseModel):
     def as_json_str(self, indent: int = 2) -> str:
         """Convert the error response to a JSON string.
 
-        :param indent: The indentation level for the JSON string.
-        :returns: A JSON string representation of the error response.
+        Args:
+            indent: The indentation level for the JSON string.
+
+        Returns:
+            A JSON string representation of the error response.
         """
         return self.model_dump_json(indent=indent)
 
@@ -343,9 +359,11 @@ class MREGErrorResponse(BaseModel):
 def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     """Parse an MREG error response.
 
-    :param resp: The response object to parse.
+    Args:
+        resp: The response object to parse.
 
-    :returns: A MREGErrorResponse object or None if it cannot be parsed.
+    Returns:
+        A MREGErrorResponse object or None if it cannot be parsed.
     """
     try:
         return MREGErrorResponse.model_validate_json(resp.text)
@@ -365,8 +383,11 @@ ERROR_MAPPING: dict[HTTPMethod, type[APIError]] = {
 def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
     """Get the appropriate exception class for a given HTTP method.
 
-    :param method: The HTTP method.
-    :returns: The exception class corresponding to the HTTP method.
+    Args:
+        method: The HTTP method.
+
+    Returns:
+        The exception class corresponding to the HTTP method.
     """
     if t := ERROR_MAPPING.get(method):
         return t

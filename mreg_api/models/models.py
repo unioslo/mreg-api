@@ -88,9 +88,14 @@ class NetworkOrIP(BaseModel):
 
         This constructor validates and wraps the IP/network in the model.
 
-        :param value:The value to convert (string or IP object)
-        :returns: A NetworkOrIP model instance
-        :raises InputFailure: If validation fails
+        Args:
+            value: The value to convert (string or IP object)
+
+        Returns:
+            A NetworkOrIP model instance
+
+        Raises:
+            InputFailure: If validation fails
         """
         if isinstance(value, NetworkOrIP):
             return cls.validate(value.ip_or_network)
@@ -133,10 +138,15 @@ class NetworkOrIP(BaseModel):
 
         Optionally specify the mode to validate the input as.
 
-        :param value:The value to parse.
-        :param mode: The mode to validate the input as.
-        :returns: The parsed value as an IP address or network.
-        :raises IPNetworkError: If the value is not an IP address or network.
+        Args:
+            value: The value to parse.
+            mode: The mode to validate the input as.
+
+        Returns:
+            The parsed value as an IP address or network.
+
+        Raises:
+            IPNetworkError: If the value is not an IP address or network.
         """
         ipnet = cls.validate(value)
         funcmap: dict[IPNetMode, Callable[..., IP_AddressT | IP_NetworkT]] = {
@@ -185,9 +195,12 @@ class NetworkOrIP(BaseModel):
 
         Optionally specify the mode to validate the input as.
 
-        :param value:The value to parse.
-        :param mode: The mode to validate the input as.
-        :returns: The parsed value as an IP address or network, or None.
+        Args:
+            value: The value to parse.
+            mode: The mode to validate the input as.
+
+        Returns:
+            The parsed value as an IP address or network, or None.
         """
         try:
             return cls.parse_or_raise(value, mode)
@@ -288,8 +301,7 @@ class WithHost(BaseModel):
     def resolve_host(self) -> Host | None:
         """Resolve the host ID to a Host object.
 
-        Notes:
-        -----
+        Note:
             - This method will call the API to resolve the host ID to a Host object.
             - This assumes that there is a host attribute in the object.
 
@@ -312,8 +324,7 @@ class WithZone(BaseModel, APIMixin):
     def resolve_zone(self) -> ForwardZone | None:
         """Resolve the zone ID to a (Forward)Zone object.
 
-        Notes:
-        -----
+        Note:
             - This method will call the API to resolve the zone ID to a Zone object.
             - This assumes that there is a zone attribute in the object.
         """
@@ -352,10 +363,15 @@ class WithTTL(BaseModel, APIMixin):
         Updates the `ttl` field of the object unless a different field name
         is specified.
 
-        :param ttl: The TTL value to set. Can be an integer, "default", or None.
-        :param field: The field to set the TTL value in.
-        :raises InputFailure: If the TTL value is outside the bounds.
-        :returns: The updated object.
+        Args:
+            ttl: The TTL value to set. Can be an integer, "default", or None.
+            field: The field to set the TTL value in.
+
+        Raises:
+            InputFailure: If the TTL value is outside the bounds.
+
+        Returns:
+            The updated object.
         """
         # NOTE: could add some sort of validation that model has `field`
         ttl_field = field or "ttl"
@@ -381,9 +397,14 @@ class WithTTL(BaseModel, APIMixin):
 
         Valid TTL values are: 300 - 68400.
 
-        :param ttl: The TTL target to set.
-        :raises InputFailure: If the TTL value is outside the bounds.
-        :returns: A valid TTL vale
+        Args:
+            ttl: The TTL target to set.
+
+        Raises:
+            InputFailure: If the TTL value is outside the bounds.
+
+        Returns:
+            A valid TTL vale
         """
         if ttl < self.MIN_TTL or ttl > self.MAX_TTL:
             raise InputFailure(f"Invalid TTL value: {ttl} ({self.MIN_TTL}->{self.MAX_TTL})")
@@ -409,8 +430,11 @@ class WithName(BaseModel, APIMixin):
     def get_by_name(cls, name: str) -> Self | None:
         """Get a resource by name.
 
-        :param name: The resource name to search for.
-        :returns: The resource if found.
+        Args:
+            name: The resource name to search for.
+
+        Returns:
+            The resource if found.
         """
         return cls.get_by_field(cls.__name_field__, cls._case_name(name))
 
@@ -418,8 +442,11 @@ class WithName(BaseModel, APIMixin):
     def get_by_name_and_raise(cls, name: str) -> None:
         """Get a resource by name, raising EntityAlreadyExists if found.
 
-        :param name: The resource name to search for.
-        :raises EntityAlreadyExists: If the resource is found.
+        Args:
+            name: The resource name to search for.
+
+        Raises:
+            EntityAlreadyExists: If the resource is found.
         """
         return cls.get_by_field_and_raise(cls.__name_field__, cls._case_name(name))
 
@@ -427,9 +454,14 @@ class WithName(BaseModel, APIMixin):
     def get_by_name_or_raise(cls, name: str) -> Self:
         """Get a resource by name, raising EntityNotFound if not found.
 
-        :param name: The resource name to search for.
-        :returns: The resource.
-        :raises EntityNotFound: If the resource is not found.
+        Args:
+            name: The resource name to search for.
+
+        Returns:
+            The resource.
+
+        Raises:
+            EntityNotFound: If the resource is not found.
         """
         return cls.get_by_field_or_raise(cls.__name_field__, cls._case_name(name))
 
@@ -437,8 +469,11 @@ class WithName(BaseModel, APIMixin):
     def get_list_by_name_regex(cls, name: str) -> list[Self]:
         """Get multiple resources by a name regex.
 
-        :param name: The regex pattern for names to search for.
-        :returns: A list of resource objects.
+        Args:
+            name: The regex pattern for names to search for.
+
+        Returns:
+            A list of resource objects.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -448,8 +483,11 @@ class WithName(BaseModel, APIMixin):
     def rename(self, new_name: str) -> Self:
         """Rename the resource.
 
-        :param new_name: The new name to set.
-        :returns: The patched resource.
+        Args:
+            new_name: The new name to set.
+
+        Returns:
+            The patched resource.
         """
         return self.patch({self.__name_field__: self._case_name(new_name)})
 
@@ -524,8 +562,11 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
     def add_label(self, label_name: str) -> Self:
         """Add a label to the permission.
 
-        :param label_name: The name of the label to add.
-        :returns: The updated Permission object.
+        Args:
+            label_name: The name of the label to add.
+
+        Returns:
+            The updated Permission object.
         """
         label = Label.get_by_name_or_raise(label_name)
         if label.id in self.labels:
@@ -538,8 +579,11 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
     def remove_label(self, label_name: str) -> Self:
         """Remove a label from the permission.
 
-        :param label_name: The name of the label to remove.
-        :returns: The updated Permission object.
+        Args:
+            label_name: The name of the label to remove.
+
+        Returns:
+            The updated Permission object.
         """
         label = Label.get_by_name_or_raise(label_name)
         if label.id not in self.labels:
@@ -553,8 +597,11 @@ class Permission(FrozenModelWithTimestamps, APIMixin):
 def is_reverse_zone_name(name: str) -> bool:
     """Determine if a zone is a reverse zone by its name.
 
-    :param name: The name of the zone.
-    :returns: True if the zone is a reverse zone.
+    Args:
+        name: The name of the zone.
+
+    Returns:
+        True if the zone is a reverse zone.
     """
     return name.endswith(".arpa")
 
@@ -602,8 +649,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def ensure_delegation_in_zone(self, name: str) -> None:
         """Ensure a delegation is in the zone.
 
-        :param name: The name of the delegation to check.
-        :returns: True if the delegation is in the zone.
+        Args:
+            name: The name of the delegation to check.
+
+        Returns:
+            True if the delegation is in the zone.
         """
         if not name.endswith(f".{self.name}"):
             raise InputFailure(f"Delegation '{name}' is not in '{self.name}'")
@@ -612,8 +662,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def type_by_name(cls, name: str) -> type[ForwardZone | ReverseZone]:
         """Determine the zone type based on the name.
 
-        :param name: The name of the zone.
-        :returns: The zone type.
+        Args:
+            name: The name of the zone.
+
+        Returns:
+            The zone type.
         """
         if is_reverse_zone_name(name):
             return ReverseZone
@@ -649,10 +702,14 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     ) -> ForwardZone | ReverseZone | None:
         """Create a forward or reverse zone based on zone name.
 
-        :param name: The name of the zone to create.
-        :param email: The email address for the zone.
-        :param primary_ns: The primary nameserver for the zone.
-        :returns: The created zone object.
+        Args:
+            name: The name of the zone to create.
+            email: The email address for the zone.
+            primary_ns: The primary nameserver for the zone.
+            force: Force creation if nameservers don't exist or lack A-records.
+
+        Returns:
+            The created zone object.
         """
         cls.verify_nameservers(primary_ns, force=force)
         zone_t = cls.type_by_name(name)
@@ -663,8 +720,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_zone(cls, name: str) -> ForwardZone | ReverseZone | None:
         """Get a zone by name.
 
-        :param name: The name of the zone to get.
-        :returns: The zone object.
+        Args:
+            name: The name of the zone to get.
+
+        Returns:
+            The zone object.
         """
         zone_t = cls.type_by_name(name)
         return zone_t.get_by_name(name)
@@ -673,8 +733,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_zone_or_raise(cls, name: str) -> ForwardZone | ReverseZone:
         """Get a zone by name, and raise if not found.
 
-        :param name: The name of the zone to get.
-        :returns: The zone object.
+        Args:
+            name: The name of the zone to get.
+
+        Returns:
+            The zone object.
         """
         zone_t = cls.type_by_name(name)
         return zone_t.get_by_name_or_raise(name)
@@ -683,7 +746,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_zone_and_raise(cls, name: str) -> None:
         """Get a zone by name, and raise if found.
 
-        :param name: The name of the zone to get.
+        Args:
+            name: The name of the zone to get.
         """
         zone_t = cls.type_by_name(name)
         return zone_t.get_by_name_and_raise(name)
@@ -691,7 +755,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_subzones(self) -> list[Self]:
         """Get subzones of the zone, excluding self.
 
-        :returns: A list of subzones.
+        Returns:
+            A list of subzones.
         """
         zones = self.get_list_by_field("name__endswith", f".{self.name}")
         return [zone for zone in zones if zone.name != self.name]
@@ -699,7 +764,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def ensure_deletable(self) -> None:
         """Ensure the zone can be deleted. Raises exception if not.
 
-        :raises DeleteError: If zone has entries or subzones.
+        Raises:
+            DeleteError: If zone has entries or subzones.
         """
         # XXX: Not a fool proof check, as e.g. SRVs are not hosts. (yet.. ?)
         hosts = Host.get_list_by_field("zone", self.id)
@@ -714,8 +780,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def delete_zone(self, force: bool) -> bool:
         """Delete the zone.
 
-        :param force: Whether to force the deletion.
-        :returns: True if the deletion was successful.
+        Args:
+            force: Whether to force the deletion.
+
+        Returns:
+            True if the deletion was successful.
         """
         if not force:
             self.ensure_deletable()
@@ -733,13 +802,14 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     ) -> Self:
         """Update SOA (Start of Authority) record for the zone.
 
-        :param primary_ns: The primary nameserver for the zone.
-        :param email: The email address for the zone.
-        :param serialno: The serial number for the zone.
-        :param refresh: The refresh interval for the zone.
-        :param retry: The retry interval for the zone.
-        :param expire: The expire interval for the zone.
-        :param soa_ttl: The TTL for the zone.
+        Args:
+            primary_ns: The primary nameserver for the zone.
+            email: The email address for the zone.
+            serialno: The serial number for the zone.
+            refresh: The refresh interval for the zone.
+            retry: The retry interval for the zone.
+            expire: The expire interval for the zone.
+            soa_ttl: The TTL for the zone.
         """
         params: QueryParams = {
             "primary_ns": primary_ns,
@@ -765,11 +835,15 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     ) -> Delegation | None:
         """Create a delegation for the zone.
 
-        :param delegation: The name of the delegation.
-        :param nameservers: The nameservers for the delegation.
-        :param comment: A comment for the delegation.
-        :param force: Force creation if ns/zone doesn't exist.
-        :returns: The created delegation object.
+        Args:
+            delegation: The name of the delegation.
+            nameservers: The nameservers for the delegation.
+            comment: A comment for the delegation.
+            force: Force creation if ns/zone doesn't exist.
+            fetch_after_create: Whether to fetch the delegation after creation.
+
+        Returns:
+            The created delegation object.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -808,8 +882,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_delegation(self, name: str) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
         """Get a delegation for the zone by name.
 
-        :param name: The name of the delegation to get.
-        :returns: The delegation object if found.
+        Args:
+            name: The name of the delegation to get.
+
+        Returns:
+            The delegation object if found.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -823,10 +900,14 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_delegation_or_raise(self, name: str) -> ForwardZoneDelegation | ReverseZoneDelegation:
         """Get a delegation for the zone by name, raising EntityNotFound if not found.
 
-        :param zone: The zone to search in.
-        :param name: The name of the delegation to get.
-        :returns: The delegation object.
-        :raises EntityNotFound: If the delegation is not found.
+        Args:
+            name: The name of the delegation to get.
+
+        Returns:
+            The delegation object.
+
+        Raises:
+            EntityNotFound: If the delegation is not found.
         """
         delegation = self.get_delegation(name)
         if not delegation:
@@ -836,9 +917,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_delegation_and_raise(self, name: str) -> None:
         """Get a delegation for the zone by name, raising EntityAlreadyExists if found.
 
-        :param zone: The zone to search in.
-        :param name: The name of the delegation to get.
-        :raises EntityAlreadyExists: If the delegation is found.
+        Args:
+            name: The name of the delegation to get.
+
+        Raises:
+            EntityAlreadyExists: If the delegation is found.
         """
         delegation = self.get_delegation(name)
         if delegation:
@@ -847,9 +930,8 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def get_delegations(self) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """Get all delegations for a zone.
 
-        :param zone: The zone to search in.
-        :param name: The name of the delegation to get.
-        :returns: The delegation object.
+        Returns:
+            The delegation object.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -859,8 +941,11 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def delete_delegation(self, name: str) -> bool:
         """Delete a delegation from the zone.
 
-        :param delegation: The name of the delegation.
-        :returns: True if the deletion was successful.
+        Args:
+            name: The name of the delegation.
+
+        Returns:
+            True if the deletion was successful.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -873,8 +958,9 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def set_delegation_comment(self, name: str, comment: str) -> None:
         """Set the comment for a delegation.
 
-        :param name: The name of the delegation.
-        :param comment: The comment to set.
+        Args:
+            name: The name of the delegation.
+            comment: The comment to set.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -891,16 +977,20 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
     def set_default_ttl(self, ttl: int) -> Self:
         """Set the default TTL for the zone.
 
-        :param ttl: The TTL to set.
+        Args:
+            ttl: The TTL to set.
         """
         return self.set_ttl(ttl, "default_ttl")
 
     def update_nameservers(self, nameservers: list[str], force: bool = False) -> None:
         """Update the nameservers of the zone.
 
-        :param nameservers: The new nameservers for the zone.
-        :param force: Whether to force the update.
-        :returns: True if the update was successful.
+        Args:
+            nameservers: The new nameservers for the zone.
+            force: Whether to force the update.
+
+        Returns:
+            True if the update was successful.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -936,8 +1026,11 @@ class ForwardZone(Zone, WithName, APIMixin):
 
         Note: This method may return either a ForwardZoneDelegation or a ForwardZone object.
 
-        :param hostname: The hostname to search for.
-        :returns: The zone if found, None otherwise.
+        Args:
+            hostname: The hostname to search for.
+
+        Returns:
+            The zone if found, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1101,12 +1194,11 @@ class HostPolicy(FrozenModel, WithName, ABC):
     """Base model for Host Policy objects.
 
     Note:
-    ----
-    Host policy models in MREG have a different `created_at` field than
-    other models. It is called `create_date` and is a date - not a datetime.
+        Host policy models in MREG have a different `created_at` field than
+        other models. It is called `create_date` and is a date - not a datetime.
 
-    This model has a custom validator to validate and convert the `create_date`
-    field to a datetime object with the expected `created_at` name.
+        This model has a custom validator to validate and convert the `create_date`
+        field to a datetime object with the expected `created_at` name.
 
     """
 
@@ -1132,8 +1224,11 @@ class HostPolicy(FrozenModel, WithName, ABC):
     def validate_created_at(cls, value: Any) -> datetime:
         """Convert a datetime string to a datetime object.
 
-        :param value: The input value - should be a datetime string.
-        :returns: The input value converted to a datetime object.
+        Args:
+            value: The input value - should be a datetime string.
+
+        Returns:
+            The input value converted to a datetime object.
         """
         # Fast path for str (most likely input type)
         if isinstance(value, str):
@@ -1160,8 +1255,11 @@ class HostPolicy(FrozenModel, WithName, ABC):
     def get_role_or_atom(cls, name: str) -> Atom | Role | None:
         """Get an Atom or Role by name.
 
-        :param name: The name to search for.
-        :returns: The Atom or Role if found, else None.
+        Args:
+            name: The name to search for.
+
+        Returns:
+            The Atom or Role if found, else None.
         """
         funcs: list[Callable[[str], Atom | Role | None]] = [
             Atom.get_by_name,
@@ -1177,9 +1275,14 @@ class HostPolicy(FrozenModel, WithName, ABC):
     def get_role_or_atom_or_raise(cls, name: str) -> Atom | Role:
         """Get an Atom or Role by name and raise if not found.
 
-        :param name: The name to search for.
-        :returns: The Atom or Role if found.
-        :raises EntityNotFound: If the Atom or Role is not found.
+        Args:
+            name: The name to search for.
+
+        Returns:
+            The Atom or Role if found.
+
+        Raises:
+            EntityNotFound: If the Atom or Role is not found.
         """
         role_or_atom = cls.get_role_or_atom(name)
         if role_or_atom:
@@ -1190,9 +1293,14 @@ class HostPolicy(FrozenModel, WithName, ABC):
     def get_role_or_atom_and_raise(cls, name: str) -> None:
         """Get an Atom or Role by name and raise if found.
 
-        :param name: The name to search for.
-        :returns: The Atom or Role if found.
-        :raises EntityAlreadyExists: If the Atom or Role is found.
+        Args:
+            name: The name to search for.
+
+        Returns:
+            The Atom or Role if found.
+
+        Raises:
+            EntityAlreadyExists: If the Atom or Role is found.
         """
         role_or_atom = cls.get_role_or_atom(name)
         if role_or_atom:
@@ -1226,8 +1334,11 @@ class Role(HostPolicy, WithHistory):
     def get_roles_with_atom(cls, name: str) -> list[Self]:
         """Get all roles with a specific atom.
 
-        :param atom: Name of the atom to search for.
-        :returns: A list of Role objects.
+        Args:
+            name: Name of the atom to search for.
+
+        Returns:
+            A list of Role objects.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1236,7 +1347,8 @@ class Role(HostPolicy, WithHistory):
     def add_atom(self, atom_name: str) -> bool:
         """Add an atom to the role.
 
-        :param atom_name: The name of the atom to add.
+        Args:
+            atom_name: The name of the atom to add.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1252,7 +1364,8 @@ class Role(HostPolicy, WithHistory):
     def remove_atom(self, atom_name: str) -> bool:
         """Remove an atom from the role.
 
-        :param atom_name: The name of the atom to remove.
+        Args:
+            atom_name: The name of the atom to remove.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1268,16 +1381,19 @@ class Role(HostPolicy, WithHistory):
     def get_labels(self) -> list[Label]:
         """Get the labels associated with the role.
 
-        :returns: A list of Label objects.
+        Returns:
+            A list of Label objects.
         """
         return [Label.get_by_id_or_raise(id_) for id_ in self.labels]
 
     def add_label(self, label_name: str) -> Self:
         """Add a label to the role.
 
-        :param label_name: The name of the label to add.
+        Args:
+            label_name: The name of the label to add.
 
-        :returns: The updated Role object.
+        Returns:
+            The updated Role object.
         """
         label = Label.get_by_name_or_raise(label_name)
         if label.id in self.labels:
@@ -1290,9 +1406,11 @@ class Role(HostPolicy, WithHistory):
     def remove_label(self, label_name: str) -> Self:
         """Add a label to the role.
 
-        :param label_name: The name of the label to add.
+        Args:
+            label_name: The name of the label to add.
 
-        :returns: The updated Role object.
+        Returns:
+            The updated Role object.
         """
         label = Label.get_by_name_or_raise(label_name)
         if label.id not in self.labels:
@@ -1307,7 +1425,8 @@ class Role(HostPolicy, WithHistory):
     def add_host(self, name: str) -> bool:
         """Add a host to the role by name.
 
-        :param name: The name of the host to add.
+        Args:
+            name: The name of the host to add.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1317,7 +1436,8 @@ class Role(HostPolicy, WithHistory):
     def remove_host(self, name: str) -> bool:
         """Remove a host from the role by name.
 
-        :param name: The name of the host to remove.
+        Args:
+            name: The name of the host to remove.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1370,7 +1490,8 @@ class Label(FrozenModelWithTimestamps, WithName):
     def get_all(cls) -> list[Self]:
         """Get all labels.
 
-        :returns: A list of Label objects.
+        Returns:
+            A list of Label objects.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1380,9 +1501,14 @@ class Label(FrozenModelWithTimestamps, WithName):
     def get_by_id_or_raise(cls, _id: int) -> Self:
         """Get a Label by ID.
 
-        :param _id: The Label ID to search for.
-        :returns: The Label if found.
-        :raises EntityNotFound: If the Label is not found.
+        Args:
+            _id: The Label ID to search for.
+
+        Returns:
+            The Label if found.
+
+        Raises:
+            EntityNotFound: If the Label is not found.
         """
         label = cls.get_by_id(_id)
         if not label:
@@ -1493,9 +1619,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         - If the identifier is a valid IP address, it is treated as an IP.
         - If the identifier is a valid network, it is treated as a network.
 
-        :param identifier: The identifier to search for.
-        :returns: The network if found.
-        :raises EntityNotFound: If the network is not found.
+        Args:
+            identifier: The identifier to search for.
+
+        Returns:
+            The network if found.
+
+        Raises:
+            EntityNotFound: If the network is not found.
         """
         # Check if identifier is IP or network
         try:
@@ -1531,9 +1662,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def get_by_ip(cls, ip: IP_AddressT) -> Self | None:
         """Get a network by IP address.
 
-        :param ip: The IP address to search for.
-        :returns: The network if found, None otherwise.
-        :raises EntityNotFound: If the network is not found.
+        Args:
+            ip: The IP address to search for.
+
+        Returns:
+            The network if found, None otherwise.
+
+        Raises:
+            EntityNotFound: If the network is not found.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1546,9 +1682,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def get_by_ip_or_raise(cls, ip: IP_AddressT) -> Network:
         """Get a network by IP address, and raise if not found.
 
-        :param ip: The IP address to search for.
-        :returns: The network if found, None otherwise.
-        :raises EntityNotFound: If the network is not found.
+        Args:
+            ip: The IP address to search for.
+
+        Returns:
+            The network if found, None otherwise.
+
+        Raises:
+            EntityNotFound: If the network is not found.
         """
         network = cls.get_by_ip(ip)
         if not network:
@@ -1559,8 +1700,11 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def get_by_network(cls, network: str) -> Self | None:
         """Get a network by network address.
 
-        :param network: The network string to search for.
-        :returns: The network if found.
+        Args:
+            network: The network string to search for.
+
+        Returns:
+            The network if found.
         """
         return cls.get_by_field("network", network)
 
@@ -1568,9 +1712,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def get_by_network_or_raise(cls, network: str) -> Self:
         """Get a network by its network address, and raise if not found.
 
-        :param network: The network string to search for.
-        :returns: The network if found.
-        :raises EntityNotFound: If the network is not found.
+        Args:
+            network: The network string to search for.
+
+        Returns:
+            The network if found.
+
+        Raises:
+            EntityNotFound: If the network is not found.
         """
         net = cls.get_by_network(network)
         if not net:
@@ -1580,9 +1729,14 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def get_community_or_raise(self, name: str) -> Community:
         """Get a community by name, and raise if not found.
 
-        :param name: The name of the community to search for.
-        :returns: The community if found.
-        :raises EntityNotFound: If the community is not found.
+        Args:
+            name: The name of the community to search for.
+
+        Returns:
+            The community if found.
+
+        Raises:
+            EntityNotFound: If the community is not found.
         """
         community = self.get_community(name)
         if not community:
@@ -1592,8 +1746,11 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def get_community(self, name: str) -> Community | None:
         """Get a community by name.
 
-        :param name: The name of the community to search for.
-        :returns: The community if found, None otherwise.
+        Args:
+            name: The name of the community to search for.
+
+        Returns:
+            The community if found, None otherwise.
         """
         for community in self.communities:
             if community.name == name:
@@ -1693,18 +1850,23 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def is_reserved_ip(self, ip: IP_AddressT) -> bool:
         """Return True if the IP address is in the reserved list.
 
-        :param ip: The IP address to check.
-        :returns: True if the IP address is in the reserved list.
+        Args:
+            ip: The IP address to check.
+
+        Returns:
+            True if the IP address is in the reserved list.
         """
         return ip in self.get_reserved_ips()
 
     def add_excluded_range(self, start: str, end: str) -> None:
         """Add an excluded range to the network.
 
-        :param start: The start of the excluded range.
-        :param end: The end of the excluded range.
+        Args:
+            start: The start of the excluded range.
+            end: The end of the excluded range.
 
-        :returns: The new ExcludedRange object.
+        Returns:
+            The new ExcludedRange object.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1730,8 +1892,9 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def remove_excluded_range(self, start: str, end: str) -> None:
         """Remove an excluded range from the network.
 
-        :param start: The start of the excluded range.
-        :param end: The end of the excluded range.
+        Args:
+            start: The start of the excluded range.
+            end: The end of the excluded range.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1752,86 +1915,115 @@ class Network(FrozenModelWithTimestamps, APIMixin):
     def set_category(self, category: str) -> Self:
         """Set the category tag of the network.
 
-        :param category: The new category tag.
-        :returns: The updated Network object.
+        Args:
+            category: The new category tag.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"category": category})
 
     def set_location(self, location: str) -> Self:
         """Set the location tag of the network.
 
-        :param category: The new category.
-        :returns: The updated Network object.
+        Args:
+            location: The new location tag.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"location": location})
 
     def set_description(self, description: str) -> Self:
         """Set the description of the network.
 
-        :param description: The new description.
-        :returns: The updated Network object.
+        Args:
+            description: The new description.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"description": description})
 
     def set_dns_delegation(self, delegated: bool) -> Self:
         """Set the DNS delegation status of the network.
 
-        :param dns_delegated: The new DNS delegation status.
-        :returns: The updated Network object.
+        Args:
+            delegated: The new DNS delegation status.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"dns_delegated": delegated})
 
     def set_frozen(self, frozen: bool) -> Self:
         """Set the frozen status of the network.
 
-        :param frozen: The new frozen status.
-        :returns: The updated Network object.
+        Args:
+            frozen: The new frozen status.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"frozen": frozen})
 
     def set_reserved(self, reserved: int) -> Self:
         """Set the number of reserved IP addresses.
 
-        :param reserved: The new number of reserved IP addresses.
-        :returns: The updated Network object.
+        Args:
+            reserved: The new number of reserved IP addresses.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"reserved": reserved})
 
     def set_vlan(self, vlan: int) -> Self:
         """Set the VLAN of the network.
 
-        :param vlan: The new VLAN.
-        :returns: The updated Network object.
+        Args:
+            vlan: The new VLAN.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"vlan": vlan})
 
     def set_policy(self, policy: NetworkPolicy) -> Self:
         """Set the network policy of the network.
 
-        :param policy: The new network policy.
-        :returns: The updated Network object.
+        Args:
+            policy: The new network policy.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"policy": policy.id}, validate=False)
 
     def set_max_communities(self, max_communities: int) -> Self:
         """Set the maximum number of communities for the network.
 
-        :param max_communities: The new maximum number of communities.
-        :returns: The updated Network object.
+        Args:
+            max_communities: The new maximum number of communities.
+
+        Returns:
+            The updated Network object.
         """
         return self.patch({"max_communities": max_communities}, validate=False)
 
     def unset_policy(self) -> Self:
         """Unset the network policy of the network.
 
-        :returns: The updated Network object.
+        Returns:
+            The updated Network object.
         """
         return self.patch({"policy": None}, validate=False)
 
     def unset_max_communities(self) -> Self:
         """Unset the maximum number of communities for the network.
 
-        :returns: The updated Network object.
+        Returns:
+            The updated Network object.
         """
         return self.patch({"max_communities": None}, validate=False)
 
@@ -1897,9 +2089,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
     def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:  # noqa: ARG002 # validate not implemented
         """Patch the community.
 
-        :param fields: The fields to patch.
-        :param validate: Whether to validate the response. (Not implemented)
-        :returns: The updated Community object.
+        Args:
+            fields: The fields to patch.
+            validate: Whether to validate the response. (Not implemented)
+
+        Returns:
+            The updated Community object.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1922,7 +2117,8 @@ class Community(FrozenModelWithTimestamps, APIMixin):
     def get_hosts(self) -> list[Host]:
         """Get a list of hosts in the community.
 
-        :returns: A list of Host objects.
+        Returns:
+            A list of Host objects.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1931,8 +2127,12 @@ class Community(FrozenModelWithTimestamps, APIMixin):
     def add_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
         """Add a host to the community.
 
-        :param host: The host to add.
-        :returns: True if the host was added, False otherwise.
+        Args:
+            host: The host to add.
+            ipaddress: The IP address to assign the host in the community.
+
+        Returns:
+            True if the host was added, False otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1942,11 +2142,15 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         resp = MregClient().post(self.hosts_endpoint, params=None, ok404=False, **kwargs)
         return resp.is_success if resp else False
 
-    def remove_host(self, host: Host, ipaddress: IP_AddressT | None) -> bool:
+    def remove_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
         """Remove a host from the community.
 
-        :param host: The host to remove.
-        :returns: True if the host was removed, False otherwise.
+        Args:
+            host: The host to remove.
+            ipaddress: The IP address of the host in the community.
+
+        Returns:
+            True if the host was removed, False otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -1992,9 +2196,14 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def get_attribute_or_raise(self, name: str) -> NetworkPolicyAttributeValue:
         """Get a network attribute value by name, and raise if not found.
 
-        :param name: The name of the attribute to search for.
-        :returns: The attribute if found.
-        :raises EntityNotFound: If the attribute is not found.
+        Args:
+            name: The name of the attribute to search for.
+
+        Returns:
+            The attribute if found.
+
+        Raises:
+            EntityNotFound: If the attribute is not found.
         """
         attribute = self.get_attribute(name)
         if not attribute:
@@ -2004,8 +2213,11 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def get_attribute(self, name: str) -> NetworkPolicyAttributeValue | None:
         """Get a attribute by name.
 
-        :param name: The name of the attribute to search for.
-        :returns: The attribute if found, None otherwise.
+        Args:
+            name: The name of the attribute to search for.
+
+        Returns:
+            The attribute if found, None otherwise.
         """
         for attribute in self.attributes:
             if attribute.name == name:
@@ -2015,8 +2227,9 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def add_attribute(self, attribute: NetworkPolicyAttribute, value: bool = True) -> None:
         """Add an attribute to the policy.
 
-        :param attribute: The attribute to add.
-        :param value: The value of the attribute.
+        Args:
+            attribute: The attribute to add.
+            value: The value of the attribute.
         """
         if self.get_attribute(attribute.name):
             raise EntityAlreadyExists(f"Attribute {attribute.name!r} already exists in policy.")
@@ -2027,8 +2240,9 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def remove_attribute(self, attribute: str) -> None:
         """Add an attribute to the policy.
 
-        :param attribute: The attribute to add.
-        :param value: The value of the attribute.
+        Args:
+            attribute: The attribute to add.
+            value: The value of the attribute.
         """
         attr = self.get_attribute_or_raise(attribute)
         attrs = self.attributes.copy()
@@ -2038,8 +2252,9 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def set_attribute_value(self, attribute: str, value: bool) -> None:
         """Add an attribute to the policy.
 
-        :param attribute: The attribute to add.
-        :param value: The value of the attribute.
+        Args:
+            attribute: The attribute to add.
+            value: The value of the attribute.
         """
         # Check if attribute exists
         # NOTE: yes, we iterate over it twice here, but it's a small list
@@ -2056,7 +2271,8 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
 
         Sets the attributes on the model itself after a successful patch.
 
-        :param attrs: The new attributes.
+        Args:
+            attrs: The new attributes.
         """
         self.patch(
             {"attributes": [{"name": a.name, "value": a.value} for a in attrs]},
@@ -2071,9 +2287,12 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
     def create_community(self, name: str, description: str) -> Community | None:
         """Create a new community.
 
-        :param name: The name of the community.
-        :param description: The description of the community.
-        :returns: The new Community object.
+        Args:
+            name: The name of the community.
+            description: The description of the community.
+
+        Returns:
+            The new Community object.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -2115,8 +2334,11 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         Note that the IP addresses can be duplicated across hosts,
         so this method may return multiple IP addresses.
 
-        :param ip: The IP address to search for.
-        :returns: The IP address if found, None otherwise.
+        Args:
+            ip: The IP address to search for.
+
+        Returns:
+            The IP address if found, None otherwise.
         """
         return cls.get_list_by_field("ipaddress", str(ip))
 
@@ -2127,10 +2349,13 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
         Raise an exception if the MAC address is already associated with an IP address,
         and force is not set.
 
-        :param mac: The MAC address to check.
-        :param force: Force is active. If True, the check is skipped.
-        :raises EntityAlreadyExists: If the MAC address is already associated with one IP.
-        :raises MultipleEntitiesFound: If the MAC address is already associated multiple IPs.
+        Args:
+            mac: The MAC address to check.
+            force: Force is active. If True, the check is skipped.
+
+        Raises:
+            EntityAlreadyExists: If the MAC address is already associated with one IP.
+            MultipleEntitiesFound: If the MAC address is already associated multiple IPs.
         """
         if force:
             return
@@ -2153,8 +2378,11 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
     def get_by_mac(cls, mac: MacAddress) -> Self | None:
         """Get the IP address objects by MAC address.
 
-        :param mac: The MAC address to search for.
-        :returns: The IP address if found, None otherwise.
+        Args:
+            mac: The MAC address to search for.
+
+        Returns:
+            The IP address if found, None otherwise.
         """
         try:
             return cls.get_by_field("macaddress", mac)
@@ -2165,8 +2393,11 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
     def get_ips_by_mac(cls, mac: MacAddress) -> list[Self]:
         """Get a list of IP addresses by MAC address.
 
-        :param mac: The MAC address to search for.
-        :returns: A list of IP addresses.
+        Args:
+            mac: The MAC address to search for.
+
+        Returns:
+            A list of IP addresses.
         """
         return cls.get_list_by_field("macaddress", mac)
 
@@ -2205,11 +2436,13 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
     def associate_mac(self, mac: MacAddress, force: bool = False) -> IPAddress:
         """Associate a MAC address with the IP address.
 
-        :param mac: The MAC address to associate.
-        :param force: If True, force the association even if the IP address already has
-                      a MAC address.
+        Args:
+            mac: The MAC address to associate.
+            force: If True, force the association even if the IP address already has
+                a MAC address.
 
-        :returns: A new IPAddress object fetched from the API with the updated MAC address.
+        Returns:
+            A new IPAddress object fetched from the API with the updated MAC address.
         """
         if self.macaddress and not force:
             raise EntityAlreadyExists(
@@ -2222,7 +2455,8 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
 
         Note that this does NOT validate the MAC address.
 
-        :returns: A new IPAddress object fetched from the API with the MAC address removed.
+        Returns:
+            A new IPAddress object fetched from the API with the MAC address removed.
         """
         # Model converts empty string to None so we must validate this ourselves.
         patched = self.patch(fields={"macaddress": ""}, validate=False)
@@ -2263,8 +2497,11 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
     def get_by_name(cls, name: HostName) -> CNAME:
         """Get a CNAME record by name.
 
-        :param name: The name to search for.
-        :returns: The CNAME record if found, None otherwise.
+        Args:
+            name: The name to search for.
+
+        Returns:
+            The CNAME record if found, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -2277,9 +2514,12 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
     def get_by_host_and_name(cls, host: HostName | int, name: HostName) -> CNAME:
         """Get a CNAME record by host and name.
 
-        :param host: The host to search for, either a hostname or an ID.
-        :param name: The name to search for.
-        :returns: The CNAME record if found, None otherwise.
+        Args:
+            host: The host to search for, either a hostname or an ID.
+            name: The name to search for.
+
+        Returns:
+            The CNAME record if found, None otherwise.
         """
         target_hostname = None
         if isinstance(host, str):
@@ -2334,10 +2574,13 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
     def get_by_all(cls, host: int, mx: str, priority: int) -> MX:
         """Get an MX record by all fields.
 
-        :param host: The host ID.
-        :param mx: The MX record.
-        :param priority: The priority.
-        :returns: The MX record if found, None otherwise.
+        Args:
+            host: The host ID.
+            mx: The MX record.
+            priority: The priority.
+
+        Returns:
+            The MX record if found, None otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -2354,10 +2597,14 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
     ) -> MX | None:
         """Create an MX record.
 
-        :param host: The host to associate the MX record with.
-        :param mx: The MX record.
-        :param priority: The priority.
-        :returns: The created MX record.
+        Args:
+            host: The host to associate the MX record with.
+            mx: The MX record.
+            priority: The priority.
+            fetch_after_create: Whether to fetch the MX record after creation.
+
+        Returns:
+            The created MX record.
         """
         return cls.create(
             {"host": host.id, "priority": priority, "mx": mx},
@@ -2367,9 +2614,12 @@ class MX(FrozenModelWithTimestamps, WithHost, APIMixin):
     def has_mx_with_priority(self, mx: str, priority: int) -> bool:
         """Return True if the MX record has the given MX and priority.
 
-        :param mx: The MX record to check.
-        :param priority: The priority to check.
-        :returns: True if the MX record has the given MX and priority.
+        Args:
+            mx: The MX record to check.
+            priority: The priority to check.
+
+        Returns:
+            True if the MX record has the given MX and priority.
         """
         return self.mx == mx and self.priority == priority
 
@@ -2471,9 +2721,12 @@ class BacnetID(FrozenModel, WithHost, APIMixin):
     def get_in_range(cls, start: int, end: int) -> list[Self]:
         """Get Bacnet IDs in a range.
 
-        :param start: The start of the range.
-        :param end: The end of the range.
-        :returns: List of BacnetID objects in the range.
+        Args:
+            start: The start of the range.
+            end: The end of the range.
+
+        Returns:
+            List of BacnetID objects in the range.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -2600,9 +2853,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_list_by_ip(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> list[Self]:
         """Get a list of hosts by IP address.
 
-        :param ip: The IP address to search for.
-        :param inform_as_ptr: Record event if resolved through PTR override.
-        :returns: A list of Host objects.
+        Args:
+            ip: The IP address to search for.
+            inform_as_ptr: Record event if resolved through PTR override.
+
+        Returns:
+            A list of Host objects.
         """
         hosts = cls.get_list_by_field("ipaddresses__ipaddress", str(ip))
         if not hosts:
@@ -2627,9 +2883,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_list_by_ip_or_raise(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> list[Self]:
         """Get a list of hosts by IP address or raise EntityNotFound.
 
-        :param ip: The IP address to search for.
-        :returns: A list of Host objects.
-        :param inform_as_ptr: Record event if resolved through PTR override.
+        Args:
+            ip: The IP address to search for.
+            inform_as_ptr: Record event if resolved through PTR override.
+
+        Returns:
+            A list of Host objects.
         """
         hosts = cls.get_list_by_ip(ip, inform_as_ptr=inform_as_ptr)
         if not hosts:
@@ -2640,9 +2899,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_by_ip(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> Host | None:
         """Get a host by IP address.
 
-        :param ip: The IP address to search for.
-        :param inform_as_ptr: Record event if resolved through PTR override.
-        :returns: The Host object if found, None otherwise.
+        Args:
+            ip: The IP address to search for.
+            inform_as_ptr: Record event if resolved through PTR override.
+
+        Returns:
+            The Host object if found, None otherwise.
         """
         try:
             host = cls.get_by_field("ipaddresses__ipaddress", str(ip))
@@ -2669,9 +2931,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_by_ip_or_raise(cls, ip: IP_AddressT, inform_as_ptr: bool = True) -> Host:
         """Get a host by IP address or raise EntityNotFound.
 
-        :param ip: The IP address to search for.
-        :returns: The Host object if found.
-        :param inform_as_ptr: Record event if resolved through PTR override.
+        Args:
+            ip: The IP address to search for.
+            inform_as_ptr: Record event if resolved through PTR override.
+
+        Returns:
+            The Host object if found.
         """
         host = cls.get_by_ip(ip, inform_as_ptr=inform_as_ptr)
         if not host:
@@ -2682,8 +2947,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_by_mac(cls, mac: MacAddress) -> Host | None:
         """Get a host by MAC address.
 
-        :param mac: The MAC address to search for.
-        :returns: The Host object if found, None otherwise.
+        Args:
+            mac: The MAC address to search for.
+
+        Returns:
+            The Host object if found, None otherwise.
         """
         return cls.get_by_field("ipaddresses__macaddress", str(mac))
 
@@ -2691,8 +2959,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_by_mac_or_raise(cls, mac: MacAddress) -> Host:
         """Get a host by MAC address or raise EntityNotFound.
 
-        :param mac: The MAC address to search for.
-        :returns: The Host object if found.
+        Args:
+            mac: The MAC address to search for.
+
+        Returns:
+            The Host object if found.
         """
         host = cls.get_by_mac(mac)
         if not host:
@@ -2703,8 +2974,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_list_by_mac(cls, mac: MacAddress) -> list[Self]:
         """Get a list of host by MAC address.
 
-        :param mac: The MAC address to search for.
-        :returns: The Host object if found, None otherwise.
+        Args:
+            mac: The MAC address to search for.
+
+        Returns:
+            The Host object if found, None otherwise.
         """
         return cls.get_list_by_field("ipaddresses__macaddress", str(mac))
 
@@ -2712,8 +2986,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_list_by_mac_or_raise(cls, mac: MacAddress) -> list[Self]:
         """Get a list of hosts by MAC address or raise EntityNotFound.
 
-        :param mac: The MAC address to search for.
-        :returns: The Host object if found.
+        Args:
+            mac: The MAC address to search for.
+
+        Returns:
+            The Host object if found.
         """
         hosts = cls.get_list_by_mac(mac)
         if not hosts:
@@ -2728,13 +3005,16 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         See also `get_by_any_means`.
 
-        :param identifier: The identifier to search for.
-        :param inform_as_cname: If True, inform the user if the host is a CNAME.
-        :param inform_as_ptr: If True, inform the user if the host is a PTR override.
+        Args:
+            identifier: The identifier to search for.
+            inform_as_cname: If True, inform the user if the host is a CNAME.
+            inform_as_ptr: If True, inform the user if the host is a PTR override.
 
-        :raises EntityNotFound: If the host is not found.
+        Raises:
+            EntityNotFound: If the host is not found.
 
-        :returns: A Host object if the host was found.
+        Returns:
+            A Host object if the host was found.
         """
         host = cls.get_by_any_means(
             identifier, inform_as_cname=inform_as_cname, inform_as_ptr=inform_as_ptr
@@ -2771,14 +3051,17 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Note that get_host will perform a case-insensitive search for a fully qualified version
         of the hostname, so the comparison above may fail.
 
-        :param identifier: The identifier to search for.
-        :param ok404: If True, don't raise a EntityNotFound if the host is not found.
-        :param inform_as_cname: If True, inform the user if the host is a CNAME.
-        :param inform_as_ptr: If True, inform the user if the host is a PTR override.
+        Args:
+            identifier: The identifier to search for.
+            ok404: If True, don't raise a EntityNotFound if the host is not found.
+            inform_as_cname: If True, inform the user if the host is a CNAME.
+            inform_as_ptr: If True, inform the user if the host is a PTR override.
 
-        :raises EntityNotFound: If we don't find the host and `ok404` is False.
+        Raises:
+            EntityNotFound: If we don't find the host and `ok404` is False.
 
-        :returns: A Host object if the host was found, otherwise None.
+        Returns:
+            A Host object if the host was found, otherwise None.
         """
         if identifier.isdigit():
             return Host.get_by_id(int(identifier))
@@ -2826,13 +3109,16 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         See also `get_by_any_means`.
 
-        :param identifier: The identifier to search for.
-        :param inform_as_cname: If True, inform the user if the host is a CNAME.
-        :param inform_as_ptr: If True, inform the user if the host is a PTR override.
+        Args:
+            identifier: The identifier to search for.
+            inform_as_cname: If True, inform the user if the host is a CNAME.
+            inform_as_ptr: If True, inform the user if the host is a PTR override.
 
-        :raises EntityNotFound: If the host is not found.
+        Raises:
+            EntityNotFound: If the host is not found.
 
-        :returns: A Host object if the host was found.
+        Returns:
+            A Host object if the host was found.
         """
         hosts = cls.get_list_by_any_means(
             identifier, inform_as_cname=inform_as_cname, inform_as_ptr=inform_as_ptr
@@ -2869,14 +3155,17 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Note that get_host will perform a case-insensitive search for a fully qualified version
         of the hostname, so the comparison above may fail.
 
-        :param identifier: The identifier to search for.
-        :param ok404: If True, don't raise a EntityNotFound if the host is not found.
-        :param inform_as_cname: If True, inform the user if the host is a CNAME.
-        :param inform_as_ptr: If True, inform the user if the host is a PTR override.
+        Args:
+            identifier: The identifier to search for.
+            ok404: If True, don't raise a EntityNotFound if the host is not found.
+            inform_as_cname: If True, inform the user if the host is a CNAME.
+            inform_as_ptr: If True, inform the user if the host is a PTR override.
 
-        :raises EntityNotFound: If we don't find the host and `ok404` is False.
+        Raises:
+            EntityNotFound: If we don't find the host and `ok404` is False.
 
-        :returns: A Host object if the host was found, otherwise None.
+        Returns:
+            A Host object if the host was found, otherwise None.
         """
         if identifier.isdigit() and (host := cls.get_by_id(int(identifier))):
             return [host]
@@ -2917,9 +3206,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def delete(self) -> bool:
         """Delete the host.
 
-        :raises DeleteError: If the operation to delete the host fails.
+        Raises:
+            DeleteError: If the operation to delete the host fails.
 
-        :returns: True if the host was deleted successfully, False otherwise.
+        Returns:
+            True if the host was deleted successfully, False otherwise.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -2937,18 +3228,22 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def rename(self, new_name: HostName) -> Host:
         """Rename the host.
 
-        :param new_name: The new name for the host.
+        Args:
+            new_name: The new name for the host.
 
-        :returns: A new Host object fetched from the API with the updated name.
+        Returns:
+            A new Host object fetched from the API with the updated name.
         """
         return self.patch(fields={"name": new_name})
 
     def set_comment(self, comment: str) -> Host:
         """Set the comment for the host.
 
-        :param comment: The comment to set.
+        Args:
+            comment: The comment to set.
 
-        :returns: A new Host object fetched from the API with the updated comment.
+        Returns:
+            A new Host object fetched from the API with the updated comment.
         """
         return self.patch(fields={"comment": comment})
 
@@ -2959,10 +3254,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Uses the old `contact` field to set a single contact.
         Used for backwards compatibility.
 
-        :param contact: The contact to set. Should be a valid email, but we leave it to the
-                        server to validate the data.
+        Args:
+            contact: The contact to set. Should be a valid email, but we leave it to the
+                server to validate the data.
 
-        :returns: A new Host object fetched from the API with the updated contact.
+        Returns:
+            A new Host object fetched from the API with the updated contact.
         """
         return self.patch(fields={"contact": contact})
 
@@ -3060,9 +3357,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def add_ip(self, ip: IP_AddressT, mac: MacAddress | None = None) -> Host:
         """Add an IP address to the host.
 
-        :param ip: The IP address to add. IPv4 or IPv6.
+        Args:
+            ip: The IP address to add. IPv4 or IPv6.
+            mac: The MAC address to associate with the IP address.
 
-        :returns: A new Host object fetched from the API with the updated IP address.
+        Returns:
+            A new Host object fetched from the API with the updated IP address.
         """
         params: QueryParams = {"ipaddress": str(ip), "host": str(self.id)}
         if mac:
@@ -3074,18 +3374,22 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def has_ip(self, arg_ip: IP_AddressT) -> bool:
         """Check if the host has the given IP address.
 
-        :param ip: The IP address to check for.
+        Args:
+            arg_ip: The IP address to check for.
 
-        :returns: True if the host has the IP address, False otherwise.
+        Returns:
+            True if the host has the IP address, False otherwise.
         """
         return any([ip.ipaddress == arg_ip for ip in self.ipaddresses])
 
     def has_ip_with_mac(self, arg_mac: MacAddress) -> IPAddress | None:
         """Check if the host has the given MAC address.
 
-        :param mac: The MAC address to check for.
+        Args:
+            arg_mac: The MAC address to check for.
 
-        :returns: The IP address object if found, None otherwise.
+        Returns:
+            The IP address object if found, None otherwise.
         """
         return next((ip for ip in self.ipaddresses if ip.macaddress == arg_mac), None)
 
@@ -3101,10 +3405,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
           - If the host has two IPs of different versions and they are on the same VLAN,
             return the IPv4 address.
 
-        :raises EntityNotFound: If the host has no IP addresses.
-        :raises EntityOwnershipMismatch: If the host multiple IPs and the constriants aren't met.
+        Raises:
+            EntityNotFound: If the host has no IP addresses.
+            EntityOwnershipMismatch: If the host multiple IPs and the constriants aren't met.
 
-        :returns: An IP address that can be associated with the host.
+        Returns:
+            An IP address that can be associated with the host.
         """
         if len(self.ipaddresses) == 0:
             raise EntityNotFound(f"Host {self} has no IP addresses.")
@@ -3147,45 +3453,55 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def has_ptr_override(self, arg_ip: IP_AddressT) -> bool:
         """Check if the host has a PTR override for the given IP address.
 
-        :param ip: The IP address to check for.
+        Args:
+            arg_ip: The IP address to check for.
 
-        :returns: True if the host has a PTR override for the IP address, False otherwise.
+        Returns:
+            True if the host has a PTR override for the IP address, False otherwise.
         """
         return any([ptr.ipaddress == arg_ip for ptr in self.ptr_overrides])
 
     def has_txt(self, arg_txt: str) -> bool:
         """Check if the host has the given TXT record.
 
-        :param txt: The TXT record to check for.
+        Args:
+            arg_txt: The TXT record to check for.
 
-        :returns: True if the host has the TXT record, False otherwise.
+        Returns:
+            True if the host has the TXT record, False otherwise.
         """
         return any([txt.txt == arg_txt for txt in self.txts])
 
     def get_ip(self, arg_ip: IP_AddressT) -> IPAddress | None:
         """Get the IP address object for the given IP address.
 
-        :param ip: The IP address to search for.
+        Args:
+            arg_ip: The IP address to search for.
 
-        :returns: The IP address object if found, None otherwise.
+        Returns:
+            The IP address object if found, None otherwise.
         """
         return next((ip for ip in self.ipaddresses if ip.ipaddress == arg_ip), None)
 
     def get_ip_by_id(self, ip_id: int) -> IPAddress | None:
         """Get the IP address object for the given ID.
 
-        :param ip_id: The ID to search for.
+        Args:
+            ip_id: The ID to search for.
 
-        :returns: The IP address object if found, None otherwise.
+        Returns:
+            The IP address object if found, None otherwise.
         """
         return next((ip for ip in self.ipaddresses if ip.id == ip_id), None)
 
     def get_ptr_override(self, ip: IP_AddressT) -> PTR_override | None:
         """Get the PTR override for the given IP address.
 
-        :param ip: The IP address to search for.
+        Args:
+            ip: The IP address to search for.
 
-        :returns: The PTR override object if found, None otherwise.
+        Returns:
+            The PTR override object if found, None otherwise.
         """
         return next((ptr for ptr in self.ptr_overrides if ptr.ipaddress == ip), None)
 
@@ -3200,10 +3516,13 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def associate_mac_to_ip(self, mac: MacAddress, ip: IP_AddressT | str, force: bool = False) -> Host:
         """Associate a MAC address to an IP address.
 
-        :param mac: The MAC address to associate.
-        :param ip: The IP address to associate.
+        Args:
+            mac: The MAC address to associate.
+            ip: The IP address to associate.
+            force: Force association even if the MAC is already in use by another IP.
 
-        :returns: A new Host object fetched from the API after updating the IP address.
+        Returns:
+            A new Host object fetched from the API after updating the IP address.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3242,9 +3561,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Note: This method blindly disassociates the current MAC address
               from associated the given IP address.
 
-        :param ip: The IP address to disassociate.
+        Args:
+            ip: The IP address to disassociate.
 
-        :returns: A new Host object fetched from the API after updating the IP address.
+        Returns:
+            A new Host object fetched from the API after updating the IP address.
         """
         if isinstance(ip, str):
             ip = NetworkOrIP.parse_or_raise(ip, mode="ip")
@@ -3263,10 +3584,15 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_community_or_raise(self, name: str, ip: IPAddress | None) -> Community:
         """Get a community by name, and raise if not found.
 
-        :param name: The name of the community to search for.
-        :param ip: The IP address associated with the community.
-        :returns: The community if found.
-        :raises EntityNotFound: If the community is not found.
+        Args:
+            name: The name of the community to search for.
+            ip: The IP address associated with the community.
+
+        Returns:
+            The community if found.
+
+        Raises:
+            EntityNotFound: If the community is not found.
         """
         community = self.get_community(name, ip)
         if not community:
@@ -3279,9 +3605,12 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_community(self, name: str, ip: IPAddress | None = None) -> Community | None:
         """Get a community by name.
 
-        :param name: The name of the community to search for.
-        :param ip: The IP address associated with the community.
-        :returns: The community if found, None otherwise.
+        Args:
+            name: The name of the community to search for.
+            ip: The IP address associated with the community.
+
+        Returns:
+            The community if found, None otherwise.
         """
         for community in self.communities:
             if community.community.name != name:
@@ -3296,7 +3625,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         Does not return networks that are not registered in MREG.
 
-        :returns: A dictionary of networks and the associated IP addresses.
+        Returns:
+            A dictionary of networks and the associated IP addresses.
         """
         ret_dict: dict[Network, list[IPAddress]] = {}
 
@@ -3323,7 +3653,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         (ie, beyond simply the VLAN ID), use self.networks() and parse the VLAN from the network
         manually.
 
-        :returns: A dictionary of VLAN ID and the associated IP addresses.
+        Returns:
+            A dictionary of VLAN ID and the associated IP addresses.
         """
         ret_dict: dict[int, list[IPAddress]] = {}
 
@@ -3341,9 +3672,10 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     ) -> Zone | Delegation | None:
         """Return the zone for the host.
 
-        :param accept_delegation: If True, accept delegation and return a Delegation object if the
+        Args:
+            accept_delegation: If True, accept delegation and return a Delegation object if the
                 zone of the host is delegated. Otherwise raise EntityOwnershipMismatch.
-        :param validate_zone_resolution: If True, validate that the resolved zone matches the
+            validate_zone_resolution: If True, validate that the resolved zone matches the
                 expected zone ID. Fail with ValidationFailure if it does not.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
@@ -3386,7 +3718,8 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         If you wish to report more details about what VLANs the IP addresses are on, use
         self.vlans() or self.networks().
 
-        :returns: True if all IP addresses are on the same VLAN, False otherwise.
+        Returns:
+            True if all IP addresses are on the same VLAN, False otherwise.
         """
         vlans = self.vlans()
         if not vlans:
@@ -3404,9 +3737,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def get_hostgroups(self, traverse: bool = False) -> list[HostGroup]:
         """Return all hostgroups for the host.
 
-        :param traverse: If True, traverse the parent groups and include them in the list.
+        Args:
+            traverse: If True, traverse the parent groups and include them in the list.
 
-        :returns: A list of HostGroup objects sorted by name.
+        Returns:
+            A list of HostGroup objects sorted by name.
         """
         groups: list[HostGroup] = []
         direct = HostGroup.get_list_by_field("hosts", self.id)
@@ -3428,19 +3763,22 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     def has_mx_with_priority(self, mx_arg: str, priority: int) -> MX | None:
         """Check if the host has an MX record.
 
-        :param mx: The MX record to check for.
-        :param priority: The priority of the MX record.
+        Args:
+            mx_arg: The MX record to check for.
+            priority: The priority of the MX record.
 
-        :returns: True if the host has the MX record, False otherwise.
+        Returns:
+            True if the host has the MX record, False otherwise.
         """
         return next((mx for mx in self.mxs if mx.has_mx_with_priority(mx_arg, priority)), None)
 
     def add_mx(self, mx: str, priority: int) -> None:
         """Add an MX record to the host.
 
-        :param mx: The MX record to add.
-        :param priority: The priority of the MX record.
-        :param refetch: Whether to refetch the host after adding the MX record. Defaults to True.
+        Args:
+            mx: The MX record to add.
+            priority: The priority of the MX record.
+            refetch: Whether to refetch the host after adding the MX record. Defaults to True.
         """
         if self.has_mx_with_priority(mx, priority):
             raise EntityAlreadyExists(f"{self} already has that MX defined.")
@@ -3503,9 +3841,11 @@ class HostList(FrozenModel):
     def get(cls, params: QueryParams | None = None) -> HostList:
         """Get a list of hosts.
 
-        :param params: Optional parameters to pass to the API.
+        Args:
+            params: Optional parameters to pass to the API.
 
-        :returns: A HostList object.
+        Returns:
+            A HostList object.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3522,9 +3862,11 @@ class HostList(FrozenModel):
     def get_by_ip(cls, ip: IP_AddressT) -> HostList:
         """Get a list of hosts by IP address.
 
-        :param ip: The IP address to search for.
+        Args:
+            ip: The IP address to search for.
 
-        :returns: A HostList object.
+        Returns:
+            A HostList object.
         """
         return cls.get(params={"ipaddresses__ipaddress": str(ip), "ordering": "name"})
 
@@ -3623,27 +3965,33 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def set_description(self, description: str) -> Self:
         """Set the description for the hostgroup.
 
-        :param description: The description to set.
+        Args:
+            description: The description to set.
 
-        :returns: A new HostGroup object fetched from the API with the updated description.
+        Returns:
+            A new HostGroup object fetched from the API with the updated description.
         """
         return self.patch(fields={"description": description})
 
     def has_group(self, groupname: str) -> bool:
         """Check if the hostgroup has the given group.
 
-        :param groupname: The group to check for.
+        Args:
+            groupname: The group to check for.
 
-        :returns: True if the hostgroup has the group, False otherwise.
+        Returns:
+            True if the hostgroup has the group, False otherwise.
         """
         return groupname in self.groups
 
     def add_group(self, groupname: str) -> Self:
         """Add a group to the hostgroup.
 
-        :param group: The group to add.
+        Args:
+            groupname: The group to add.
 
-        :returns: A new HostGroup object fetched from the API with the updated groups.
+        Returns:
+            A new HostGroup object fetched from the API with the updated groups.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3658,9 +4006,11 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def remove_group(self, groupname: str) -> Self:
         """Remove a group from the hostgroup.
 
-        :param group: The group to remove.
+        Args:
+            groupname: The group to remove.
 
-        :returns: A new HostGroup object fetched from the API with the updated groups.
+        Returns:
+            A new HostGroup object fetched from the API with the updated groups.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3677,18 +4027,22 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def has_host(self, hostname: str) -> bool:
         """Check if the hostgroup has the given host.
 
-        :param hostname: The host to check for.
+        Args:
+            hostname: The host to check for.
 
-        :returns: True if the hostgroup has the host, False otherwise.
+        Returns:
+            True if the hostgroup has the host, False otherwise.
         """
         return hostname in self.hosts
 
     def add_host(self, hostname: str) -> Self:
         """Add a host to the hostgroup.
 
-        :param hostname: The host to add.
+        Args:
+            hostname: The host to add.
 
-        :returns: A new HostGroup object fetched from the API with the updated hosts.
+        Returns:
+            A new HostGroup object fetched from the API with the updated hosts.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3703,9 +4057,11 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def remove_host(self, hostname: str) -> Self:
         """Remove a host from the hostgroup.
 
-        :param hostname: The host to remove.
+        Args:
+            hostname: The host to remove.
 
-        :returns: A new HostGroup object fetched from the API with the updated hosts.
+        Returns:
+            A new HostGroup object fetched from the API with the updated hosts.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3722,18 +4078,22 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def has_owner(self, ownername: str) -> bool:
         """Check if the hostgroup has the given owner.
 
-        :param ownername: The owner to check for.
+        Args:
+            ownername: The owner to check for.
 
-        :returns: True if the hostgroup has the owner, False otherwise.
+        Returns:
+            True if the hostgroup has the owner, False otherwise.
         """
         return ownername in self.owners
 
     def add_owner(self, ownername: str) -> Self:
         """Add an owner to the hostgroup.
 
-        :param ownername: The owner to add.
+        Args:
+            ownername: The owner to add.
 
-        :returns: A new HostGroup object fetched from the API with the updated owners.
+        Returns:
+            A new HostGroup object fetched from the API with the updated owners.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3750,9 +4110,11 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
     def remove_owner(self, ownername: str) -> Self:
         """Remove an owner from the hostgroup.
 
-        :param ownername: The owner to remove.
+        Args:
+            ownername: The owner to remove.
 
-        :returns: A new HostGroup object fetched from the API with the updated owners.
+        Returns:
+            A new HostGroup object fetched from the API with the updated owners.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3856,10 +4218,15 @@ class ServerVersion(BaseModel):
     def fetch(cls, *, ignore_errors: bool = True) -> ServerVersion:
         """Fetch the server version from the endpoint.
 
-        :param ignore_errors: Whether to ignore errors.
-        :raises GetError: If the response data is invalid and ignore_errors is False.
-        :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
-        :returns: An instance of ServerVersion with the fetched data.
+        Args:
+            ignore_errors: Whether to ignore errors.
+
+        Raises:
+            GetError: If the response data is invalid and ignore_errors is False.
+            httpx.RequestError: If the HTTP request fails and ignore_errors is False.
+
+        Returns:
+            An instance of ServerVersion with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3893,10 +4260,15 @@ class ServerLibraries(BaseModel):
     def fetch(cls, *, ignore_errors: bool = True) -> ServerLibraries:
         """Fetch the server libraries from the endpoint.
 
-        :param ignore_errors: Whether to ignore errors.
-        :raises GetError: If the response data is invalid and ignore_errors is False.
-        :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
-        :returns: An instance of ServerLibraries with the fetched data.
+        Args:
+            ignore_errors: Whether to ignore errors.
+
+        Raises:
+            GetError: If the response data is invalid and ignore_errors is False.
+            httpx.RequestError: If the HTTP request fails and ignore_errors is False.
+
+        Returns:
+            An instance of ServerLibraries with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3943,13 +4315,17 @@ class UserInfo(BaseModel):
     def fetch(cls, *, ignore_errors: bool = True, user: str | None = None) -> UserInfo:
         """Fetch the user information from the endpoint.
 
-        :param ignore_errors: Whether to ignore errors.
-        :param user: The username to fetch information for. If None, fetch information for the
-                              current user.
+        Args:
+            ignore_errors: Whether to ignore errors.
+            user: The username to fetch information for. If None, fetch information for the
+                current user.
 
-        :raises GetError: If the response data is invalid and ignore_errors is False.
-        :raises httpx.RequestError: If the HTTP request fails and ignore_errors is False.
-        :returns: An instance of UserInfo with the fetched data.
+        Raises:
+            GetError: If the response data is invalid and ignore_errors is False.
+            httpx.RequestError: If the HTTP request fails and ignore_errors is False.
+
+        Returns:
+            An instance of UserInfo with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -3994,10 +4370,15 @@ class LDAPHealth(BaseModel, APIMixin):
     def fetch(cls, *, ignore_errors: bool = True) -> Self:
         """Fetch the LDAP status from the endpoint.
 
-        :param ignore_errors: Ignore non-503 errors. 503 means LDAP is down,
-            and should not be treated as an error in the traditional sense.
-        :raises GetError: If the response code is not 200 or 503.
-        :returns: An instance of LDAPStatus.
+        Args:
+            ignore_errors: Ignore non-503 errors. 503 means LDAP is down,
+                and should not be treated as an error in the traditional sense.
+
+        Raises:
+            GetError: If the response code is not 200 or 503.
+
+        Returns:
+            An instance of LDAPStatus.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -4034,8 +4415,11 @@ class HeartbeatHealth(BaseModel, APIMixin):
     def fetch(cls, *, ignore_errors: bool = True) -> Self:
         """Fetch the heartbeat status from the endpoint.
 
-        :param ignore_errors: Ignore HTTP errors and return dummy object with negative uptime.
-        :returns: An instance of HeartbeatHealth with the fetched data.
+        Args:
+            ignore_errors: Ignore HTTP errors and return dummy object with negative uptime.
+
+        Returns:
+            An instance of HeartbeatHealth with the fetched data.
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
@@ -4059,7 +4443,8 @@ class HealthInfo(BaseModel):
     def fetch(cls) -> HealthInfo:
         """Fetch the health information from the endpoint.
 
-        :returns: An instance of HealthInfo with the fetched data.
+        Returns:
+            An instance of HealthInfo with the fetched data.
         """
         return cls(
             heartbeat=HeartbeatHealth.fetch(),
