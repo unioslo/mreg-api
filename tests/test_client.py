@@ -10,6 +10,7 @@ from pytest_httpserver import HTTPServer
 from werkzeug import Response
 
 from mreg_api import models
+from mreg_api.__about__ import __version__
 from mreg_api.client import MregClient
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
@@ -30,6 +31,21 @@ def test_client_reset_instance() -> None:
     MregClient.reset_instance()
     client2 = MregClient()
     assert client1 is not client2
+
+
+def test_client_user_agent() -> None:
+    """Test MregClient `user_agent` parameter."""
+    # No user agent specified - should use default
+    expect = f"mreg-api-{__version__}"
+    client = MregClient(url="http://example.com", domain="example.com")
+    assert client.session.headers["User-Agent"] == expect
+
+    MregClient.reset_instance()
+
+    # Custom user agent specified
+    custom_agent = "my-custom-agent/1.0"
+    client = MregClient(url="http://example.com", domain="example.com", user_agent=custom_agent)
+    assert client.session.headers["User-Agent"] == custom_agent
 
 
 def test_client_caching(httpserver: HTTPServer) -> None:

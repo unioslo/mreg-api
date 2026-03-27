@@ -269,10 +269,13 @@ class MregClient(metaclass=SingletonMeta):
         page_size: int | None = None,
         history_size: int | None = 100,
         event_log_size: int | None = 100,
+        user_agent: str | None = None,
     ) -> None:
         """Initialize the client (only once for singleton)."""
+        if not user_agent:
+            user_agent = f"mreg-api-{__version__}"
         self.session: httpx.Client = httpx.Client(
-            headers={"User-Agent": f"mreg-api-{__version__}"},
+            headers={"User-Agent": user_agent},
             follow_redirects=follow_redirects,
             timeout=timeout,
         )
