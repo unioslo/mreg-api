@@ -28,7 +28,6 @@ class HistoryResource(str, Enum):
     """
 
     Host = "hosts"
-    Permissions = "permissions"
     Group = "groups"
     HostPolicy_Role = "roles"
     HostPolicy_Atom = "atoms"
