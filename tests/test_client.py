@@ -12,6 +12,7 @@ from werkzeug import Response
 from mreg_api import models
 from mreg_api.__about__ import __version__
 from mreg_api.client import MregClient
+from mreg_api.client import strip_none
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
@@ -324,8 +325,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
     ],
 )
 def test_strip_none(inp: dict[str, Any], expect: dict[str, Any]) -> None:
-    client = MregClient()
-    assert client._strip_none(inp) == expect  # pyright: ignore[reportPrivateUsage]
+    assert strip_none(inp) == expect
 
 
 def test_client_get_list_paginated(httpserver: HTTPServer, client: MregClient) -> None:

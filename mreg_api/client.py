@@ -187,6 +187,103 @@ def invalidate_cache(
     return wrapper
 
 
+def strip_none(data: JsonMapping) -> JsonMapping:
+    """Recursively strip None values from a dictionary."""
+    new: dict[str, Json] = {}
+    for key, value in data.items():
+        if value is not None:
+            if isinstance(value, dict):
+                v = strip_none(value)
+                if v:
+                    new[key] = v
+            else:
+                new[key] = value
+    return new
+
+
+def check_response(response: Response, operation_type: HTTPMethod, url: str) -> None:
+    """Check the result of a request and raise on error."""
+    if not response.is_success:
+        if response.status_code == 404:
+            endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
+            msg = (
+                f"Endpoint not found: '{endpoint}'\n"
+                f"This may be because your library version ({__version__}) is:\n"
+                f"  - Too old: The endpoint has been removed from the server\n"
+                f"  - Too new: You're using a beta feature not yet available on the server"
+            )
+        else:
+            msg = response.text
+        cls = determine_http_error_class(operation_type)
+        raise cls(msg, response)
+
+
+class PaginatedResponse(BaseModel):
+    """Paginated response data from the API."""
+
+    count: int
+    next: str | None  # noqa: A003
+    previous: str | None
+    results: list[Json]
+
+    @field_validator("count", mode="before")
+    @classmethod
+    def _none_count_is_0(cls, v: Any) -> Any:
+        """Ensure `count` is never `None`."""
+        # Django count doesn't seem to be guaranteed to be an integer.
+        # https://github.com/django/django/blob/bcbc4b9b8a4a47c8e045b060a9860a5c038192de/django/core/paginator.py#L105-L111
+        # Theoretically any callable can be passed to the "count" attribute of the paginator.
+        # Ensures here that None (and any falsey value) is treated as 0.
+        return v or 0
+
+    @classmethod
+    def from_response(cls, response: Response) -> PaginatedResponse:
+        """Create a PaginatedResponse from a Response."""
+        return cls.model_validate_json(response.text)
+
+
+ListResponse = TypeAdapter(list[Json])
+"""JSON list (array) response adapter."""
+
+
+# TODO: Provide better validation error introspection
+def validate_list_response(response: Response) -> list[Json]:
+    """Parse and validate that a response contains a JSON array.
+
+    Args:
+        response: The response to validate.
+
+    Raises:
+        MregValidationError: If the response does not contain a valid JSON array.
+
+    Returns:
+        Parsed response data as a list of Python objects.
+    """
+    try:
+        return ListResponse.validate_json(response.text)
+    # NOTE: ValueError catches custom Pydantic errors too
+    except ValidationError as e:
+        raise MregValidationError.from_pydantic(e, "JSON list") from e
+
+
+def validate_paginated_response(response: Response) -> PaginatedResponse:
+    """Validate and parse that a response contains paginated JSON data.
+
+    Args:
+        response: The response to validate.
+
+    Raises:
+        MregValidationError: If the response does not contain valid paginated JSON.
+
+    Returns:
+        Parsed response data as a PaginatedResponse object.
+    """
+    try:
+        return PaginatedResponse.from_response(response)
+    except ValidationError as e:
+        raise MregValidationError.from_pydantic(e, "paginated JSON") from e
+
+
 class MregClient(metaclass=SingletonMeta):
     """Client for interacting with MREG API.
 
@@ -588,35 +685,6 @@ class MregClient(metaclass=SingletonMeta):
         except httpx.HTTPStatusError as e:
             raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
 
-    def _strip_none(self, data: Mapping[str, Any]) -> dict[str, Any]:
-        """Recursively strip None values from a dictionary."""
-        new: dict[str, Any] = {}
-        for key, value in data.items():
-            if value is not None:
-                if isinstance(value, dict):
-                    v = self._strip_none(value)  # pyright: ignore[reportUnknownArgumentType]
-                    if v:
-                        new[key] = v
-                else:
-                    new[key] = value
-        return new
-
-    def _check_response(self, response: Response, operation_type: HTTPMethod, url: str) -> None:
-        """Check the result of a request and raise on error."""
-        if not response.is_success:
-            if response.status_code == 404:
-                endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
-                msg = (
-                    f"Endpoint not found: '{endpoint}'\n"
-                    f"This may be because your library version ({__version__}) is:\n"
-                    f"  - Too old: The endpoint has been removed from the server\n"
-                    f"  - Too new: You're using a beta feature not yet available on the server"
-                )
-            else:
-                msg = response.text
-            cls = determine_http_error_class(operation_type)
-            raise cls(msg, response)
-
     def request(
         self,
         method: HTTPMethod,
@@ -663,7 +731,7 @@ class MregClient(metaclass=SingletonMeta):
 
         # Strip None values from json body (except for PATCH)
         if json is not None and method != "PATCH" and isinstance(json, Mapping):
-            json = self._strip_none(json) or None
+            json = strip_none(json) or None
 
         # Construct the request object
         request = self.session.build_request(method=method, url=url, params=params, json=json)
@@ -696,7 +764,7 @@ class MregClient(metaclass=SingletonMeta):
         if result.status_code == 404 and ok404:
             return None
 
-        self._check_response(result, method, url)
+        check_response(result, method, url)
         return result
 
     def _make_cache_key(self, path: str, params: QueryParams | None, ok404: bool) -> str:
@@ -1138,69 +1206,3 @@ class MregClient(metaclass=SingletonMeta):
         else:
             resp = self.get(path, params=params)
             return adapter.validate_json(resp.text)
-
-
-class PaginatedResponse(BaseModel):
-    """Paginated response data from the API."""
-
-    count: int
-    next: str | None  # noqa: A003
-    previous: str | None
-    results: list[Json]
-
-    @field_validator("count", mode="before")
-    @classmethod
-    def _none_count_is_0(cls, v: Any) -> Any:
-        """Ensure `count` is never `None`."""
-        # Django count doesn't seem to be guaranteed to be an integer.
-        # https://github.com/django/django/blob/bcbc4b9b8a4a47c8e045b060a9860a5c038192de/django/core/paginator.py#L105-L111
-        # Theoretically any callable can be passed to the "count" attribute of the paginator.
-        # Ensures here that None (and any falsey value) is treated as 0.
-        return v or 0
-
-    @classmethod
-    def from_response(cls, response: Response) -> PaginatedResponse:
-        """Create a PaginatedResponse from a Response."""
-        return cls.model_validate_json(response.text)
-
-
-ListResponse = TypeAdapter(list[Json])
-"""JSON list (array) response adapter."""
-
-
-# TODO: Provide better validation error introspection
-def validate_list_response(response: Response) -> list[Json]:
-    """Parse and validate that a response contains a JSON array.
-
-    Args:
-        response: The response to validate.
-
-    Raises:
-        MregValidationError: If the response does not contain a valid JSON array.
-
-    Returns:
-        Parsed response data as a list of Python objects.
-    """
-    try:
-        return ListResponse.validate_json(response.text)
-    # NOTE: ValueError catches custom Pydantic errors too
-    except ValidationError as e:
-        raise MregValidationError.from_pydantic(e, "JSON list") from e
-
-
-def validate_paginated_response(response: Response) -> PaginatedResponse:
-    """Validate and parse that a response contains paginated JSON data.
-
-    Args:
-        response: The response to validate.
-
-    Raises:
-        MregValidationError: If the response does not contain valid paginated JSON.
-
-    Returns:
-        Parsed response data as a PaginatedResponse object.
-    """
-    try:
-        return PaginatedResponse.from_response(response)
-    except ValidationError as e:
-        raise MregValidationError.from_pydantic(e, "paginated JSON") from e
