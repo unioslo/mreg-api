@@ -153,7 +153,7 @@ class RequestRecord(NamedTuple):
     response: Response
     status: int
     data: JsonMapping | None
-    json: JsonMapping | None
+    json: Json | None
 
     @property
     def path(self) -> str:
@@ -488,7 +488,7 @@ class MregClient(metaclass=SingletonMeta):
         self,
         response: Response,
         data: JsonMapping | None = None,
-        json: JsonMapping | None = None,
+        json: Json | None = None,
     ) -> None:
         """Add a request/response pair to the history log."""
         self.history.append(
@@ -623,7 +623,8 @@ class MregClient(metaclass=SingletonMeta):
         path: str,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **data: Any,
+        *,
+        json: Json | None = None,
     ) -> Response | None:
         """Make an HTTP request to the MREG API.
 
@@ -632,7 +633,7 @@ class MregClient(metaclass=SingletonMeta):
             path: API path (relative to base URL)
             params: Query parameters
             ok404: Whether to return None on 404 instead of raising
-            **data: Request body data
+            json: Request body data as a JSON-serializable value
 
         Returns:
             Response object or None if ok404=True and status is 404
@@ -657,15 +658,15 @@ class MregClient(metaclass=SingletonMeta):
         if method != "GET" and params:
             logger.debug("Params: %s", params)
 
-        if data:
-            logger.debug("Data: %s", data)
+        if json is not None:
+            logger.debug("Json: %s", json)
 
-        # Strip None values from data (except for PATCH)
-        if data and method != "PATCH":
-            data = self._strip_none(data)
+        # Strip None values from json body (except for PATCH)
+        if json is not None and method != "PATCH" and isinstance(json, Mapping):
+            json = self._strip_none(json) or None
 
         # Construct the request object
-        request = self.session.build_request(method=method, url=url, params=params, json=data or None)
+        request = self.session.build_request(method=method, url=url, params=params, json=json)
         logger.info("Request: %s %s [%s]", method, request.url, self.get_correlation_id())
 
         # Update context variables for error reporting
@@ -674,7 +675,7 @@ class MregClient(metaclass=SingletonMeta):
 
         result = self.session.send(request)
         # Log response in response log
-        self._add_to_history(result, json=data)
+        self._add_to_history(result, json=json)
 
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:
@@ -718,18 +719,22 @@ class MregClient(metaclass=SingletonMeta):
         return "?".join(parts)
 
     @overload
-    def get(self, path: str, params: QueryParams | None, ok404: Literal[True]) -> Response | None: ...
+    def get(
+        self, path: str, *, params: QueryParams | None = ..., ok404: Literal[True]
+    ) -> Response | None: ...
 
     @overload
-    def get(self, path: str, params: QueryParams | None, ok404: Literal[False]) -> Response: ...
+    def get(self, path: str, *, params: QueryParams | None = ..., ok404: Literal[False]) -> Response: ...
 
     @overload
-    def get(self, path: str, params: QueryParams | None = ..., *, ok404: bool) -> Response | None: ...
+    def get(self, path: str, *, params: QueryParams | None = ..., ok404: bool) -> Response | None: ...
 
     @overload
-    def get(self, path: str, params: QueryParams | None = ...) -> Response: ...
+    def get(self, path: str, *, params: QueryParams | None = None) -> Response: ...
 
-    def get(self, path: str, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
+    def get(
+        self, path: str, *, params: QueryParams | None = None, ok404: bool = False
+    ) -> Response | None:
         """Make a standard get request."""
         if self.cache.is_enabled:
             cache_key = self._make_cache_key(path, params, ok404)
@@ -739,12 +744,14 @@ class MregClient(metaclass=SingletonMeta):
             except CacheMiss:
                 logger.debug("Cache miss for key: %s", cache_key)
 
-            ret = self._do_get(path, params, ok404)
+            ret = self._do_get(path, params=params, ok404=ok404)
             self.cache.set(cache_key, ret)
             return ret
-        return self._do_get(path, params, ok404)
+        return self._do_get(path, params=params, ok404=ok404)
 
-    def _do_get(self, path: str, params: QueryParams | None, ok404: bool = False) -> Response | None:
+    def _do_get(
+        self, path: str, *, params: QueryParams | None = None, ok404: bool = False
+    ) -> Response | None:
         try:
             return self.request("GET", path, params=params, ok404=ok404)
         except GetError as e:
@@ -754,33 +761,46 @@ class MregClient(metaclass=SingletonMeta):
 
     @overload
     def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
+        self,
+        path: str,
+        *,
+        json: Json | None = ...,
+        params: QueryParams | None = ...,
+        ok404: Literal[True],
     ) -> Response | None: ...
 
     @overload
     def post(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
+        self,
+        path: str,
+        *,
+        json: Json | None = ...,
+        params: QueryParams | None = ...,
+        ok404: Literal[False],
     ) -> Response: ...
 
     @overload
     def post(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+        self, path: str, *, json: Json | None = ..., params: QueryParams | None = ..., ok404: bool
+    ) -> Response | None: ...
 
     @overload
-    def post(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
+    def post(
+        self, path: str, *, json: Json | None = None, params: QueryParams | None = None
+    ) -> Response: ...
 
     @invalidate_cache
     def post(
         self,
         path: str,
+        *,
+        json: Json | None = None,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **kwargs: Json,
     ) -> Response | None:
         """Make a POST request."""
         try:
-            return self.request("POST", path, params, ok404=ok404, **kwargs)
+            return self.request("POST", path, params=params, ok404=ok404, json=json)
         except PostError as e:
             raise e
         except APIError as e:
@@ -788,33 +808,46 @@ class MregClient(metaclass=SingletonMeta):
 
     @overload
     def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
+        self,
+        path: str,
+        *,
+        json: Json | None = ...,
+        params: QueryParams | None = ...,
+        ok404: Literal[True],
     ) -> Response | None: ...
 
     @overload
     def patch(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
+        self,
+        path: str,
+        *,
+        json: Json | None = ...,
+        params: QueryParams | None = ...,
+        ok404: Literal[False],
     ) -> Response: ...
 
     @overload
     def patch(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+        self, path: str, *, json: Json | None = ..., params: QueryParams | None = ..., ok404: bool
+    ) -> Response | None: ...
 
     @overload
-    def patch(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
+    def patch(
+        self, path: str, *, json: Json | None = None, params: QueryParams | None = None
+    ) -> Response: ...
 
     @invalidate_cache
     def patch(
         self,
         path: str,
+        *,
+        json: Json | None = None,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **kwargs: Json,
     ) -> Response | None:
         """Make a PATCH request."""
         try:
-            return self.request("PATCH", path, params, ok404=ok404, **kwargs)
+            return self.request("PATCH", path, params=params, ok404=ok404, json=json)
         except PatchError as e:
             raise e
         except APIError as e:
@@ -822,33 +855,46 @@ class MregClient(metaclass=SingletonMeta):
 
     @overload
     def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[True], **kwargs: Json
+        self,
+        path: str,
+        *,
+        json: Json | None = ...,
+        params: QueryParams | None = ...,
+        ok404: Literal[True],
     ) -> Response | None: ...
 
     @overload
     def delete(
-        self, path: str, params: QueryParams | None, ok404: Literal[False], **kwargs: Json
+        self,
+        path: str,
+        *,
+        json: Json | None = ...,
+        params: QueryParams | None = ...,
+        ok404: Literal[False],
     ) -> Response: ...
 
     @overload
     def delete(
-        self, path: str, params: QueryParams | None = ..., *, ok404: bool, **kwargs: Json
-    ) -> Response: ...
+        self, path: str, *, json: Json | None = ..., params: QueryParams | None = ..., ok404: bool
+    ) -> Response | None: ...
 
     @overload
-    def delete(self, path: str, params: QueryParams | None = ..., **kwargs: Json) -> Response: ...
+    def delete(
+        self, path: str, *, json: Json | None = None, params: QueryParams | None = None
+    ) -> Response: ...
 
     @invalidate_cache
     def delete(
         self,
         path: str,
+        *,
+        json: Json | None = None,
         params: QueryParams | None = None,
         ok404: bool = False,
-        **kwargs: Json,
     ) -> Response | None:
         """Make a DELETE request."""
         try:
-            return self.request("DELETE", path, params, ok404=ok404, **kwargs)
+            return self.request("DELETE", path, params=params, ok404=ok404, json=json)
         except DeleteError as e:
             raise e
         except APIError as e:
@@ -949,7 +995,7 @@ class MregClient(metaclass=SingletonMeta):
 
     def get_first(self, path: str) -> JsonMapping | None:
         """Get the first item from a list endpoint."""
-        response = self.get(path, {"page_size": 1})
+        response = self.get(path, params={"page_size": 1})
 
         # Non-paginated results, return them directly
         if "count" not in response.text:
@@ -1032,7 +1078,7 @@ class MregClient(metaclass=SingletonMeta):
         Returns:
             A list of dictionaries or a dictionary if expect_one_result is True.
         """
-        response = self.get(path, params)
+        response = self.get(path, params=params)
 
         # Non-paginated results, return them directly
         if "count" not in response.text:

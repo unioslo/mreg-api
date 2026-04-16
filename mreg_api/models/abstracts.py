@@ -526,7 +526,9 @@ class APIMixin(ABC):
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
         return obj
 
-    def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:
+    def patch(
+        self, data: JsonMapping, *, params: QueryParams | None = None, validate: bool = False
+    ) -> Self:
         """Patch the object with the given values.
 
         Note:
@@ -535,7 +537,8 @@ class APIMixin(ABC):
                are). Odds are you want to pass an empty string instead.
 
         Args:
-            fields: The values to patch.
+            data: The values to patch.
+            params: Optional query parameters.
             validate: Whether to validate the patched object.
 
         Returns:
@@ -543,13 +546,13 @@ class APIMixin(ABC):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), **fields)
+        MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), json=data, params=params)
         new_object = self.refetch()
 
         if validate:
             # __init_subclass__ guarantees we inherit from BaseModel
             # but we can't signal this to the type checker, so we cast here.
-            validate_patched_model(cast(BaseModel, new_object), fields)  # pyright: ignore[reportInvalidCast] # we know what we are doing here (...?!)
+            validate_patched_model(cast(BaseModel, new_object), data)  # pyright: ignore[reportInvalidCast] # we know what we are doing here (...?!)
 
         return new_object
 
@@ -569,7 +572,7 @@ class APIMixin(ABC):
         return False
 
     @classmethod
-    def create(cls, params: JsonMapping, fetch_after_create: bool = True) -> Self | None:
+    def create(cls, data: JsonMapping, *, fetch_after_create: bool = True) -> Self | None:
         """Create the object.
 
         Note that several endpoints do not support location headers for created objects,
@@ -577,7 +580,7 @@ class APIMixin(ABC):
         if the object was created successfully...
 
         Args:
-            params: The parameters to create the object with.
+            data: The data to create the object with.
             fetch_after_create: Whether to fetch the object after creation.
 
         Raises:
@@ -591,7 +594,7 @@ class APIMixin(ABC):
 
         client = MregClient()
 
-        response = client.post(cls.endpoint(), params=None, ok404=False, **params)
+        response = client.post(cls.endpoint(), json=data)
 
         if response and response.is_success:
             # NOTE: Headers.__getitem__ returns a str, while
@@ -607,6 +610,6 @@ class APIMixin(ABC):
             # raise APIError("No location header in response.")
 
         else:
-            raise PostError(f"Failed to create {cls} with {params} @ {cls.endpoint()}.")
+            raise PostError(f"Failed to create {cls} with {data} @ {cls.endpoint()}.")
 
         return None

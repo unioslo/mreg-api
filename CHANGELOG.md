@@ -11,6 +11,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `MregClient(user_agent=)` parameter for setting a custom user agent.
 
+### Changed
+
+- **Breaking:** `MregClient.{get,post,patch,delete}()`:
+  - All arguments apart from `path` are now keyword-only.
+  - Replace parameter `**kwargs` with an explicit `json: Json | None = None` parameter.
+- **Breaking:** `APIMixin.patch()`:
+  - Renamed parameter `fields` to `data` (type changed from `Mapping[str, Any]` to `Json`)
+  - Added parameter `params: QueryParams | None = None`
+  - Made parameter `validate` keyword-only.
+- **Breaking:** `APIMixin.create()`:
+  - Renamed parameter `params` to `data` (type unchanged)
+  - Made parameter `fetch_after_create` keyword-only.
+- **Breaking:** `Community.patch()` (Mirrors `APIMixin.patch`):
+  - Renamed parameter `fields` to `data` (type changed from `Mapping[str, Any]` to `Json`)
+  - Added parameter `params: QueryParams | None = None`
+  - Made parameter `validate` keyword-only.
+
 ## [0.1.5](https://github.com/unioslo/mreg-api/releases/tag/0.1.5) - 2026-03-26
 
 ### Added
