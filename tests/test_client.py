@@ -5,6 +5,8 @@ import inspect
 from typing import Any
 
 import pytest
+from httpx import Request as HttpxRequest
+from httpx import Response as HttpxResponse
 from inline_snapshot import snapshot
 from pytest_httpserver import HTTPServer
 from werkzeug import Response
@@ -12,13 +14,18 @@ from werkzeug import Response
 from mreg_api import models
 from mreg_api.__about__ import __version__
 from mreg_api.client import MregClient
+from mreg_api.client import check_response
 from mreg_api.client import strip_none
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import PatchError
+from mreg_api.exceptions import PostError
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import hostname_domain
 from mreg_api.models.models import Host
+from mreg_api.types import HTTPMethod
 
 
 def test_client_singleton() -> None:
@@ -823,3 +830,69 @@ def test_exported_abcs() -> None:
         if inspect.isabstract(obj):
             abcs.append(name)
     assert abcs == snapshot(["DhcpHost", "HostPolicy"])
+
+
+@pytest.mark.parametrize(
+    "method,expected_exc",
+    [
+        ("GET", GetError),
+        ("POST", PostError),
+        ("PATCH", PatchError),
+        ("DELETE", DeleteError),
+    ],
+)
+def test_request_exception_handling(
+    httpserver: HTTPServer, client: MregClient, method: HTTPMethod, expected_exc: type[Exception]
+) -> None:
+    """Test that check_response raises the appropriate exception type on non-2xx response."""
+    httpserver.expect_oneshot_request("/test_check_response").respond_with_response(Response(status=400))
+    with pytest.raises(expected_exc):
+        _ = client.request(method, "/test_check_response")
+
+
+@pytest.mark.parametrize(
+    "method",
+    ["GET", "POST", "PATCH", "DELETE"],
+)
+@pytest.mark.parametrize(
+    "status_code",
+    [
+        200,
+        201,
+        202,
+        204,
+    ],
+)
+def test_check_response_2xx(method: HTTPMethod, status_code: int) -> None:
+    """Test that check_response does not raise on non-2xx response."""
+    # Valid 2xx response should not raise
+    response = HttpxResponse(
+        status_code=status_code, request=HttpxRequest(method=method, url="http://test")
+    )
+    check_response(response, method, str(response.request.url))
+
+
+@pytest.mark.parametrize(
+    "method, expected_exc",
+    [
+        ("GET", GetError),
+        ("POST", PostError),
+        ("PATCH", PatchError),
+        ("DELETE", DeleteError),
+    ],
+)
+@pytest.mark.parametrize(
+    "status_code",
+    [400, 403, 404, 409, 500],
+)
+def test_check_response_error(
+    method: HTTPMethod, expected_exc: type[Exception], status_code: int
+) -> None:
+    """Test that check_response raises the correct error on non-2xx response."""
+    # Valid 2xx response should not raise
+    response = HttpxResponse(
+        status_code=status_code, request=HttpxRequest(method=method, url="http://test")
+    )
+    with pytest.raises(expected_exc) as exc_info:
+        check_response(response, method, str(response.request.url))
+    assert exc_info.type is expected_exc
