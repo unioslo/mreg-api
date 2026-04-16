@@ -14,6 +14,7 @@ from pydantic import field_validator
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 from mreg_api.types import parse_json_mapping_string
 
@@ -62,7 +63,7 @@ class HistoryItem(BaseModel):
     mid: int = Field(alias="model_id")  # model_ is an internal pydantic namespace.
     model: str
     action: str
-    data: dict[str, Any]
+    data: JsonMapping
 
     @field_validator("data", mode="before")
     def parse_json_data(cls, v: Any) -> Any:

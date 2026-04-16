@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from abc import ABC
 from abc import abstractmethod
-from collections.abc import Mapping
 from datetime import datetime
 from typing import Any
 from typing import Callable
@@ -23,6 +22,7 @@ from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
+from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 
@@ -60,7 +60,7 @@ def get_model_aliases(model: BaseModel) -> dict[str, str]:
     return fields
 
 
-def validate_patched_model(model: BaseModel, fields: Mapping[str, Any]) -> None:
+def validate_patched_model(model: BaseModel, fields: JsonMapping) -> None:
     """Validate that model fields were patched correctly."""
     aliases = get_model_aliases(model)
 
@@ -89,21 +89,21 @@ def validate_patched_model(model: BaseModel, fields: Mapping[str, Any]) -> None:
             )
 
 
-def _validate_lists(new: list[Any], old: list[Any]) -> bool:
+def _validate_lists(new: list[Json], old: list[Json]) -> bool:
     """Validate that two lists are equal."""
     if len(new) != len(old):
         return False
     return all(x in old for x in new)
 
 
-def _validate_dicts(new: dict[str, Any], old: dict[str, Any]) -> bool:
+def _validate_dicts(new: JsonMapping, old: JsonMapping) -> bool:
     """Validate that two dictionaries are equal."""
     if len(new) != len(old):
         return False
     return all(old.get(k) == v for k, v in new.items())
 
 
-def _validate_default(new: Any, old: Any) -> bool:
+def _validate_default(new: Json, old: Json) -> bool:
     """Validate that two values are equal."""
     return str(new) == str(old)
 
