@@ -621,9 +621,9 @@ class MregClient(metaclass=SingletonMeta):
         self,
         method: HTTPMethod,
         path: str,
+        *,
         params: QueryParams | None = None,
         ok404: bool = False,
-        *,
         json: Json | None = None,
     ) -> Response | None:
         """Make an HTTP request to the MREG API.
@@ -659,7 +659,7 @@ class MregClient(metaclass=SingletonMeta):
             logger.debug("Params: %s", params)
 
         if json is not None:
-            logger.debug("Json: %s", json)
+            logger.debug("JSON: %s", json)
 
         # Strip None values from json body (except for PATCH)
         if json is not None and method != "PATCH" and isinstance(json, Mapping):
