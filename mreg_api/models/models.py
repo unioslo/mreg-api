@@ -6,7 +6,6 @@ import ipaddress
 import logging
 import warnings
 from abc import ABC
-from collections.abc import Mapping
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
@@ -66,6 +65,8 @@ from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
+from mreg_api.types import Json
+from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 from mreg_api.types import get_type_adapter
 from mreg_api.utilities.shared import convert_wildcard_to_regex
@@ -811,7 +812,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             expire: The expire interval for the zone.
             soa_ttl: The TTL for the zone.
         """
-        params: QueryParams = {
+        data: JsonMapping = {
             "primary_ns": primary_ns,
             "email": email,
             "serialno": serialno,
@@ -820,10 +821,10 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
             "expire": expire,
             "soa_ttl": self.valid_numeric_ttl(soa_ttl) if soa_ttl is not None else None,
         }
-        params = {k: v for k, v in params.items() if v is not None}
-        if not params:
-            raise InputFailure("No parameters to update")
-        return self.patch(params)
+        data = {k: v for k, v in data.items() if v is not None}
+        if not data:
+            raise InputFailure("No fields to update")
+        return self.patch(data)
 
     def create_delegation(
         self,
@@ -864,9 +865,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         try:
             MregClient().post(
                 cls.endpoint().with_params(self.name),
-                name=delegation,
-                nameservers=nameservers,
-                comment=comment,
+                json={"name": delegation, "nameservers": nameservers, "comment": comment},
             )
         except PostError as e:
             # TODO: implement after mreg-cli parity
@@ -966,7 +965,9 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
 
         delegation = self.get_delegation_or_raise(name)
         try:
-            MregClient().patch(delegation.endpoint_with_id(self, delegation.name), comment=comment)
+            MregClient().patch(
+                delegation.endpoint_with_id(self, delegation.name), json={"comment": comment}
+            )
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(
@@ -997,7 +998,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         self.verify_nameservers(nameservers, force=force)
         path = self.endpoint_nameservers().with_params(self.name)
         try:
-            MregClient().patch(path, primary_ns=nameservers)
+            MregClient().patch(path, json={"primary_ns": nameservers})
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(
@@ -1358,7 +1359,9 @@ class Role(HostPolicy, WithHistory):
             if atom_name == atom:
                 raise EntityAlreadyExists(f"Atom {atom!r} already a member of role {self.name!r}")
 
-        resp = MregClient().post(Endpoint.HostPolicyRolesAddAtom.with_params(self.name), name=atom_name)
+        resp = MregClient().post(
+            Endpoint.HostPolicyRolesAddAtom.with_params(self.name), json={"name": atom_name}
+        )
         return resp.is_success if resp else False
 
     def remove_atom(self, atom_name: str) -> bool:
@@ -1430,7 +1433,9 @@ class Role(HostPolicy, WithHistory):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        resp = MregClient().post(Endpoint.HostPolicyRolesAddHost.with_params(self.name), name=name)
+        resp = MregClient().post(
+            Endpoint.HostPolicyRolesAddHost.with_params(self.name), json={"name": name}
+        )
         return resp.is_success if resp else False
 
     def remove_host(self, name: str) -> bool:
@@ -1763,8 +1768,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
 
         resp = MregClient().post(
             Endpoint.NetworkCommunities.with_params(self.network),
-            name=name,
-            description=description,
+            json={"name": name, "description": description},
         )
         return resp.is_success if resp else False
 
@@ -1878,9 +1882,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         try:
             MregClient().post(
                 Endpoint.NetworksAddExcludedRanges.with_params(self.network),
-                network=self.id,
-                start_ip=str(start_ip),
-                end_ip=str(end_ip),
+                json={"network": self.id, "start_ip": str(start_ip), "end_ip": str(end_ip)},
             )
         except PostError as e:
             # TODO: implement after mreg-cli parity
@@ -2086,11 +2088,19 @@ class Community(FrozenModelWithTimestamps, APIMixin):
 
         return MregClient().get_typed(self.endpoint_with_id, self.__class__)
 
-    def patch(self, fields: Mapping[str, Any], validate: bool = False) -> Self:  # noqa: ARG002 # validate not implemented
+    @override
+    def patch(
+        self,
+        data: JsonMapping,
+        *,
+        params: QueryParams | None = None,
+        validate: bool = False,  # noqa: ARG002, E501
+    ) -> Self:
         """Patch the community.
 
         Args:
-            fields: The fields to patch.
+            data: The data to patch.
+            params: Optional query parameters.
             validate: Whether to validate the response. (Not implemented)
 
         Returns:
@@ -2099,7 +2109,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         try:
-            MregClient().patch(self.endpoint_with_id, **fields)
+            MregClient().patch(self.endpoint_with_id, json=data, params=params)
         except PatchError as e:
             # TODO: implement after mreg-cli parity
             # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
@@ -2136,10 +2146,10 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        kwargs: QueryParams = {"id": host.id}
+        data: dict[str, Json] = {"id": host.id}
         if ipaddress:
-            kwargs["ipaddress"] = str(ipaddress)
-        resp = MregClient().post(self.hosts_endpoint, params=None, ok404=False, **kwargs)
+            data["ipaddress"] = str(ipaddress)
+        resp = MregClient().post(self.hosts_endpoint, json=data)
         return resp.is_success if resp else False
 
     def remove_host(self, host: Host, ipaddress: IP_AddressT | None = None) -> bool:
@@ -2162,7 +2172,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
                 self.network_address,
                 self.id,
                 host.id,
-            )
+            ),
         )
         return resp.is_success if resp else False
 
@@ -2300,8 +2310,7 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
 
         resp = client.post(
             Endpoint.NetworkCommunities.with_params(self.id),
-            name=name,
-            description=description,
+            json={"name": name, "description": description},
         )
         if resp and (location := resp.headers.get("Location")):
             return client.get_typed(location, Community)
@@ -2448,7 +2457,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             raise EntityAlreadyExists(
                 f"IP address {self.ipaddress} already has MAC address {self.macaddress}."
             )
-        return self.patch(fields={"macaddress": mac})
+        return self.patch(data={"macaddress": mac})
 
     def disassociate_mac(self) -> IPAddress:
         """Disassociate the MAC address from the IP address.
@@ -2459,7 +2468,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             A new IPAddress object fetched from the API with the MAC address removed.
         """
         # Model converts empty string to None so we must validate this ourselves.
-        patched = self.patch(fields={"macaddress": ""}, validate=False)
+        patched = self.patch(data={"macaddress": ""}, validate=False)
         if patched.macaddress:
             raise PatchError(f"Failed to disassociate MAC address from {self.ipaddress}")
         return patched
@@ -3234,7 +3243,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             A new Host object fetched from the API with the updated name.
         """
-        return self.patch(fields={"name": new_name})
+        return self.patch(data={"name": new_name})
 
     def set_comment(self, comment: str) -> Host:
         """Set the comment for the host.
@@ -3245,7 +3254,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             A new Host object fetched from the API with the updated comment.
         """
-        return self.patch(fields={"comment": comment})
+        return self.patch(data={"comment": comment})
 
     @deprecated("Use set_contacts instead")
     def set_contact(self, contact: str) -> Host:
@@ -3261,7 +3270,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             A new Host object fetched from the API with the updated contact.
         """
-        return self.patch(fields={"contact": contact})
+        return self.patch(data={"contact": contact})
 
     def set_contacts(self, contacts: list[str]) -> Host:
         """Set a new list of contacts for the host. Overwrites existing contacts.
@@ -3273,7 +3282,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             Host: Updated Host object.
         """
         # Uses non-atomic host update via PATCH to set the contacts list.
-        return self.patch(fields={"contacts": contacts}, validate=False)
+        return self.patch(data={"contacts": contacts}, validate=False)
 
     def add_contacts(self, contacts: list[str]) -> HostContactModification:
         """Add contacts to the host.
@@ -3292,7 +3301,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         # Uses atomic endpoint for contact updates
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
-            resp = MregClient().post(endpoint, emails=contacts)
+            resp = MregClient().post(endpoint, json={"emails": contacts})
         except PostError:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add contacts to host {self.name}.", e.response) from e
@@ -3337,7 +3346,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
 
         endpoint = Endpoint.HostsContacts.with_params(self.name)
         try:
-            resp = MregClient().delete(endpoint, emails=contacts)
+            resp = MregClient().delete(endpoint, json={"emails": contacts})
         except DeleteError as e:
             # TODO: implement after mreg-cli parity
             # raise DeleteError(f"Failed to remove contacts from host {self.name}.", e.response) from e
@@ -3352,7 +3361,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             Host: Updated host after contact removal
         """
         # TODO: add try/except with error message
-        return self.patch(fields={"contacts": []})
+        return self.patch(data={"contacts": []})
 
     def add_ip(self, ip: IP_AddressT, mac: MacAddress | None = None) -> Host:
         """Add an IP address to the host.
@@ -3364,11 +3373,11 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
         Returns:
             A new Host object fetched from the API with the updated IP address.
         """
-        params: QueryParams = {"ipaddress": str(ip), "host": str(self.id)}
+        data: JsonMapping = {"ipaddress": str(ip), "host": str(self.id)}
         if mac:
-            params["macaddress"] = mac
+            data["macaddress"] = mac
 
-        IPAddress.create(params=params)
+        IPAddress.create(data=data)
         return self.refetch()
 
     def has_ip(self, arg_ip: IP_AddressT) -> bool:
@@ -3969,7 +3978,7 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         Returns:
             A new HostGroup object fetched from the API with the updated description.
         """
-        return self.patch(fields={"description": description})
+        return self.patch(data={"description": description})
 
     def has_group(self, groupname: str) -> bool:
         """Check if the hostgroup has the given group.
@@ -3994,7 +4003,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         try:
-            MregClient().post(Endpoint.HostGroupsAddHostGroups.with_params(self.name), name=groupname)
+            MregClient().post(
+                Endpoint.HostGroupsAddHostGroups.with_params(self.name), json={"name": groupname}
+            )
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add group {groupname} to hostgroup {self.name}.", e.response)
@@ -4045,7 +4056,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         try:
-            MregClient().post(Endpoint.HostGroupsAddHosts.with_params(self.name), name=hostname)
+            MregClient().post(
+                Endpoint.HostGroupsAddHosts.with_params(self.name), json={"name": hostname}
+            )
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(f"Failed to add host {hostname} to hostgroup {self.name}.", e.response)
@@ -4096,7 +4109,9 @@ class HostGroup(FrozenModelWithTimestamps, WithName, WithHistory, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         try:
-            MregClient().post(Endpoint.HostGroupsAddOwner.with_params(self.name), name=ownername)
+            MregClient().post(
+                Endpoint.HostGroupsAddOwner.with_params(self.name), json={"name": ownername}
+            )
         except PostError as e:
             # TODO: implement after mreg-cli parity
             # raise PostError(
