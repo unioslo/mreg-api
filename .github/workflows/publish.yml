@@ -80,13 +80,7 @@ jobs:
                       ### uv
 
                       ```bash
-                      uv tool install mreg-api==${{ github.ref_name }}
-                      ```
-
-                      ### pipx
-
-                      ```bash
-                      pipx install mreg-api==${{ github.ref_name }}
+                      uv add mreg-api==${{ github.ref_name }}
                       ```
 
                       ### pip
