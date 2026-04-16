@@ -50,7 +50,7 @@ def get_model_aliases(model: BaseModel) -> dict[str, str]:
     Includes field names, alias, and validation alias(es).
     """
     fields: dict[str, str] = {}
-    for field_name, field_info in model.model_fields.items():
+    for field_name, field_info in model.__class__.model_fields.items():
         aliases = get_field_aliases(field_info)
         if model.model_config.get("populate_by_name"):
             aliases.add(field_name)
