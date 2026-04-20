@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `APIMixin.endpoint_with_id` property for getting the endpoint for the object with its ID, used for operations on the object itself (PATCH, DELETE, etc.). Used by default in `APIMixin.patch()` and `APIMixin.delete()`. Subclasses can override `endpoint_with_id` to provide custom endpoint resolution for these operations.
+
+### Removed
+
+- `Community.patch()`. Now uses `APIMixin.patch()`.
+- `Community.delete()`. Now uses `APIMixin.delete()`.
+
 ### Deprecated
 
 - `APIMixin.patch()` parameter `validate`. Has no effect and will be removed in a future release.

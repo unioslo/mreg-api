@@ -2068,6 +2068,7 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         return Endpoint.NetworkCommunity
 
     @property
+    @override
     def endpoint_with_id(self) -> str:
         """Return the endpoint with the community ID."""
         return self.endpoint().with_params(self.network_address, self.id)
@@ -2087,42 +2088,6 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         from mreg_api.client import MregClient  # noqa: PLC0415
 
         return MregClient().get_typed(self.endpoint_with_id, self.__class__)
-
-    @override
-    def patch(
-        self,
-        data: JsonMapping,
-        *,
-        params: QueryParams | None = None,
-        validate: bool | None = None,  # noqa: ARG002
-    ) -> Self:
-        """Patch the community.
-
-        Args:
-            data: The data to patch.
-            params: Optional query parameters.
-            validate: Whether to validate the response. (Deprecated and ignored)
-
-        Returns:
-            The updated Community object.
-        """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        try:
-            MregClient().patch(self.endpoint_with_id, json=data, params=params)
-        except PatchError as e:
-            # TODO: implement after mreg-cli parity
-            # raise PatchError(f"Failed to patch community {self.name!r}", e.response) from e
-            raise e
-        new_object = self.refetch()
-        return new_object
-
-    def delete(self) -> bool:
-        """Delete the community."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        resp = MregClient().delete(self.endpoint_with_id)
-        return resp.is_success if resp else False
 
     def get_hosts(self) -> list[Host]:
         """Get a list of hosts in the community.
