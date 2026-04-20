@@ -454,7 +454,11 @@ class APIMixin(ABC):
         "APIMixin.patch() parameter 'validate' is deprecated and will be removed in a future version."
     )
     def patch(
-        self, data: JsonMapping, *, params: QueryParams | None = None, validate: bool = ...
+        self,
+        data: JsonMapping,
+        *,
+        params: QueryParams | None = None,
+        validate: bool,
     ) -> Self: ...
 
     @overload
@@ -463,6 +467,7 @@ class APIMixin(ABC):
         data: JsonMapping,
         *,
         params: QueryParams | None = ...,
+        validate: None = ...,
     ) -> Self: ...
 
     def patch(
