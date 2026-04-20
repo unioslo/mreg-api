@@ -7,9 +7,11 @@ from abc import abstractmethod
 from datetime import datetime
 from typing import Any
 from typing import Self
+from typing import overload
 
 from pydantic import BaseModel
 from pydantic import ConfigDict
+from typing_extensions import deprecated
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
@@ -439,7 +441,29 @@ class APIMixin(ABC):
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
         return obj
 
-    def patch(self, data: JsonMapping, *, params: QueryParams | None = None) -> Self:
+    @overload
+    @deprecated(
+        "APIMixin.patch() parameter 'validate' is deprecated and will be removed in a future version."
+    )
+    def patch(
+        self, data: JsonMapping, *, params: QueryParams | None = None, validate: bool = ...
+    ) -> Self: ...
+
+    @overload
+    def patch(
+        self,
+        data: JsonMapping,
+        *,
+        params: QueryParams | None = ...,
+    ) -> Self: ...
+
+    def patch(
+        self,
+        data: JsonMapping,
+        *,
+        params: QueryParams | None = None,
+        validate: bool | None = None,  # noqa: ARG002  # pyright: ignore[reportUnusedParameter]
+    ) -> Self:
         """Patch the object with the given values.
 
         Note:
@@ -450,6 +474,7 @@ class APIMixin(ABC):
         Args:
             data: The values to patch.
             params: Optional query parameters.
+            validate: Whether to validate the response. (Deprecated and ignored)
 
         Returns:
             The object refetched from the server.

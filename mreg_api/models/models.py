@@ -2094,12 +2094,14 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         data: JsonMapping,
         *,
         params: QueryParams | None = None,
+        validate: bool | None = None,  # noqa: ARG002
     ) -> Self:
         """Patch the community.
 
         Args:
             data: The data to patch.
             params: Optional query parameters.
+            validate: Whether to validate the response. (Deprecated and ignored)
 
         Returns:
             The updated Community object.
