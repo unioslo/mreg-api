@@ -6,106 +6,19 @@ from abc import ABC
 from abc import abstractmethod
 from datetime import datetime
 from typing import Any
-from typing import Callable
 from typing import Self
-from typing import cast
 
-from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import ConfigDict
-from pydantic.fields import FieldInfo
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
-from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
-from mreg_api.types import Json
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
-
-
-def get_field_aliases(field_info: FieldInfo) -> set[str]:
-    """Get all aliases for a Pydantic field."""
-    aliases: set[str] = set()
-
-    if field_info.alias:
-        aliases.add(field_info.alias)
-
-    if field_info.validation_alias:
-        if isinstance(field_info.validation_alias, str):
-            aliases.add(field_info.validation_alias)
-        elif isinstance(field_info.validation_alias, AliasChoices):
-            for choice in field_info.validation_alias.choices:
-                if isinstance(choice, str):
-                    aliases.add(choice)
-    return aliases
-
-
-def get_model_aliases(model: BaseModel) -> dict[str, str]:
-    """Get a mapping of aliases to field names for a Pydantic model.
-
-    Includes field names, alias, and validation alias(es).
-    """
-    fields: dict[str, str] = {}
-    for field_name, field_info in model.__class__.model_fields.items():
-        aliases = get_field_aliases(field_info)
-        if model.model_config.get("populate_by_name"):
-            aliases.add(field_name)
-        # Assign aliases to field name in mapping
-        for alias in aliases:
-            fields[alias] = field_name
-    return fields
-
-
-def validate_patched_model(model: BaseModel, fields: JsonMapping) -> None:
-    """Validate that model fields were patched correctly."""
-    aliases = get_model_aliases(model)
-
-    validators: dict[type, Callable[[Any, Any], bool]] = {
-        list: _validate_lists,
-        dict: _validate_dicts,
-    }
-    for key, value in fields.items():
-        field_name = key
-        if key in aliases:
-            field_name = aliases[key]
-
-        try:
-            nval = getattr(model, field_name)
-        except AttributeError as e:
-            raise PatchError(f"Could not get value for {field_name} in patched object.") from e
-
-        # Ensure patched value is the one we tried to set
-        validator = validators.get(
-            type(nval),  # pyright:ignore[reportUnknownArgumentType, reportAny] # dict.get call with unknown type (Any) is fine
-            _validate_default,
-        )
-        if not validator(nval, value):
-            raise PatchError(
-                f"Patch failure! Tried to set {key} to {value!r}, but server returned {nval!r}."
-            )
-
-
-def _validate_lists(new: list[Json], old: list[Json]) -> bool:
-    """Validate that two lists are equal."""
-    if len(new) != len(old):
-        return False
-    return all(x in old for x in new)
-
-
-def _validate_dicts(new: JsonMapping, old: JsonMapping) -> bool:
-    """Validate that two dictionaries are equal."""
-    if len(new) != len(old):
-        return False
-    return all(old.get(k) == v for k, v in new.items())
-
-
-def _validate_default(new: Json, old: Json) -> bool:
-    """Validate that two values are equal."""
-    return str(new) == str(old)
 
 
 class FrozenModel(BaseModel):
@@ -526,9 +439,7 @@ class APIMixin(ABC):
             raise GetError(f"Could not refresh {self.__class__.__name__} with ID {identifier}.")
         return obj
 
-    def patch(
-        self, data: JsonMapping, *, params: QueryParams | None = None, validate: bool = False
-    ) -> Self:
+    def patch(self, data: JsonMapping, *, params: QueryParams | None = None) -> Self:
         """Patch the object with the given values.
 
         Note:
@@ -539,7 +450,6 @@ class APIMixin(ABC):
         Args:
             data: The values to patch.
             params: Optional query parameters.
-            validate: Whether to validate the patched object.
 
         Returns:
             The object refetched from the server.
@@ -548,11 +458,6 @@ class APIMixin(ABC):
 
         MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), json=data, params=params)
         new_object = self.refetch()
-
-        if validate:
-            # __init_subclass__ guarantees we inherit from BaseModel
-            # but we can't signal this to the type checker, so we cast here.
-            validate_patched_model(cast(BaseModel, new_object), data)  # pyright: ignore[reportInvalidCast] # we know what we are doing here (...?!)
 
         return new_object
 
