@@ -68,8 +68,16 @@ class APIMixin(ABC):
     @classmethod
     @abstractmethod
     def endpoint(cls) -> Endpoint:
-        """Return the endpoint for the method."""
+        """Return the endpoint for the resource."""
         raise NotImplementedError("You must define an endpoint.")
+
+    @property
+    def endpoint_with_id(self) -> str:
+        """Return the endpoint for the object with its ID.
+
+        Used for operations on the object itself (PATCH, DELETE, etc.).
+        """
+        return self.endpoint().with_id(self.id_for_endpoint())
 
     @classmethod
     def get(cls, _id: int) -> Self | None:
@@ -481,7 +489,7 @@ class APIMixin(ABC):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        MregClient().patch(self.endpoint().with_id(self.id_for_endpoint()), json=data, params=params)
+        MregClient().patch(self.endpoint_with_id, json=data, params=params)
         new_object = self.refetch()
 
         return new_object
@@ -494,7 +502,7 @@ class APIMixin(ABC):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        response = MregClient().delete(self.endpoint().with_id(self.id_for_endpoint()))
+        response = MregClient().delete(self.endpoint_with_id)
 
         if response and response.is_success:
             return True
