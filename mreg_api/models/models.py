@@ -2000,7 +2000,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         Returns:
             The updated Network object.
         """
-        return self.patch({"policy": policy.id}, validate=False)
+        return self.patch({"policy": policy.id})
 
     def set_max_communities(self, max_communities: int) -> Self:
         """Set the maximum number of communities for the network.
@@ -2011,7 +2011,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         Returns:
             The updated Network object.
         """
-        return self.patch({"max_communities": max_communities}, validate=False)
+        return self.patch({"max_communities": max_communities})
 
     def unset_policy(self) -> Self:
         """Unset the network policy of the network.
@@ -2019,7 +2019,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         Returns:
             The updated Network object.
         """
-        return self.patch({"policy": None}, validate=False)
+        return self.patch({"policy": None})
 
     def unset_max_communities(self) -> Self:
         """Unset the maximum number of communities for the network.
@@ -2027,7 +2027,7 @@ class Network(FrozenModelWithTimestamps, APIMixin):
         Returns:
             The updated Network object.
         """
-        return self.patch({"max_communities": None}, validate=False)
+        return self.patch({"max_communities": None})
 
 
 class NetworkPolicyAttribute(FrozenModelWithTimestamps, WithName):
@@ -2094,14 +2094,14 @@ class Community(FrozenModelWithTimestamps, APIMixin):
         data: JsonMapping,
         *,
         params: QueryParams | None = None,
-        validate: bool = False,  # noqa: ARG002, E501
+        validate: bool | None = None,  # noqa: ARG002
     ) -> Self:
         """Patch the community.
 
         Args:
             data: The data to patch.
             params: Optional query parameters.
-            validate: Whether to validate the response. (Not implemented)
+            validate: Whether to validate the response. (Deprecated and ignored)
 
         Returns:
             The updated Community object.
@@ -2286,7 +2286,6 @@ class NetworkPolicy(FrozenModelWithTimestamps, WithName):
         """
         self.patch(
             {"attributes": [{"name": a.name, "value": a.value} for a in attrs]},
-            validate=False,
         )
         # NOTE: can return self.refetch() here if we need to refresh the object
 
@@ -2468,7 +2467,7 @@ class IPAddress(FrozenModelWithTimestamps, WithHost, APIMixin):
             A new IPAddress object fetched from the API with the MAC address removed.
         """
         # Model converts empty string to None so we must validate this ourselves.
-        patched = self.patch(data={"macaddress": ""}, validate=False)
+        patched = self.patch(data={"macaddress": ""})
         if patched.macaddress:
             raise PatchError(f"Failed to disassociate MAC address from {self.ipaddress}")
         return patched
@@ -3282,7 +3281,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             Host: Updated Host object.
         """
         # Uses non-atomic host update via PATCH to set the contacts list.
-        return self.patch(data={"contacts": contacts}, validate=False)
+        return self.patch(data={"contacts": contacts})
 
     def add_contacts(self, contacts: list[str]) -> HostContactModification:
         """Add contacts to the host.
