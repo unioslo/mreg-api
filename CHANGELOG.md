@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Removed nullability of `NAPTR` fields.
 
+### Removed
+
+- Duplicate endpoint `Endpoints.NAPTRs`. Now only `Endpoints.Naptrs` exists.
+
 ## [0.2.1](https://github.com/unioslo/mreg-api/releases/tag/0.2.1) - 2026-04-20
 
 ### Added

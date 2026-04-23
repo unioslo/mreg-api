@@ -23,7 +23,6 @@ class Endpoint(str, Enum):
     PTR_overrides = "/api/v1/ptroverrides/"
     Locs = "/api/v1/locs/"
     Mxs = "/api/v1/mxs/"
-    NAPTRs = "/api/v1/naptrs/"
     Nameservers = "/api/v1/nameservers/"
 
     Hosts = "/api/v1/hosts/"
