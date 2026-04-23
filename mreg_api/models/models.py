@@ -2603,9 +2603,9 @@ class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
     id: int  # noqa: A003
     preference: int
     order: int
-    flag: str | None = None
-    service: str | None = None
-    regex: str | None = None
+    flag: str
+    service: str
+    regex: str
     replacement: str
 
     @classmethod
@@ -2614,7 +2614,7 @@ class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
         return Endpoint.Naptrs
 
     @classmethod
-    def headers(cls) -> list[str]:
+    def headers(cls) -> list[str]:  # TODO: remove. Move to mreg-cli
         """Return the headers for the NAPTR record."""
         return [
             "NAPTRs:",
