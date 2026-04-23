@@ -891,7 +891,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
 
         self.ensure_delegation_in_zone(name)
         cls = Delegation.type_by_zone(self)
-        resp = MregClient().get(cls.endpoint_with_id(self, name), ok404=True)
+        resp = MregClient().get(cls.endpoint_with_name(self, name), ok404=True)
         if not resp:
             return None
         return cls.model_validate_json(resp.text)
@@ -951,7 +951,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         # Check if delegation exists
         self.ensure_delegation_in_zone(name)  # check name
         delegation = self.get_delegation_or_raise(name)
-        resp = MregClient().delete(delegation.endpoint_with_id(self, name))
+        resp = MregClient().delete(delegation.endpoint_with_name(self, name))
         return resp.is_success if resp else False
 
     def set_delegation_comment(self, name: str, comment: str) -> None:
@@ -966,7 +966,7 @@ class Zone(FrozenModelWithTimestamps, WithTTL, APIMixin):
         delegation = self.get_delegation_or_raise(name)
         try:
             MregClient().patch(
-                delegation.endpoint_with_id(self, delegation.name), json={"comment": comment}
+                delegation.endpoint_with_name(self, delegation.name), json={"comment": comment}
             )
         except PatchError as e:
             # TODO: implement after mreg-cli parity
@@ -1087,7 +1087,7 @@ class Delegation(FrozenModelWithTimestamps, WithZone):
         return Endpoint.ForwardZonesDelegations
 
     @classmethod
-    def endpoint_with_id(cls, zone: Zone, name: str) -> str:
+    def endpoint_with_name(cls, zone: Zone, name: str) -> str:
         """Return the path to a delegation in a specific zone."""
         if cls.is_reverse():
             endpoint = Endpoint.ReverseZonesDelegationsZone
