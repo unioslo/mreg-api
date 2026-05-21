@@ -2603,9 +2603,9 @@ class NAPTR(FrozenModelWithTimestamps, WithHost, APIMixin):
     id: int  # noqa: A003
     preference: int
     order: int
-    flag: str
-    service: str
-    regex: str
+    flag: str = ""
+    service: str = ""
+    regex: str = ""
     replacement: str
 
     @classmethod
