@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 import datetime
+from collections.abc import Callable
 from ipaddress import IPv4Address
 from ipaddress import IPv4Network
 from ipaddress import IPv6Address
 from ipaddress import IPv6Network
 from typing import Any
-from typing import Callable
 
 import pytest
 from inline_snapshot import snapshot

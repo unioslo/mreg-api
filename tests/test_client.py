@@ -768,8 +768,8 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
     assert client.host.get_list() == snapshot(
         [
             Host(
-                created_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
-                updated_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.timezone.utc),
+                created_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.UTC),
+                updated_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.UTC),
                 id=1,
                 name="host1.example.com",
                 ipaddresses=[],

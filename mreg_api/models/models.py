@@ -6,12 +6,12 @@ import ipaddress
 import logging
 import warnings
 from abc import ABC
+from collections.abc import Callable
 from datetime import date
 from datetime import datetime
 from datetime import timedelta
 from functools import cached_property
 from typing import Any
-from typing import Callable
 from typing import ClassVar
 from typing import Literal
 from typing import Protocol
