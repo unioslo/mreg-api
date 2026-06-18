@@ -26,9 +26,7 @@ def test_with_history_subclasses_snapshot() -> None:
     """Snapshot test for list of defined WithHistory subclasses."""
     subclasses = get_with_history_subclasses()
     assert len(subclasses) == snapshot(4)
-    assert sorted((cls.__name__ for cls in subclasses)) == snapshot(
-        ["Atom", "Host", "HostGroup", "Role"]
-    )
+    assert sorted(cls.__name__ for cls in subclasses) == snapshot(["Atom", "Host", "HostGroup", "Role"])
 
 
 @pytest.mark.parametrize("subclass", get_with_history_subclasses())

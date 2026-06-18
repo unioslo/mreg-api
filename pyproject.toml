@@ -73,7 +73,7 @@ force-single-line = true
 required-imports = ["from __future__ import annotations"]
 
 [tool.ruff.lint]
-select = [
+extend-select = [
     "A", # flake8-builtins
     # "ANN", # annotations
     "ARG", # flake8-unused-arguments
@@ -90,7 +90,8 @@ select = [
     "PLE", # pylint-error
     # "PLR", # pylint-refactor
     # "PLW", # pylint-warning
-    "W", # warnings
+    "UP", # pyupgrade
+    "W",  # warnings
 ]
 ignore = [
     # B905 (`zip()` without an explicit `strict=` parameter) is incompatible with older python versions.
@@ -214,6 +215,15 @@ convention = "google"
 [tool.setuptools_scm]
 version_file = "mreg_api/_version.py"
 
-[tool.pyright]
-reportUnusedCallResult = "information"
-reportImportCycles = "information"
+[tool.basedpyright]
+pythonVersion = "3.11"
+typeCheckingMode = "recommended"
+reportUnannotatedClassAttribute = "hint"
+reportUnusedCallResult = "hint"
+reportImplicitOverride = "hint"
+reportImportCycles = "hint"
+
+# When working with pydantic before-validators, we have no choice
+# but to use and interact with `Any`-typed values.
+reportExplicitAny = false
+reportAny = false
