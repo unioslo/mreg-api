@@ -50,6 +50,7 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
+from mreg_api.managers import HostManager
 from mreg_api.models import CNAME
 from mreg_api.models import MX
 from mreg_api.models import NAPTR
@@ -354,6 +355,11 @@ class MregClient(metaclass=SingletonMeta):
     server_libraries: type[ServerLibraries] = ServerLibraries
     server_version: type[ServerVersion] = ServerVersion
     user_info: type[UserInfo] = UserInfo
+
+    @functools.cached_property
+    def hosts(self) -> HostManager:
+        """Manager for host resources."""
+        return HostManager(self)
 
     def __init__(
         self,
