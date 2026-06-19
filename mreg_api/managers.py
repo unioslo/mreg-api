@@ -58,6 +58,13 @@ T = TypeVar("T", bound=APIResource)
 class ResourceManager(Generic[T]):
     """Manager for performing CRUD operations on an API resource type."""
 
+    # NOTE TO AGENT: ClassVar[type[Any]] is not ideal.
+    # It should be narrowed down to some common model base class.
+    # While, yes, the `model` property does convince the type checker,
+    # it's still a hack, as there is nothing preventing `_model` from being set to an
+    # incompatible type. If we can do this without using `Any`, it's for the best.
+    # Furthermore, `APIResource` may have to become a concrete base class
+    # that all models inherit from if need be.
     _model: ClassVar[type[Any]]
     """The model type this manager operates on. Bound by each subclass."""
 
