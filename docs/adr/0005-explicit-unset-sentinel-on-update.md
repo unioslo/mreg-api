@@ -11,37 +11,53 @@ otherwise both be `None`:
 
 ## Decision
 
-For **genuinely-nullable** fields, the parameter defaults to an internal sentinel:
+Every optional `update()` parameter defaults to an internal sentinel, `UNSET`:
 
 ```python
 class _UnsetType:
     def __repr__(self) -> str: return "UNSET"
 UNSET = _UnsetType()   # module-private; NOT exported from the package
 
-def update(self, ref, *, policy: int | None | _UnsetType = UNSET, ...) -> Network:
+def update(self, ref, *,
+    name: str | _UnsetType = UNSET,        # non-nullable: no None in the union
+    comment: str | _UnsetType = UNSET,     # non-nullable
+    ttl: int | None | _UnsetType = UNSET,  # nullable: None allowed, means "send null"
+) -> Host:
     data: dict[str, Any] = {}
-    if policy is not UNSET:        # narrows to int | None
-        data["policy"] = policy    # None here means "send null" (unset)
+    if name is not UNSET:        # narrows to str
+        data["name"] = str(name)
+    if comment is not UNSET:     # narrows to str
+        data["comment"] = comment
+    if ttl is not UNSET:         # narrows to int | None
+        data["ttl"] = ttl        # None here → JSON null → server unsets ttl
     ...
 ```
 
-- `UNSET` (default) → omit → unchanged.
-- `None` → send `null` → actively unset (replaces the old `unset_policy` /
-  `unset_max_communities` model methods).
+One convention, applied uniformly:
+
+- `UNSET` (default) → omit → **unchanged**. Always.
+- `None` → send `null` → **actively unset** (replaces the old `unset_policy` /
+  `unset_max_communities` model methods). Always.
 - a value → set it.
 
-- The sentinel is **not exported**. Callers (the CLI) never reference it: they omit
-  the arg to leave unchanged, pass `None` to unset, or pass a value to set. The CLI
-  includes/omits kwargs based on the command being run.
-- Applied **only to fields the server can actually null**. Non-nullable fields stay a
-  plain `T | None` parameter where `None` simply means "unchanged" (ADR convention as
-  in `HostManager.update`). The sentinel must be visually obvious in signatures so the
-  two conventions don't get confused on the same model.
+The key rule: **`None` appears in a parameter's type only for genuinely-nullable fields** — fields the server can actually null. For those, `None` means "set null".
+Non-nullable fields are `T | _UnsetType = UNSET` with no `None` in the union, so
+passing `None` to them is a static type error rather than a silent no-op. There is no
+second meaning of `None` anywhere; `UNSET` is the only "unchanged" signal in `update` methods.
+
+- The sentinel is **not exported**. Callers (the CLI) never reference it: they omit the
+  arg to leave unchanged, pass `None` to unset (where allowed), or pass a value to set.
+  The CLI includes/omits kwargs based on the command being run.
 - `is not UNSET` narrows cleanly under basedpyright — no overloads needed.
+- Future: PEP 661 adds a builtin `sentinel()` in Python 3.15 that supersedes the
+  hand-rolled `_UnsetType` (typed, picklable, no import). Revisit once the project is on
+  3.15; the call sites (`is not UNSET`) and `None`-only-when-nullable rule are unchanged.
 
 ## Why ADR
 
-Cross-cutting (every `update` with a nullable field), surprising (`None` means
-"unset", not "unchanged", on *some* params but not others), and a real trade-off
-(sentinel machinery vs separate `unset_*` verbs). Pinning it once prevents 29 managers
-inventing three different spellings.
+Cross-cutting (every `update` with an optional field), surprising (`None` means "unset",
+not "unchanged") and a real trade-off: a uniform sentinel default puts `UNSET` on
+non-nullable params too — slightly noisier signatures — in exchange for `None` having a
+single, unambiguous meaning across the whole API. The rejected alternative (sentinel only
+on nullable fields, `None` = unchanged elsewhere) made `None` mean two different things on
+the same model. Pinning one spelling prevents 29 managers inventing three.
