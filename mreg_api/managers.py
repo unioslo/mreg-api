@@ -28,11 +28,17 @@ from typing import cast
 from typing import overload
 
 from mreg_api.endpoints import Endpoint
+from mreg_api.events import Event
+from mreg_api.events import EventKind
+from mreg_api.events import ObjectRef
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
+from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models import Host
+from mreg_api.models import NetworkOrIP
+from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.types import QueryParams
@@ -57,6 +63,17 @@ class APIResource(Protocol):
     def endpoint(cls) -> Endpoint:
         """Return the endpoint for the resource."""
         ...
+
+
+class Unset:
+    """Sentinel for "unchanged" parameters in update methods."""
+
+    def __repr__(self) -> str:
+        """Return a string representation of the Unset sentinel."""
+        return "UNSET"
+
+
+UNSET = Unset()
 
 
 T = TypeVar("T", bound=APIResource)
@@ -115,8 +132,18 @@ class ResourceManager(Generic[T]):
             return None
         return self._validate(data)
 
+    def _fetch_list_by_field(self, field: str, value: str | int) -> list[T]:
+        """Fetch all objects matching a field, mirroring old APIMixin.get_list_by_field."""
+        params: QueryParams = {field: value}
+        return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=500)
+
     def _refetch(self, obj: T) -> T:
         """Fetch a fresh copy of ``obj`` from the server."""
+        # TODO: rewrite models to specify their ID field explicitly
+        # and write tests that ensure it is always present and populated.
+        # Perhaps make it an abstract property like the endpoint.
+        # Furthermore, make the ID field an object that carries info
+        # we currently hardcode in the endpoint's `requires_search_for_id` and `external_id_field` logic
         id_field = self._id_field(obj)
         lookup = getattr(obj, "id", None) if hasattr(obj, "id") else getattr(obj, id_field, None)
         if not lookup:
@@ -271,12 +298,16 @@ class HistoryCapableManager:
 class HostManager(NamedResourceManager[Host], HistoryCapableManager):
     """Operations on :class:`~mreg_api.models.Host` resources.
 
-    Hosts are fetchable by several identifiers (hostname, id, IP, MAC). The opaque
-    "fetch by any means" resolution (the relocated ``Host.get_by_any_means``
-    algorithm) lands here as part of the dedicated relocation step; until then
-    :meth:`get` resolves by the endpoint id-field (hostname) and :meth:`get_by_name`
-    is inherited. The intended end state is a single clean :meth:`get` that does the
-    right thing under the hood, with IP/MAC/network always passed as strings.
+    Hosts are fetchable by several identifiers, each via an explicit per-kind getter:
+    :meth:`get`/:meth:`get_by_name` (hostname), :meth:`get_by_id`, :meth:`get_by_ip`,
+    :meth:`get_by_mac` (plus the :meth:`list_by_ip`/:meth:`list_by_mac` plural forms).
+
+    There is deliberately **no** "fetch by any means" method (ADR-0001): guessing the
+    *kind* of a free-text identifier is a CLI/UX concern. The CLI composes these getters
+    in its documented order (id → IP → MAC → name → CNAME), resolving CNAMEs itself via
+    ``client.cnames`` — the library never follows a CNAME and emits no CNAME event.
+    PTR fallback, by contrast, is library-internal, so :meth:`get_by_ip`/:meth:`list_by_ip`
+    always record a ``RESOLUTION`` event when an IP matches via a PTR override.
     """
 
     # Declared type matches the base exactly (a `ClassVar` is invariant, so narrowing
@@ -293,6 +324,100 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager):
             raise EntityNotFound(f"Host with id {ref!r} not found.")
         return host
 
+    # --- explicit per-kind getters (resolution is the CLI's job, ADR-0001) ---
+
+    def _record_ptr_event(self, host: Host, ip: str) -> None:
+        """Record that ``ip`` resolved to ``host`` via a PTR override.
+
+        PTR fallback is library-internal (the caller cannot otherwise tell the match
+        came from a PTR override), so it is always surfaced as an event; the CLI filters
+        events at display time (ADR-0001). CNAME resolution, in contrast, is composed by
+        the CLI and is not a library event.
+        """
+        self._client.events.record(
+            Event(
+                kind=EventKind.RESOLUTION,
+                message=f"{ip} is a PTR override for {host.name}",
+                subject=ObjectRef.new(host),
+                related=(ObjectRef("PTR_override", ip, field="ipaddress"),),
+                correlation_id=self._client.get_correlation_id(),
+            )
+        )
+
+    @overload
+    def get_by_id(self, host_id: int, *, required: Literal[True]) -> Host: ...
+    @overload
+    def get_by_id(self, host_id: int, *, required: Literal[False] = ...) -> Host | None: ...
+    def get_by_id(self, host_id: int, *, required: bool = False) -> Host | None:
+        """Get a host by its numeric id.
+
+        Distinct from :meth:`get`: the Host endpoint id-field is the hostname, so
+        :meth:`get` resolves by name while this resolves by the numeric ``id``.
+        """
+        obj = self._fetch_by_field("id", host_id)
+        if required and obj is None:
+            raise EntityNotFound(f"Host with id {host_id!r} not found.")
+        return obj
+
+    @overload
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True]) -> Host: ...
+    @overload
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False] = ...) -> Host | None: ...
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = False) -> Host | None:
+        """Get a host by IP address (A/AAAA, falling back to PTR override).
+
+        Falls back to a PTR override when no direct A/AAAA match exists; a PTR match
+        always records a ``RESOLUTION`` event (no opt-out — see ADR-0001).
+        """
+        addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
+        try:
+            host = self._fetch_by_field("ipaddresses__ipaddress", addr)
+            if host is None:
+                host = self._fetch_by_field("ptr_overrides__ipaddress", addr)
+                if host is not None:
+                    self._record_ptr_event(host, addr)
+        except MultipleEntitiesFound as e:
+            raise MultipleEntitiesFound(f"Multiple hosts found with IP address {addr}.") from e
+        if required and host is None:
+            raise EntityNotFound(f"Host with IP address {addr} not found.")
+        return host
+
+    @overload
+    def get_by_mac(self, mac: str | MacAddress, *, required: Literal[True]) -> Host: ...
+    @overload
+    def get_by_mac(self, mac: str | MacAddress, *, required: Literal[False] = ...) -> Host | None: ...
+    def get_by_mac(self, mac: str | MacAddress, *, required: bool = False) -> Host | None:
+        """Get a host by MAC address."""
+        addr = MacAddress.parse_or_raise(mac)
+        host = self._fetch_by_field("ipaddresses__macaddress", str(addr))
+        if required and host is None:
+            raise EntityNotFound(f"Host with MAC address {addr} not found.")
+        return host
+
+    # NOTE: not sure if it makes sense to fetch _multiple_ hosts given the same IP/MAC
+    # but these methods are implemented for parity with the old `get_list_by_ip_or_raise`
+    def list_by_ip(self, ip: str | IP_AddressT) -> list[Host]:
+        """List hosts by IP address (A/AAAA, falling back to PTR override).
+
+        Args:
+            ip (str | IP_AddressT): IP address to filter by.
+
+        Returns:
+            list[Host]: List of hosts matching the IP address.
+        """
+        addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
+        hosts = self._fetch_list_by_field("ipaddresses__ipaddress", addr)
+        if not hosts:
+            hosts = self._fetch_list_by_field("ptr_overrides__ipaddress", addr)
+            for host in hosts:
+                self._record_ptr_event(host, addr)
+        return hosts
+
+    def list_by_mac(self, mac: str | MacAddress) -> list[Host]:
+        """List hosts by MAC address. Returns ``[]`` when nothing matches."""
+        addr = MacAddress.parse_or_raise(mac)
+        return self._fetch_list_by_field("ipaddresses__macaddress", str(addr))
+
     def create(
         self,
         *,
@@ -305,9 +430,16 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager):
     ) -> Host | None:
         """Create a host.
 
-        Keys mirror the create payload the CLI builds (``name`` required; ``contacts``,
-        ``comment``, ``ipaddress``, ``network`` optional). ``ipaddress`` and ``network``
-        are mutually exclusive at the server.
+        Args:
+            name (str | HostName): Name of the host to create.
+            comment (str, optional): Comment for the host. Defaults to "".
+            contacts (list[str] | None, optional): List of contacts for the host.
+            ipaddress (IP_AddressT | str | None, optional): IP address of the host.
+            network (IP_NetworkT | str | None, optional): Network of the host.
+            fetch_after_create (bool, optional): Whether to fetch the host after creation.
+
+        Returns:
+            Host | None: _description_
         """
         data: dict[str, Any] = {"name": str(name)}
         if comment:
@@ -324,25 +456,20 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager):
         self,
         ref: int | Host,
         *,
-        name: str | HostName | None = None,
-        comment: str | None = None,
-        contacts: list[str] | None = None,
-        ttl: int | None = None,
+        name: str | HostName | Unset = UNSET,
+        comment: str | None | Unset = UNSET,
+        contacts: list[str] | Unset = UNSET,
+        ttl: int | None | Unset = UNSET,
     ) -> Host:
-        """Update a host's mutable fields. ``None`` kwargs are left unchanged.
-
-        Keys mirror the host PATCH operations the CLI performs: ``name`` (rename),
-        ``comment`` (set_comment), ``contacts`` (set_contacts, replaces existing),
-        ``ttl`` (set_ttl).
-        """
+        """Update a host's mutable fields."""
         host = self._resolve(ref)
         data: dict[str, Any] = {}
-        if name is not None:
+        if name is not UNSET:
             data["name"] = str(name)
-        if comment is not None:
+        if comment is not UNSET:
             data["comment"] = comment
-        if contacts is not None:
+        if contacts is not UNSET:
             data["contacts"] = contacts
-        if ttl is not None:
+        if ttl is not UNSET:
             data["ttl"] = ttl
         return self._patch(host, data)
