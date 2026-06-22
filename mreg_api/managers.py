@@ -7,6 +7,12 @@ uses the client's low-level HTTP/pagination primitives to fetch data and build
 
 The generic :class:`ResourceManager` provides the shared CRUD verbs once; concrete
 per-resource managers bind the model type and add resource-specific methods.
+
+Error handling: the client's HTTP verbs (``get``/``post``/``patch``/``delete``)
+already raise the appropriate typed error (:class:`GetError`, :class:`PostError`,
+:class:`PatchError`, :class:`DeleteError`) when the server returns a non-success,
+non-404 status. Managers therefore never re-check ``response.is_success`` — a
+returned response is always successful — and let those typed errors propagate.
 """
 
 from __future__ import annotations
@@ -18,6 +24,7 @@ from typing import Generic
 from typing import Literal
 from typing import Protocol
 from typing import TypeVar
+from typing import cast
 from typing import overload
 
 from mreg_api.endpoints import Endpoint
@@ -25,7 +32,6 @@ from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
-from mreg_api.exceptions import PostError
 from mreg_api.models import Host
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
@@ -43,7 +49,8 @@ class APIResource(Protocol):
     """Structural type for a model that maps to an API resource.
 
     Resources only need to expose their endpoint as pure metadata; all I/O lives on
-    the managers.
+    the managers. This is the lower bound for the model type a manager can operate
+    on, and the type of :attr:`ResourceManager._model`.
     """
 
     @classmethod
@@ -58,14 +65,11 @@ T = TypeVar("T", bound=APIResource)
 class ResourceManager(Generic[T]):
     """Manager for performing CRUD operations on an API resource type."""
 
-    # NOTE TO AGENT: ClassVar[type[Any]] is not ideal.
-    # It should be narrowed down to some common model base class.
-    # While, yes, the `model` property does convince the type checker,
-    # it's still a hack, as there is nothing preventing `_model` from being set to an
-    # incompatible type. If we can do this without using `Any`, it's for the best.
-    # Furthermore, `APIResource` may have to become a concrete base class
-    # that all models inherit from if need be.
-    _model: ClassVar[type[Any]]
+    # `_model` is typed against the `APIResource` bound rather than `Any`, so
+    # assigning an incompatible class in a subclass is a static error. It cannot be
+    # typed `ClassVar[type[T]]` directly because a `ClassVar` may not reference a
+    # `TypeVar`; the `model` property bridges that gap with a single, contained cast.
+    _model: ClassVar[type[APIResource]]
     """The model type this manager operates on. Bound by each subclass."""
 
     def __init__(self, client: MregClient) -> None:
@@ -77,7 +81,10 @@ class ResourceManager(Generic[T]):
     @property
     def model(self) -> type[T]:
         """The model type this manager operates on."""
-        return self._model
+        # Safe: each subclass binds `_model` to its concrete `type[T]` (e.g.
+        # `HostManager._model = Host`); the cast only recovers the precise `T` that
+        # the `ClassVar` declaration cannot express.
+        return cast("type[T]", self._model)
 
     def _endpoint(self) -> Endpoint:
         return self.model.endpoint()
@@ -90,27 +97,6 @@ class ResourceManager(Generic[T]):
 
     def _endpoint_with_id(self, obj: T) -> str:
         return obj.endpoint().with_id(getattr(obj, self._id_field(obj)))
-
-    # NOTE TO AGENT: these internal helpers will not work in their current iteration
-    # since the client performs a check on each response and raises if the response
-    # is not successful. Therefore, any code that assumes the CRUD methods will return
-    # a response object that can be checked for success or failure will not work.
-    # Client may need to be refactored to always return a response object, and
-    # let the manager raise the appropriate error based on the request and response.
-    # I.e. `GetError`, `PostError`, etc. like we currently do.
-    #
-    # Furthermore: `_patch` has no exception handling at all. Must be fixed.
-    #              All CRUD methods should be refactored to have consistent
-    #              and robust error handling.
-    #
-    # Idea for handling Pydantic errors (implement this _last_ after everything else works):
-    # - Decorator or helper method that catches ValidationError and is able
-    # to use similar logic to the current `MregValidationError.from_pydantic`
-    # to determine the last URL we fetched from (which likely caused the error).
-    # This error handling should then be available to all subclasses, so they can
-    # simply try to fetch the relevant resources and delegate error handling to
-    # the helper method/decorator.
-    # Decorator may be worth exploring.
 
     def _fetch_by_field(self, field: str, value: str | int) -> T | None:
         """Fetch a single object by a field, mirroring the old APIMixin.get_by_field."""
@@ -141,47 +127,62 @@ class ResourceManager(Generic[T]):
         return fresh
 
     def _create(self, data: dict[str, Any], *, fetch_after_create: bool = True) -> T | None:
-        """POST ``data`` to the resource endpoint, optionally fetching the result."""
+        """POST ``data`` to the resource endpoint, optionally fetching the result.
+
+        Raises :class:`PostError` (from the client) if the server rejects the create.
+        Returns ``None`` when the create succeeds but the server provides no
+        ``Location`` header to refetch from (many endpoints don't), or when
+        ``fetch_after_create`` is ``False``.
+        """
         response = self._client.post(self._endpoint(), json=data)
-        if not (response and response.is_success):
-            raise PostError(f"Failed to create {self.model.__name__} with {data}.")
         if fetch_after_create and "Location" in response.headers:
             return self._client.get_typed(response.headers["Location"], self.model)
         return None
 
     def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> T:
-        """PATCH ``obj`` with ``data`` and return the refetched object."""
+        """PATCH ``obj`` with ``data`` and return the refetched object.
+
+        Raises :class:`PatchError` (from the client) if the server rejects the patch.
+        """
         _ = self._client.patch(self._endpoint_with_id(obj), json=data, params=params)
         return self._refetch(obj)
 
     # --- public CRUD -----------------------------------------------------
 
     @overload
-    def get(self, ident: str | int, *, should_exist: Literal[True]) -> T: ...
+    def get(self, ident: str | int, *, required: Literal[True]) -> T: ...
     @overload
-    def get(self, ident: str | int, *, should_exist: Literal[False]) -> None: ...
-    @overload
-    def get(self, ident: str | int, *, should_exist: None = ...) -> T | None: ...
-    def get(self, ident: str | int, *, should_exist: bool | None = None) -> T | None:
+    def get(self, ident: str | int, *, required: Literal[False] = ...) -> T | None: ...
+    def get(self, ident: str | int, *, required: bool = False) -> T | None:
         """Get a resource by its natural identifier.
 
         Args:
             ident: The external identifier (id / name / network, per resource).
-            should_exist: ``None`` returns ``T | None``; ``True`` raises
+            required: When ``True``, raise if the resource is missing (returns ``T``).
+                When ``False`` (default), return ``T | None``.
 
         Raises:
-            :class:`EntityNotFound` if `should_exist` is True and the resource is not found.
-            :class:`EntityAlreadyExists` if `should_exist` is False and the resource is found.
+            EntityNotFound: If `required` is True and the resource is not found.
 
         Returns:
-            The resource, or ``None``.
+            The resource, or ``None`` when `required` is False.
         """
         obj = self._fetch_by_field(self._endpoint().external_id_field(), ident)
-        if should_exist is True and obj is None:
+        if required and obj is None:
             raise EntityNotFound(f"{self.model.__name__} {ident!r} not found.")
-        if should_exist is False and obj is not None:
-            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
         return obj
+
+    def ensure_absent(self, ident: str | int) -> None:
+        """Assert that no resource with ``ident`` exists.
+
+        The "must not exist" guard (replaces the old ``get_x_and_raise``); kept a
+        distinct verb rather than a return-typed-``None`` overload of :meth:`get`.
+
+        Raises:
+            EntityAlreadyExists: If a resource with `ident` exists.
+        """
+        if self._fetch_by_field(self._endpoint().external_id_field(), ident) is not None:
+            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
     def list(
         self,
@@ -193,10 +194,14 @@ class ResourceManager(Generic[T]):
         params: QueryParams = dict(query)
         return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=limit)
 
-    def delete(self, obj: T) -> bool:
-        """Delete a resource. Returns True on success."""
-        response = self._client.delete(self._endpoint_with_id(obj))
-        return bool(response and response.is_success)
+    def delete(self, obj: T) -> None:
+        """Delete a resource.
+
+        Raises :class:`DeleteError` (from the client) if the server rejects the
+        delete. Returns ``None`` — success is implied by returning normally (the old
+        ``bool`` was always ``True``-or-raise; see ADR-0003).
+        """
+        _ = self._client.delete(self._endpoint_with_id(obj))
 
 
 class NamedResourceManager(ResourceManager[T]):
@@ -209,72 +214,76 @@ class NamedResourceManager(ResourceManager[T]):
         return name.lower() if self.name_lowercase else name
 
     @overload
-    def get_by_name(self, name: str, *, should_exist: Literal[True]) -> T: ...
+    def get_by_name(self, name: str, *, required: Literal[True]) -> T: ...
     @overload
-    def get_by_name(self, name: str, *, should_exist: Literal[False]) -> None: ...
-    @overload
-    def get_by_name(self, name: str, *, should_exist: None = ...) -> T | None: ...
-    def get_by_name(self, name: str, *, should_exist: bool | None = None) -> T | None:
-        """Get a resource by name (searches the name field)."""
+    def get_by_name(self, name: str, *, required: Literal[False] = ...) -> T | None: ...
+    def get_by_name(self, name: str, *, required: bool = False) -> T | None:
+        """Get a resource by name (searches the name field).
+
+        For the "must not exist" guard use :meth:`ensure_absent` (for named resources
+        the external id-field is the name, so it covers name absence).
+        """
         obj = self._fetch_by_field(self.name_field, self._case_name(name))
-        if should_exist is True and obj is None:
+        if required and obj is None:
             raise EntityNotFound(f"{self.model.__name__} {name!r} not found.")
-        if should_exist is False and obj is not None:
-            raise EntityAlreadyExists(f"{self.model.__name__} {name!r} already exists.")
         return obj
 
 
-class HistoryCapableManager(Generic[T]):
+class HistoryCapableManager:
     """Mixin for managers whose resource records audit history.
 
-    A pure mixin (no ``__init__``) so it composes with a concrete
-    :class:`ResourceManager` without unsafe multiple inheritance. Only managers
-    that mix this in expose :meth:`history`, so e.g. ``client.networks.history`` is
-    a static type error.
+    A standalone mixin (no ``__init__``, does not inherit :class:`ResourceManager`)
+    so it composes without unsafe multiple inheritance. It declares the ``_client``
+    binding that the concrete :class:`ResourceManager` it is mixed into supplies at
+    runtime, letting :meth:`history` use it with full type information. Only managers
+    that mix this in expose :meth:`history`, so e.g. ``client.networks.history`` is a
+    static type error.
     """
 
+    # Supplied at runtime by the ResourceManager this mixin is combined with; the
+    # mixin itself has no __init__, hence the targeted ignore.
+    _client: MregClient  # pyright: ignore[reportUninitializedInstanceVariable]
     history_resource: ClassVar[HistoryResource]
 
     def history(self, name: str) -> list[HistoryItem]:
-        """Get the audit history for a named resource."""
-        return HistoryItem.get(name, self.history_resource)
+        """Get the audit history for a named resource.
+
+        Relocated from the former ``HistoryItem.get``: fetches history through the
+        owning client and constructs :class:`HistoryItem` models from the result.
+        """
+        resource = self.history_resource
+        params: QueryParams = {"resource": resource.resource(), "name": name}
+        ret = self._client.get_typed(Endpoint.History, list[HistoryItem], params=params)
+        if len(ret) == 0:
+            # No-history is a valid state, not a not-found error (ADR-0003).
+            return []
+
+        model_ids = ",".join({str(i.mid) for i in ret})
+        params = {"resource": resource.resource(), "model_id__in": model_ids}
+        ret = self._client.get_typed(Endpoint.History, list[HistoryItem], params=params)
+
+        params = {"data__relation": resource.relation(), "data__id__in": model_ids}
+        ret.extend(self._client.get_typed(Endpoint.History, list[HistoryItem], params=params))
+
+        return ret
 
 
-class HostManager(NamedResourceManager[Host], HistoryCapableManager[Host]):
-    """Operations on :class:`~mreg_api.models.Host` resources."""
+class HostManager(NamedResourceManager[Host], HistoryCapableManager):
+    """Operations on :class:`~mreg_api.models.Host` resources.
 
-    _model: ClassVar[type[Host]] = Host
+    Hosts are fetchable by several identifiers (hostname, id, IP, MAC). The opaque
+    "fetch by any means" resolution (the relocated ``Host.get_by_any_means``
+    algorithm) lands here as part of the dedicated relocation step; until then
+    :meth:`get` resolves by the endpoint id-field (hostname) and :meth:`get_by_name`
+    is inherited. The intended end state is a single clean :meth:`get` that does the
+    right thing under the hood, with IP/MAC/network always passed as strings.
+    """
+
+    # Declared type matches the base exactly (a `ClassVar` is invariant, so narrowing
+    # to `type[Host]` would be an override error); `model` recovers the precise type.
+    _model: ClassVar[type[APIResource]] = Host
     history_resource: ClassVar[HistoryResource] = HistoryResource.Host
 
-    # NOTE TO AGENT: Hosts should be resolvable through both ID or Name when fetching them.
-    # Having a bespoke `get_by_name` method inherited from `NamedResourceManager` is not ideal.
-    # We would ideally like that any model that currently implements
-    # `get_by_any_means(or_raise)` would implement similar logic that
-    # is called under the hood in the public API of `Host` (and `Network`)
-    # that performs the same more complicated lookup logic that they currently do.
-    # It is not acceptable for users to call `get` and `get_by_name` and
-    # protect them in try..except, etc. etc. It needs to be a clean and
-    # opaque method that simply does the right thing.
-    #
-    # In detail, this means the following:
-    #
-    # `Host` can fetch by:
-    # - hostname (name field)
-    # - ID (id field)
-    # - IP address (any of its IPs)
-    # - MAC address (any of its MACs)
-    #
-    # `Network` can fetch by:
-    # - IP address
-    # - network address (CIDR)
-    # - name
-    # - ID
-    #
-    # In order to write "correct" Python, we need to either always pass in
-    # the IP, MAC and Network addresses as strings, or we need to implement
-    # a separate method for this `get_by_any_means`-type behavior. I lean towards
-    # the former, so we can have a clean `get` interface for all models that
-    # perform some magic under the hood.
     def _resolve(self, ref: int | Host) -> Host:
         """Resolve a host reference (instance or numeric id) to a Host."""
         if isinstance(ref, Host):
@@ -292,10 +301,14 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager[Host]):
         contacts: list[str] | None = None,
         ipaddress: IP_AddressT | str | None = None,
         network: IP_NetworkT | str | None = None,
-        ttl: int | None = None,
         fetch_after_create: bool = True,
     ) -> Host | None:
-        """Create a host."""
+        """Create a host.
+
+        Keys mirror the create payload the CLI builds (``name`` required; ``contacts``,
+        ``comment``, ``ipaddress``, ``network`` optional). ``ipaddress`` and ``network``
+        are mutually exclusive at the server.
+        """
         data: dict[str, Any] = {"name": str(name)}
         if comment:
             data["comment"] = comment
@@ -305,8 +318,6 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager[Host]):
             data["ipaddress"] = str(ipaddress)
         if network:
             data["network"] = str(network)
-        if ttl is not None:
-            data["ttl"] = ttl
         return self._create(data, fetch_after_create=fetch_after_create)
 
     def update(
@@ -315,15 +326,23 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager[Host]):
         *,
         name: str | HostName | None = None,
         comment: str | None = None,
+        contacts: list[str] | None = None,
         ttl: int | None = None,
     ) -> Host:
-        """Update a host's mutable fields. ``None`` kwargs are left unchanged."""
+        """Update a host's mutable fields. ``None`` kwargs are left unchanged.
+
+        Keys mirror the host PATCH operations the CLI performs: ``name`` (rename),
+        ``comment`` (set_comment), ``contacts`` (set_contacts, replaces existing),
+        ``ttl`` (set_ttl).
+        """
         host = self._resolve(ref)
         data: dict[str, Any] = {}
         if name is not None:
             data["name"] = str(name)
         if comment is not None:
             data["comment"] = comment
+        if contacts is not None:
+            data["contacts"] = contacts
         if ttl is not None:
             data["ttl"] = ttl
         return self._patch(host, data)
