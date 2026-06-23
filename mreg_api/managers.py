@@ -1,22 +1,29 @@
-"""Resource managers: the public, client-bound API surface.
+"""Resource managers: encapsulated access to API resources.
 
-Each manager owns the operations for one API resource. A manager holds a
-back-reference to the :class:`~mreg_api.client.MregClient` that constructed it and
-uses the client's low-level HTTP/pagination primitives to fetch data and build
-(dumb) models from it.
+Each manager operates on a specific model type and exposes a set of operations.
+Managers are bound to an `MregClient` instance.
 
-The generic :class:`ResourceManager` provides the shared CRUD verbs once; concrete
-per-resource managers bind the model type and add resource-specific methods.
+As a baseline, each manager exposes:
+- `get`
+- `list`
+- `ensure_absent`  (TODO: rename)
 
-Error handling: the client's HTTP verbs (``get``/``post``/``patch``/``delete``)
-already raise the appropriate typed error (:class:`GetError`, :class:`PostError`,
-:class:`PatchError`, :class:`DeleteError`) when the server returns a non-success,
-non-404 status. Managers therefore never re-check ``response.is_success`` — a
-returned response is always successful — and let those typed errors propagate.
+Additionally, managers for resources that support name-based lookups:
+- `get_by_name`
+
+For resources that support write operations:
+- `create`
+- `update`
+- `delete`
+
+For resources that support history:
+- `history`
 """
 
 from __future__ import annotations
 
+from abc import ABC
+from abc import abstractmethod
 from typing import TYPE_CHECKING
 from typing import Any
 from typing import ClassVar
@@ -24,8 +31,9 @@ from typing import Generic
 from typing import Literal
 from typing import Protocol
 from typing import TypeVar
-from typing import cast
 from typing import overload
+
+from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.events import Event
@@ -37,12 +45,14 @@ from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models import Host
+from mreg_api.models import HostGroup
 from mreg_api.models import NetworkOrIP
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.types import QueryParams
 from mreg_api.types import get_type_adapter
+from mreg_api.utilities.shared import convert_wildcard_to_regex
 
 if TYPE_CHECKING:
     from mreg_api.client import MregClient
@@ -79,48 +89,70 @@ UNSET = Unset()
 T = TypeVar("T", bound=APIResource)
 
 
-class ResourceManager(Generic[T]):
-    """Manager for performing CRUD operations on an API resource type."""
+class ResourceManager(Generic[T], ABC):
+    """Basic manager for performing read operations on an API resource type."""
 
-    # `_model` is typed against the `APIResource` bound rather than `Any`, so
-    # assigning an incompatible class in a subclass is a static error. It cannot be
-    # typed `ClassVar[type[T]]` directly because a `ClassVar` may not reference a
-    # `TypeVar`; the `model` property bridges that gap with a single, contained cast.
-    _model: ClassVar[type[APIResource]]
-    """The model type this manager operates on. Bound by each subclass."""
+    _url_identifier: ClassVar[str] = "id"
+    """The name of the field that holds the URL MID field for the resource.
+
+    I.e. for most resources the URL ID field is the numeric ID field:
+        GET /api/sshfps/123 # 200
+
+    But for other resources, the URL ID field is a different field (e.g. name, network, host):
+        GET /api/hosts/example.com # 200
+        GET /api/v1/networks/192.168.0.0/24 # 200
+    """
 
     def __init__(self, client: MregClient) -> None:
         """Bind the manager to the client that owns it."""
         self._client: MregClient = client
 
-    # --- internal helpers ------------------------------------------------
-
     @property
+    @abstractmethod
     def model(self) -> type[T]:
         """The model type this manager operates on."""
-        # Safe: each subclass binds `_model` to its concrete `type[T]` (e.g.
-        # `HostManager._model = Host`); the cast only recovers the precise `T` that
-        # the `ClassVar` declaration cannot express.
-        return cast("type[T]", self._model)
+        raise NotImplementedError
 
     def _endpoint(self) -> Endpoint:
         return self.model.endpoint()
 
+    def _resolve(self, ref: int | T) -> T:
+        """Resolve an object reference (instance or numeric id) to an instance of the model.
+
+        Fetches the object from the server if only an ID is provided.
+
+        Raises:
+            EntityNotFound: If the object cannot be found by its ID.
+        """
+        if isinstance(ref, self.model):
+            return ref
+
+        # Ideally this would use the primary path (URL identifier)
+        # but we would need to either resolve the type of identifier, coerce
+        # the value to str, or use a generic type variable for the identifier type.
+        # For now, we only accept the id field for resolution.
+        obj = self._fetch_by_field("id", ref)  # TODO: resolve type narrowing!
+        if obj is None:
+            raise EntityNotFound(f"{self.model.__name__} with id {ref!r} not found.")
+        return obj
+
     def _validate(self, data: Any) -> T:
         return get_type_adapter(self.model).validate_python(data)
 
-    def _id_field(self, obj: T) -> str:
-        return obj.endpoint().external_id_field()
+    def id_field_value(self, obj: T) -> str | int:
+        """Get the value of the field that is used as the URL ID for ``obj``."""
+        return getattr(obj, self._url_identifier)
 
+    # TODO: test for all model types/managers! getattr is not great!
     def _endpoint_with_id(self, obj: T) -> str:
-        return obj.endpoint().with_id(getattr(obj, self._id_field(obj)))
+        return self._endpoint().with_id(self.id_field_value(obj))
 
     def _fetch_by_field(self, field: str, value: str | int) -> T | None:
         """Fetch a single object by a field, mirroring the old APIMixin.get_by_field."""
         endpoint = self._endpoint()
 
-        # Field is the "external" ID field. i.e. /hosts/{name} instead of /hosts/{id}
-        if endpoint.requires_search_for_id() and field == endpoint.external_id_field():
+        # Field is the ID used in the URL path. i.e. /hosts/example.com, /sshfps/123, etc.
+        if self._url_identifier != "id" and field == self._url_identifier:
             resp = self._client.get(endpoint.with_id(value), ok404=True)
             if not resp:
                 return None
@@ -137,21 +169,67 @@ class ResourceManager(Generic[T]):
         params: QueryParams = {field: value}
         return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=500)
 
+    # NOTE: add toggleable _refetch behavior? Return None if refetching is disabled?
     def _refetch(self, obj: T) -> T:
         """Fetch a fresh copy of ``obj`` from the server."""
-        # TODO: rewrite models to specify their ID field explicitly
-        # and write tests that ensure it is always present and populated.
-        # Perhaps make it an abstract property like the endpoint.
-        # Furthermore, make the ID field an object that carries info
-        # we currently hardcode in the endpoint's `requires_search_for_id` and `external_id_field` logic
-        id_field = self._id_field(obj)
-        lookup = getattr(obj, "id", None) if hasattr(obj, "id") else getattr(obj, id_field, None)
+        lookup = (
+            getattr(obj, "id", None) if hasattr(obj, "id") else getattr(obj, self._url_identifier, None)
+        )
         if not lookup:
             raise InternalError(f"Could not determine identifier for {self.model.__name__}.")
-        fresh = self._fetch_by_field("id" if hasattr(obj, "id") else id_field, lookup)
+        fresh = self._fetch_by_field("id" if hasattr(obj, "id") else self._url_identifier, lookup)
         if not fresh:
             raise GetError(f"Could not refetch {self.model.__name__} ({lookup!r}).")
         return fresh
+
+    @overload
+    def get(self, ident: str | int, *, required: Literal[True]) -> T: ...
+    @overload
+    def get(self, ident: str | int, *, required: Literal[False] = ...) -> T | None: ...
+    def get(self, ident: str | int, *, required: bool = False) -> T | None:
+        """Get a resource by its natural identifier.
+
+        Args:
+            ident: The URL identifier (id / name / network, per resource).
+            required: When ``True``, raise if the resource is missing (returns ``T``).
+                When ``False`` (default), return ``T | None``.
+
+        Raises:
+            EntityNotFound: If `required` is True and the resource is not found.
+
+        Returns:
+            The resource, or ``None`` when `required` is False.
+        """
+        obj = self._fetch_by_field(self._url_identifier, ident)
+        if required and obj is None:
+            raise EntityNotFound(f"{self.model.__name__} {ident!r} not found.")
+        return obj
+
+    def ensure_absent(self, ident: str | int) -> None:
+        """Assert that no resource with ``ident`` exists.
+
+        The "must not exist" guard (replaces the old ``get_x_and_raise``); kept a
+        distinct verb rather than a return-typed-``None`` overload of :meth:`get`.
+
+        Raises:
+            EntityAlreadyExists: If a resource with `ident` exists.
+        """
+        if self._fetch_by_field(self._url_identifier, ident) is not None:
+            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
+
+    def list(
+        self,
+        *,
+        limit: int | None = 500,
+        **query: str | int | float | bool | None,
+    ) -> list[T]:
+        """List resources, optionally filtered by query parameters."""
+        params: QueryParams = dict(query)
+        return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=limit)
+
+
+class WriteResourceManager(ResourceManager[T], ABC):
+    """Manager for performing CRUD operations on an API resource type."""
 
     def _create(self, data: dict[str, Any], *, fetch_after_create: bool = True) -> T | None:
         """POST ``data`` to the resource endpoint, optionally fetching the result.
@@ -176,63 +254,20 @@ class ResourceManager(Generic[T]):
 
     # --- public CRUD -----------------------------------------------------
 
-    @overload
-    def get(self, ident: str | int, *, required: Literal[True]) -> T: ...
-    @overload
-    def get(self, ident: str | int, *, required: Literal[False] = ...) -> T | None: ...
-    def get(self, ident: str | int, *, required: bool = False) -> T | None:
-        """Get a resource by its natural identifier.
-
-        Args:
-            ident: The external identifier (id / name / network, per resource).
-            required: When ``True``, raise if the resource is missing (returns ``T``).
-                When ``False`` (default), return ``T | None``.
-
-        Raises:
-            EntityNotFound: If `required` is True and the resource is not found.
-
-        Returns:
-            The resource, or ``None`` when `required` is False.
-        """
-        obj = self._fetch_by_field(self._endpoint().external_id_field(), ident)
-        if required and obj is None:
-            raise EntityNotFound(f"{self.model.__name__} {ident!r} not found.")
-        return obj
-
-    def ensure_absent(self, ident: str | int) -> None:
-        """Assert that no resource with ``ident`` exists.
-
-        The "must not exist" guard (replaces the old ``get_x_and_raise``); kept a
-        distinct verb rather than a return-typed-``None`` overload of :meth:`get`.
-
-        Raises:
-            EntityAlreadyExists: If a resource with `ident` exists.
-        """
-        if self._fetch_by_field(self._endpoint().external_id_field(), ident) is not None:
-            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
-
-    def list(
-        self,
-        *,
-        limit: int | None = 500,
-        **query: str | int | float | bool | None,
-    ) -> list[T]:
-        """List resources, optionally filtered by query parameters."""
-        params: QueryParams = dict(query)
-        return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=limit)
-
     def delete(self, obj: T) -> None:
         """Delete a resource.
 
-        Raises :class:`DeleteError` (from the client) if the server rejects the
-        delete. Returns ``None`` — success is implied by returning normally (the old
-        ``bool`` was always ``True``-or-raise; see ADR-0003).
+        Args:
+            obj (T): The resource to delete.
         """
         _ = self._client.delete(self._endpoint_with_id(obj))
 
 
-class NamedResourceManager(ResourceManager[T]):
-    """Extended manager for resources that support name-based lookups."""
+class NamedResourceManager(WriteResourceManager[T], ABC):
+    """Extended WriteResourceManager for resources that support name-based lookups."""
+
+    # NOTE: does not currently handle name-based lookups for resources that do
+    # not support writes (but they don't exist per now!)
 
     name_field: ClassVar[str] = "name"
     name_lowercase: ClassVar[bool] = False
@@ -240,6 +275,10 @@ class NamedResourceManager(ResourceManager[T]):
     def _case_name(self, name: str) -> str:
         return name.lower() if self.name_lowercase else name
 
+    # FIXME: Do we actually need an explicit name based lookup? Can we just use get_by_field() instead?
+    #       get() should handle the "primary" path i.e. the URL identifier.
+    #       The only affordance this gives us is the ability to format the name (lowercase, etc.)
+    #       before performing the lookup.
     @overload
     def get_by_name(self, name: str, *, required: Literal[True]) -> T: ...
     @overload
@@ -255,22 +294,49 @@ class NamedResourceManager(ResourceManager[T]):
             raise EntityNotFound(f"{self.model.__name__} {name!r} not found.")
         return obj
 
+    def rename(self, obj: T, new_name: str) -> T:
+        """Rename the resource.
 
-class HistoryCapableManager:
-    """Mixin for managers whose resource records audit history.
+        Args:
+            obj: The resource to rename.
+            new_name: The new name to set.
 
-    A standalone mixin (no ``__init__``, does not inherit :class:`ResourceManager`)
-    so it composes without unsafe multiple inheritance. It declares the ``_client``
-    binding that the concrete :class:`ResourceManager` it is mixed into supplies at
-    runtime, letting :meth:`history` use it with full type information. Only managers
-    that mix this in expose :meth:`history`, so e.g. ``client.networks.history`` is a
-    static type error.
-    """
+        Returns:
+            The patched resource.
+        """
+        return self._patch(obj, {self.name_field: self._case_name(new_name)})
 
-    # Supplied at runtime by the ResourceManager this mixin is combined with; the
-    # mixin itself has no __init__, hence the targeted ignore.
-    _client: MregClient  # pyright: ignore[reportUninitializedInstanceVariable]
-    history_resource: ClassVar[HistoryResource]
+    # TODO: add list_by_name ? Didn't exist in prior version
+
+    # RENAMED: get_list_by_name_regex -> list_by_name_regex
+    def list_by_name_regex(self, name: str) -> list[T]:
+        """Get multiple resources by a name regex.
+
+        Args:
+            name: The regex pattern for names to search for.
+
+        Returns:
+            A list of resource objects.
+        """
+        from mreg_api.client import MregClient  # noqa: PLC0415
+
+        param, value = convert_wildcard_to_regex(self.name_field, self._case_name(name), True)
+        # NOTE: why can we use T here? Is this a Python 3.11 thing?
+        # return MregClient().get_typed(cls.endpoint(), list[T], params={param: value})
+        return MregClient().get_typed(self._endpoint(), list[self.model], params={param: value})
+
+
+class HistoryManager(ResourceManager[T], ABC):
+    """Manager capable of fetching history for a resource."""
+
+    @property
+    @abstractmethod
+    def history_resource(self) -> HistoryResource:
+        """The history resource corresponding to this manager's resource.
+
+        Used to construct the query for fetching history items.
+        """
+        ...
 
     def history(self, name: str) -> list[HistoryItem]:
         """Get the audit history for a named resource.
@@ -295,25 +361,20 @@ class HistoryCapableManager:
         return ret
 
 
-class HostManager(NamedResourceManager[Host], HistoryCapableManager):
-    """Operations on :class:`~mreg_api.models.Host` resources.
+class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
+    """Operations on :class:`~mreg_api.models.Host` resources."""
 
-    Hosts are fetchable by several identifiers, each via an explicit per-kind getter:
-    :meth:`get`/:meth:`get_by_name` (hostname), :meth:`get_by_id`, :meth:`get_by_ip`,
-    :meth:`get_by_mac` (plus the :meth:`list_by_ip`/:meth:`list_by_mac` plural forms).
+    _url_identifier: ClassVar[str] = "name"
 
-    There is deliberately **no** "fetch by any means" method (ADR-0001): guessing the
-    *kind* of a free-text identifier is a CLI/UX concern. The CLI composes these getters
-    in its documented order (id → IP → MAC → name → CNAME), resolving CNAMEs itself via
-    ``client.cnames`` — the library never follows a CNAME and emits no CNAME event.
-    PTR fallback, by contrast, is library-internal, so :meth:`get_by_ip`/:meth:`list_by_ip`
-    always record a ``RESOLUTION`` event when an IP matches via a PTR override.
-    """
+    @property
+    @override
+    def model(self) -> type[Host]:
+        return Host
 
-    # Declared type matches the base exactly (a `ClassVar` is invariant, so narrowing
-    # to `type[Host]` would be an override error); `model` recovers the precise type.
-    _model: ClassVar[type[APIResource]] = Host
-    history_resource: ClassVar[HistoryResource] = HistoryResource.Host
+    @property
+    @override
+    def history_resource(self) -> HistoryResource:
+        return HistoryResource.Host
 
     def _resolve(self, ref: int | Host) -> Host:
         """Resolve a host reference (instance or numeric id) to a Host."""
@@ -323,8 +384,6 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager):
         if host is None:
             raise EntityNotFound(f"Host with id {ref!r} not found.")
         return host
-
-    # --- explicit per-kind getters (resolution is the CLI's job, ADR-0001) ---
 
     def _record_ptr_event(self, host: Host, ip: str) -> None:
         """Record that ``ip`` resolved to ``host`` via a PTR override.
@@ -439,7 +498,7 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager):
             fetch_after_create (bool, optional): Whether to fetch the host after creation.
 
         Returns:
-            Host | None: _description_
+            Host | None: The created host, or None if creation failed.
         """
         data: dict[str, Any] = {"name": str(name)}
         if comment:
@@ -473,3 +532,123 @@ class HostManager(NamedResourceManager[Host], HistoryCapableManager):
         if ttl is not UNSET:
             data["ttl"] = ttl
         return self._patch(host, data)
+
+
+class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
+    """Operations on :class:`~mreg_api.models.HostGroup` resources."""
+
+    _url_identifier: ClassVar[str] = "name"
+
+    @property
+    @override
+    def model(self) -> type[HostGroup]:
+        return HostGroup
+
+    @property
+    @override
+    def history_resource(self) -> HistoryResource:
+        return HistoryResource.Group
+
+    def create(
+        self,
+        *,
+        name: str,
+        description: str | Unset = UNSET,
+        fetch_after_create: bool = True,
+    ) -> HostGroup | None:
+        """Create a host group."""
+        data: dict[str, Any] = {"name": name}
+        if description is not UNSET:
+            data["description"] = description
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    # Not much to update here, but we implement update for future expansion + consistent interface
+    def update(
+        self,
+        ref: int | HostGroup,
+        *,
+        description: str | Unset = UNSET,
+    ) -> HostGroup:
+        """Update a host group's mutable fields."""
+        group = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        return self._patch(group, data)
+
+    def set_description(self, group: int | HostGroup, description: str) -> HostGroup:
+        """Set the description for the host group."""
+        group = self._resolve(group)
+        return self.update(group, description=description)
+
+    def add_group(self, group: int | HostGroup, name: str) -> HostGroup:
+        """Add a group to a host group."""
+        group = self._resolve(group)
+
+        self._client.post(
+            Endpoint.HostGroupsAddHostGroups.with_params(group.name),
+            json={"name": name},
+        )
+        return self._refetch(group)
+
+    def remove_group(self, group: int | HostGroup, name: str) -> HostGroup:
+        """Remove a group from a host group."""
+        group = self._resolve(group)
+
+        self._client.delete(
+            Endpoint.HostGroupsRemoveHostGroups.with_params(group.name, name),
+        )
+        return self._refetch(group)
+
+    def add_host(self, group: int | HostGroup, name: str) -> HostGroup:
+        """Add a host to a host group."""
+        group = self._resolve(group)
+
+        self._client.post(
+            Endpoint.HostGroupsAddHosts.with_params(group.name),
+            json={"name": name},
+        )
+        return self._refetch(group)
+
+    def remove_host(self, group: int | HostGroup, name: str) -> HostGroup:
+        """Remove a host from a host group."""
+        group = self._resolve(group)
+
+        self._client.delete(
+            Endpoint.HostGroupsRemoveHosts.with_params(group.name, name),
+        )
+        return self._refetch(group)
+
+    def add_owner(self, group: int | HostGroup, name: str) -> HostGroup:
+        """Add an owner to a host group."""
+        group = self._resolve(group)
+
+        self._client.post(
+            Endpoint.HostGroupsAddOwner.with_params(group.name),
+            json={"name": name},
+        )
+        return self._refetch(group)
+
+    def remove_owner(self, group: int | HostGroup, name: str) -> HostGroup:
+        """Remove an owner from a host group."""
+        group = self._resolve(group)
+
+        self._client.delete(
+            Endpoint.HostGroupsRemoveOwner.with_params(group.name, name),
+        )
+        return self._refetch(group)
+
+    # RENAMED: get_all_parents -> list_parents
+    def list_parents(self, group: int | HostGroup) -> list[HostGroup]:
+        """Get all parent groups of a host group.
+
+        Renamed from `get_all_parents` to `list_parents`
+        """
+        group = self._resolve(group)
+        parents: list[HostGroup] = []
+        for parent in group.parent:  # why singular name?
+            pobj = self._fetch_by_field("name", parent)
+            if pobj:
+                parents.append(pobj)
+                parents.extend(self.list_parents(pobj))
+        return parents

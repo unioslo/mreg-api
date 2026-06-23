@@ -110,10 +110,12 @@ class Endpoint(str, Enum):
             raise ValueError(f"Endpoint {self.name} requires parameters. Use `with_params`.")
         return self.value
 
+    # TODO: remove after manager refactor
     def requires_search_for_id(self) -> bool:
         """Return True if this endpoint requires a search for an ID."""
         return self.external_id_field() != "id"
 
+    # TODO: remove after manager refactor
     def external_id_field(self) -> Literal["id", "name", "network", "host"]:
         """Return the name of the field that holds the external ID."""
         if self in (
