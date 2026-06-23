@@ -473,7 +473,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         return hosts
 
     def list_by_mac(self, mac: str | MacAddress) -> list[Host]:
-        """List hosts by MAC address. Returns ``[]`` when nothing matches."""
+        """List hosts by MAC address."""
         addr = MacAddress.parse_or_raise(mac)
         return self._fetch_list_by_field("ipaddresses__macaddress", str(addr))
 
