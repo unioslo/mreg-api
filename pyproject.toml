@@ -223,6 +223,15 @@ reportUnusedCallResult = "hint"
 reportImplicitOverride = "hint"
 reportImportCycles = "hint"
 
+# Multiple inheritance is not an error per se. In order to implement a
+# clean API with type safety for read/write managers, as well as specialized
+# managers for resources with name-based lookups, we need to use multiple
+# inheritance in some places.
+# There is ONE thing we need to ensure: Only the base `ResourceManager` class
+# can define an __init__ method.
+reportUnsafeMultipleInheritance = false
+reportMissingSuperCall = "hint"
+
 # When working with pydantic before-validators, we have no choice
 # but to use and interact with `Any`-typed values.
 reportExplicitAny = false
