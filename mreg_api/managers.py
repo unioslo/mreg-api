@@ -51,6 +51,7 @@ from mreg_api.models import HostGroup
 from mreg_api.models import Label
 from mreg_api.models import Network
 from mreg_api.models import NetworkOrIP
+from mreg_api.models import Permission
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
@@ -750,6 +751,143 @@ class LabelManager(NamedResourceManager[Label]):
         """Set the description for the label."""
         label = self._resolve(label)
         return self.update(label, description=description)
+
+
+class PermissionManager(WriteResourceManager[Permission]):
+    """Operations on :class:`~mreg_api.models.Permission` resources."""
+
+    @property
+    @override
+    def model(self) -> type[Permission]:
+        return Permission
+
+    def create(
+        self,
+        *,
+        group: str,
+        range: str,  # noqa: A002
+        regex: str,
+        labels: list[int] | None = None,
+        fetch_after_create: bool = True,
+    ) -> Permission | None:
+        """Create a permission.
+
+        Args:
+            group: The netgroup the permission applies to.
+            range: The network range (CIDR) the permission covers.
+            regex: The host regex pattern for the permission.
+            labels: Optional list of label IDs to attach.
+            fetch_after_create: Whether to fetch and return the created object.
+        """
+        data: dict[str, Any] = {"group": group, "range": range, "regex": regex}
+
+        # TODO: check if we can actually pass labels during creation
+        # TODO: also accept Label objects?
+        if labels is not None:
+            data["labels"] = labels
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | Permission,
+        *,
+        group: str | Unset = UNSET,
+        range: str | Unset = UNSET,  # noqa: A002
+        regex: str | Unset = UNSET,
+        labels: list[int] | Unset = UNSET,
+    ) -> Permission:
+        """Update a permission's mutable fields."""
+        perm = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if group is not UNSET:
+            data["group"] = group
+        if range is not UNSET:
+            data["range"] = range
+        if regex is not UNSET:
+            data["regex"] = regex
+        if labels is not UNSET:
+            data["labels"] = labels
+        return self._patch(perm, data)
+
+    def add_label(self, ref: int | Permission, label_name: str) -> Permission:
+        """Add a label to the permission by label name.
+
+        Args:
+            ref: The permission (instance or numeric id).
+            label_name: The name of the label to add.
+
+        Raises:
+            EntityNotFound: If the label does not exist.
+            EntityAlreadyExists: If the permission already has this label.
+        """
+        perm = self._resolve(ref)
+        label = LabelManager(self._client).get_by_name(label_name, required=True)
+        if label.id in perm.labels:
+            raise EntityAlreadyExists(f"Permission already has label {label_name!r}.")
+        return self.update(perm, labels=[*perm.labels, label.id])
+
+    def remove_label(self, ref: int | Permission, label_name: str) -> Permission:
+        """Remove a label from the permission by label name.
+
+        Args:
+            ref: The permission (instance or numeric id).
+            label_name: The name of the label to remove.
+
+        Raises:
+            EntityNotFound: If the label does not exist or the permission lacks it.
+        """
+        perm = self._resolve(ref)
+        label = LabelManager(self._client).get_by_name(label_name, required=True)
+        if label.id not in perm.labels:
+            raise EntityNotFound(f"Permission does not have label {label_name!r}.")
+        return self.update(perm, labels=[lid for lid in perm.labels if lid != label.id])
+
+    @overload
+    def get_by_triplet(
+        self,
+        group: str,
+        range: str,  # noqa: A002
+        regex: str,
+        *,
+        required: Literal[True],
+    ) -> Permission: ...
+    @overload
+    def get_by_triplet(
+        self,
+        group: str,
+        range: str,  # noqa: A002
+        regex: str,
+        *,
+        required: Literal[False] = ...,
+    ) -> Permission | None: ...
+    def get_by_triplet(
+        self,
+        group: str,
+        range: str,  # noqa: A002
+        regex: str,
+        *,
+        required: bool = False,
+    ) -> Permission | None:
+        """Get a permission by the (group, range, regex) triplet.
+
+        Replaces ``Permission.get_by_query_unique_or_raise`` from the old model API.
+
+        Raises:
+            MultipleEntitiesFound: If more than one permission matches the triplet.
+            EntityNotFound: If ``required`` is True and no match is found.
+        """
+        # NOTE: Should only return a single result. do we have to use `list` to fetch it?
+        results = self.list(group=group, range=range, regex=regex)
+        if len(results) > 1:
+            raise MultipleEntitiesFound(
+                f"Multiple permissions found for group={group!r}, range={range!r}, regex={regex!r}."
+            )
+        obj = results[0] if results else None
+        if required and obj is None:
+            raise EntityNotFound(
+                f"Permission not found for group={group!r}, range={range!r}, regex={regex!r}."
+            )
+        return obj
 
 
 class NetworkManager(WriteResourceManager[Network]):
