@@ -92,15 +92,19 @@ T = TypeVar("T", bound=APIResource)
 class ResourceManager(Generic[T], ABC):
     """Basic manager for performing read operations on an API resource type."""
 
+    # TODO: rename var to indicate more clearly that it is the field used in the URL path
     _url_identifier: ClassVar[str] = "id"
-    """The name of the field that holds the URL MID field for the resource.
+    """The name of the field that is used to identify the resource in the URL path.
 
     I.e. for most resources the URL ID field is the numeric ID field:
         GET /api/sshfps/123 # 200
 
     But for other resources, the URL ID field is a different field (e.g. name, network, host):
         GET /api/hosts/example.com # 200
+        GET /api/hosts/123 # 404
+
         GET /api/v1/networks/192.168.0.0/24 # 200
+        GET /api/v1/networks/123 # 404
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -389,7 +393,6 @@ class HistoryManager(ResourceManager[T], ABC):
         params: QueryParams = {"resource": resource.resource(), "name": name}
         ret = self._client.get_typed(Endpoint.History, list[HistoryItem], params=params)
         if len(ret) == 0:
-            # No-history is a valid state, not a not-found error (ADR-0003).
             return []
 
         model_ids = ",".join({str(i.mid) for i in ret})
