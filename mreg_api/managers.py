@@ -51,6 +51,8 @@ from mreg_api.models import HostGroup
 from mreg_api.models import Label
 from mreg_api.models import Network
 from mreg_api.models import NetworkOrIP
+from mreg_api.models import NetworkPolicy
+from mreg_api.models import NetworkPolicyAttribute
 from mreg_api.models import Permission
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
@@ -888,6 +890,56 @@ class PermissionManager(WriteResourceManager[Permission]):
                 f"Permission not found for group={group!r}, range={range!r}, regex={regex!r}."
             )
         return obj
+
+
+class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]):
+    """Operations on :class:`~mreg_api.models.NetworkPolicyAttribute` resources."""
+
+    name_lowercase: ClassVar[bool] = True
+
+    @property
+    @override
+    def model(self) -> type[NetworkPolicyAttribute]:
+        return NetworkPolicyAttribute
+
+    def create(
+        self,
+        *,
+        name: str,
+        description: str,
+        fetch_after_create: bool = True,
+    ) -> NetworkPolicyAttribute | None:
+        """Create a network policy attribute."""
+        return self._create(
+            {"name": name, "description": description}, fetch_after_create=fetch_after_create
+        )
+
+    def update(
+        self,
+        ref: int | NetworkPolicyAttribute,
+        *,
+        description: str | Unset = UNSET,
+    ) -> NetworkPolicyAttribute:
+        """Update a network policy attribute's mutable fields."""
+        attr = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        return self._patch(attr, data)
+
+    def set_description(
+        self, ref: int | NetworkPolicyAttribute, description: str
+    ) -> NetworkPolicyAttribute:
+        """Set the description for the attribute."""
+        attr = self._resolve(ref)
+        return self.update(attr, description=description)
+
+    def get_policies(self, ref: int | NetworkPolicyAttribute) -> list[NetworkPolicy]:
+        """Get all network policies that use this attribute."""
+        attr = self._resolve(ref)
+        return self._client.get_typed(
+            NetworkPolicy.endpoint(), list[NetworkPolicy], params={"attributes": attr.id}
+        )
 
 
 class NetworkManager(WriteResourceManager[Network]):
