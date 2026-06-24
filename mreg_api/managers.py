@@ -53,6 +53,7 @@ from mreg_api.models import Network
 from mreg_api.models import NetworkOrIP
 from mreg_api.models import NetworkPolicy
 from mreg_api.models import NetworkPolicyAttribute
+from mreg_api.models import NetworkPolicyAttributeValue
 from mreg_api.models import Permission
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
@@ -940,6 +941,100 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         return self._client.get_typed(
             NetworkPolicy.endpoint(), list[NetworkPolicy], params={"attributes": attr.id}
         )
+
+
+class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
+    """Operations on :class:`~mreg_api.models.NetworkPolicy` resources."""
+
+    name_lowercase: ClassVar[bool] = True
+
+    @property
+    @override
+    def model(self) -> type[NetworkPolicy]:
+        return NetworkPolicy
+
+    def create(
+        self,
+        *,
+        name: str,
+        description: str = "",
+        attributes: list[NetworkPolicyAttributeValue] | None = None,
+        community_template_pattern: str | None | Unset = UNSET,
+        fetch_after_create: bool = True,
+    ) -> NetworkPolicy | None:
+        """Create a network policy.
+
+        Args:
+            name: The policy name (lowercased).
+            description: Optional description.
+            attributes: Optional list of attribute name/value pairs to attach at creation.
+            community_template_pattern: Optional community name template pattern.
+            fetch_after_create: Whether to fetch and return the created object.
+        """
+        data: dict[str, Any] = {"name": name, "description": description}
+        if attributes is not None:
+            data["attributes"] = [{"name": a.name, "value": a.value} for a in attributes]
+        if community_template_pattern is not UNSET:
+            data["community_template_pattern"] = community_template_pattern
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | NetworkPolicy,
+        *,
+        description: str | Unset = UNSET,
+        community_template_pattern: str | None | Unset = UNSET,
+    ) -> NetworkPolicy:
+        """Update a network policy's mutable fields.
+
+        Pass ``community_template_pattern=None`` to unset it.
+        """
+        pol = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        if community_template_pattern is not UNSET:
+            data["community_template_pattern"] = community_template_pattern
+        return self._patch(pol, data)
+
+    def set_description(self, ref: int | NetworkPolicy, description: str) -> NetworkPolicy:
+        """Set the description for the policy."""
+        pol = self._resolve(ref)
+        return self.update(pol, description=description)
+
+    def add_attribute(
+        self,
+        ref: int | NetworkPolicy,
+        attr: NetworkPolicyAttribute,
+        value: bool = True,
+    ) -> NetworkPolicy:
+        """Add an attribute to a policy.
+
+        Raises:
+            EntityAlreadyExists: If the policy already has this attribute.
+        """
+        pol = self._resolve(ref)
+        if pol.get_attribute(attr.name):
+            raise EntityAlreadyExists(f"Policy {pol.name!r} already has attribute {attr.name!r}.")
+        attrs = [*pol.attributes, NetworkPolicyAttributeValue(name=attr.name, value=value)]
+        return self._patch(pol, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
+
+    def remove_attribute(self, ref: int | NetworkPolicy, attribute_name: str) -> NetworkPolicy:
+        """Remove an attribute from a policy by name.
+
+        Raises:
+            EntityNotFound: If the policy does not have this attribute.
+        """
+        pol = self._resolve(ref)
+        if not pol.get_attribute(attribute_name):
+            raise EntityNotFound(f"Policy {pol.name!r} does not have attribute {attribute_name!r}.")
+        attrs = [a for a in pol.attributes if a.name != attribute_name]
+        return self._patch(pol, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
+
+    def networks(self, ref: int | NetworkPolicy) -> list[Network]:
+        """Get all networks that use this policy."""
+        pol = self._resolve(ref)
+        return self._client.get_typed(Network.endpoint(), list[Network], params={"policy": pol.id})
 
 
 class NetworkManager(WriteResourceManager[Network]):
