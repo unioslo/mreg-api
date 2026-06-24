@@ -22,6 +22,7 @@ For resources that support history:
 
 from __future__ import annotations
 
+import ipaddress
 from abc import ABC
 from abc import abstractmethod
 from typing import TYPE_CHECKING
@@ -42,23 +43,25 @@ from mreg_api.events import ObjectRef
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
+from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models import Host
 from mreg_api.models import HostGroup
 from mreg_api.models import Label
+from mreg_api.models import Network
 from mreg_api.models import NetworkOrIP
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
+from mreg_api.types import IP_AddressT
 from mreg_api.types import QueryParams
 from mreg_api.types import get_type_adapter
 from mreg_api.utilities.shared import convert_wildcard_to_regex
 
 if TYPE_CHECKING:
     from mreg_api.client import MregClient
-    from mreg_api.types import IP_AddressT
     from mreg_api.types import IP_NetworkT
 
 
@@ -747,3 +750,191 @@ class LabelManager(NamedResourceManager[Label]):
         """Set the description for the label."""
         label = self._resolve(label)
         return self.update(label, description=description)
+
+
+class NetworkManager(WriteResourceManager[Network]):
+    """Operations on :class:`~mreg_api.models.Network` resources."""
+
+    _url_identifier: ClassVar[str] = "network"
+
+    @property
+    @override
+    def model(self) -> type[Network]:
+        return Network
+
+    def _resolve_net(self, ref: str | int | Network) -> Network:
+        """Resolve a network reference (address string, numeric id, or instance)."""
+        if isinstance(ref, Network):
+            return ref
+        if isinstance(ref, int):
+            obj = self._fetch_by_field("id", ref)
+        else:
+            obj = self.get(ref)
+        if obj is None:
+            raise EntityNotFound(f"Network {ref!r} not found.")
+        return obj
+
+    @overload
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True]) -> Network: ...
+    @overload
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False] = ...) -> Network | None: ...
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = False) -> Network | None:
+        """Get the network containing an IP address."""
+        addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
+        resp = self._client.get(Endpoint.NetworksByIP.with_id(addr), ok404=True)
+        if not resp:
+            if required:
+                raise EntityNotFound(f"Network containing IP {addr!r} not found.")
+            return None
+        return self._validate_json(resp.text)
+
+    def create(
+        self,
+        *,
+        network: str,
+        description: str = "",
+        vlan: int | None | Unset = UNSET,
+        dns_delegated: bool | Unset = UNSET,
+        category: str | Unset = UNSET,
+        location: str | Unset = UNSET,
+        frozen: bool | Unset = UNSET,
+        reserved: int | Unset = UNSET,
+        fetch_after_create: bool = True,
+    ) -> Network | None:
+        """Create a network."""
+        data: dict[str, Any] = {"network": network, "description": description}
+        if vlan is not UNSET:
+            data["vlan"] = vlan
+        if dns_delegated is not UNSET:
+            data["dns_delegated"] = dns_delegated
+        if category is not UNSET:
+            data["category"] = category
+        if location is not UNSET:
+            data["location"] = location
+        if frozen is not UNSET:
+            data["frozen"] = frozen
+        if reserved is not UNSET:
+            data["reserved"] = reserved
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: str | int | Network,
+        *,
+        description: str | Unset = UNSET,
+        vlan: int | None | Unset = UNSET,
+        dns_delegated: bool | Unset = UNSET,
+        category: str | Unset = UNSET,
+        location: str | Unset = UNSET,
+        frozen: bool | Unset = UNSET,
+        reserved: int | Unset = UNSET,
+        policy: int | None | Unset = UNSET,
+        max_communities: int | None | Unset = UNSET,
+    ) -> Network:
+        """Update a network's mutable fields.
+
+        Pass ``policy=None`` or ``max_communities=None`` to unset; omit to leave unchanged.
+        """
+        net = self._resolve_net(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        if vlan is not UNSET:
+            data["vlan"] = vlan
+        if dns_delegated is not UNSET:
+            data["dns_delegated"] = dns_delegated
+        if category is not UNSET:
+            data["category"] = category
+        if location is not UNSET:
+            data["location"] = location
+        if frozen is not UNSET:
+            data["frozen"] = frozen
+        if reserved is not UNSET:
+            data["reserved"] = reserved
+        if policy is not UNSET:
+            data["policy"] = policy
+        if max_communities is not UNSET:
+            data["max_communities"] = max_communities
+        return self._patch(net, data)
+
+    def get_first_available_ip(self, ref: str | int | Network) -> IP_AddressT:
+        """Return the first available IP address in the network."""
+        net = self._resolve_net(ref)
+        return ipaddress.ip_address(
+            self._client.get_typed(Endpoint.NetworksFirstUnused.with_params(net.network), str)
+        )
+
+    def get_used_count(self, ref: str | int | Network) -> int:
+        """Return the number of used IP addresses in the network."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(Endpoint.NetworksUsedCount.with_params(net.network), int)
+
+    def get_unused_count(self, ref: str | int | Network) -> int:
+        """Return the number of unused IP addresses in the network."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(Endpoint.NetworksUnusedCount.with_params(net.network), int)
+
+    def get_used_list(self, ref: str | int | Network) -> list[IP_AddressT]:
+        """Return the used IP addresses in the network."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(
+            Endpoint.NetworksUsedList.with_params(net.network), list[IP_AddressT]
+        )
+
+    def get_unused_list(self, ref: str | int | Network) -> list[IP_AddressT]:
+        """Return the unused IP addresses in the network."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(
+            Endpoint.NetworksUnusedList.with_params(net.network), list[IP_AddressT]
+        )
+
+    def get_reserved_ips(self, ref: str | int | Network) -> list[IP_AddressT]:
+        """Return the reserved IP addresses of the network."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(
+            Endpoint.NetworksReservedList.with_params(net.network), list[IP_AddressT]
+        )
+
+    def get_used_host_list(self, ref: str | int | Network) -> dict[str, list[str]]:
+        """Return a dict of used IP addresses to their associated hostnames."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(
+            Endpoint.NetworksUsedHostList.with_params(net.network), dict[str, list[str]]
+        )
+
+    def get_ptroverride_host_list(self, ref: str | int | Network) -> dict[str, str]:
+        """Return a dict of PTR override IPs to their associated hostnames."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(
+            Endpoint.NetworksPTROverrideHostList.with_params(net.network), dict[str, str]
+        )
+
+    def get_ptr_overrides(self, ref: str | int | Network) -> list[IP_AddressT]:
+        """Return IP addresses that have PTR overrides in the network."""
+        net = self._resolve_net(ref)
+        return self._client.get_typed(
+            Endpoint.NetworksPTROverrideList.with_params(net.network), list[IP_AddressT]
+        )
+
+    def add_excluded_range(self, ref: str | int | Network, start: str, end: str) -> None:
+        """Add an excluded IP range to the network."""
+        net = self._resolve_net(ref)
+        start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
+        end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
+        if start_ip.version != end_ip.version:
+            raise InputFailure("Start and end IP addresses must be of the same version.")
+        self._client.post(
+            Endpoint.NetworksAddExcludedRanges.with_params(net.network),
+            json={"network": net.id, "start_ip": str(start_ip), "end_ip": str(end_ip)},
+        )
+
+    def remove_excluded_range(self, ref: str | int | Network, start: str, end: str) -> None:
+        """Remove an excluded IP range from the network."""
+        net = self._resolve_net(ref)
+        exrange = next(
+            (r for r in net.excluded_ranges if str(r.start_ip) == start and str(r.end_ip) == end),
+            None,
+        )
+        if exrange is None:
+            raise EntityNotFound(f"Excluded range {start} - {end} not found in {net.network!r}.")
+        self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(net.network, exrange.id))
