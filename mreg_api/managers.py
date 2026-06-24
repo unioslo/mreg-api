@@ -46,6 +46,7 @@ from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models import Host
 from mreg_api.models import HostGroup
+from mreg_api.models import Label
 from mreg_api.models import NetworkOrIP
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
@@ -707,3 +708,42 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
                 parents.append(pobj)
                 parents.extend(self.list_parents(pobj))
         return parents
+
+
+class LabelManager(NamedResourceManager[Label]):
+    """Operations on :class:`~mreg_api.models.Label` resources."""
+
+    @property
+    @override
+    def model(self) -> type[Label]:
+        return Label
+
+    def create(
+        self,
+        *,
+        name: str,
+        description: str,
+        fetch_after_create: bool = True,
+    ) -> Label | None:
+        """Create a label."""
+        return self._create(
+            {"name": name, "description": description}, fetch_after_create=fetch_after_create
+        )
+
+    def update(
+        self,
+        ref: int | Label,
+        *,
+        description: str | Unset = UNSET,
+    ) -> Label:
+        """Update a label's mutable fields."""
+        label = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        return self._patch(label, data)
+
+    def set_description(self, label: int | Label, description: str) -> Label:
+        """Set the description for the label."""
+        label = self._resolve(label)
+        return self.update(label, description=description)
