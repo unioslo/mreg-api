@@ -6,10 +6,10 @@ from pydantic import BaseModel
 from pydantic import ValidationError
 
 from mreg_api.exceptions import InputFailure
-from mreg_api.models.fields import HostName
+from mreg_api.models.fields import HostNameField
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
-from mreg_api.models.fields import hostname_domain
+from mreg_api.models.fields import parse_hostname
 
 
 @pytest.mark.parametrize(
@@ -39,23 +39,16 @@ from mreg_api.models.fields import hostname_domain
     ],
 )
 def test_valid_hostname(hostname: str) -> None:
-    hostname_domain.set("example.com")
-    res = HostName.parse_or_raise(hostname)
+    res = parse_hostname(hostname)
     assert res
-
-    # Narrow and broad type when validated directly
-    assert isinstance(res, HostName)
     assert isinstance(res, str)
 
-    # When used as a Pydantic field type, the field validates to str:
+    # When used as a Pydantic field type, HostNameField validates to str:
     class TestModel(BaseModel):
-        name: HostName
+        name: HostNameField
 
     m = TestModel(name=hostname)
-    assert m.name == res  # Identical value to standalone validation
     assert isinstance(m.name, str)
-    assert not isinstance(m.name, HostName)  # Core schema coerces this to str
-    assert type(m.name) is not type(res)  # Different types
 
 
 @pytest.mark.parametrize(
@@ -120,9 +113,39 @@ def test_valid_hostname(hostname: str) -> None:
 )
 def test_invalid_hostname(hostname: str) -> None:
     with pytest.raises(InputFailure):
-        HostName.parse_or_raise(hostname)
+        parse_hostname(hostname)
 
-    assert HostName.parse(hostname) is None
+
+def test_parse_hostname_lowercases() -> None:
+    assert parse_hostname("WEB.EXAMPLE.COM") == "web.example.com"
+
+
+def test_parse_hostname_strips_trailing_dot() -> None:
+    assert parse_hostname("example.com.") == "example.com"
+
+
+def test_parse_hostname_expands_with_domain() -> None:
+    assert parse_hostname("web", "example.com") == "web.example.com"
+
+
+def test_parse_hostname_no_expand_when_dot_present() -> None:
+    assert parse_hostname("web.other.com", "example.com") == "web.other.com"
+
+
+def test_parse_hostname_no_expand_when_no_domain() -> None:
+    assert parse_hostname("web") == "web"
+
+
+def test_parse_hostname_trailing_dot_then_qualified() -> None:
+    # trailing dot stripped → has dot → returned as-is
+    assert parse_hostname("web.example.com.", "other.org") == "web.example.com"
+
+
+def test_parse_hostname_returns_hostname_type() -> None:
+    result = parse_hostname("example.com")
+    assert isinstance(result, str)
+    # HostName is a NewType of str — runtime identity is str
+    assert type(result) is str
 
 
 MacAddressValidationFailure = pytest.mark.xfail(raises=InputFailure, strict=True)

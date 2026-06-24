@@ -47,6 +47,7 @@ from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.models import Host
 from mreg_api.models import HostGroup
 from mreg_api.models import NetworkOrIP
+from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
@@ -56,7 +57,6 @@ from mreg_api.utilities.shared import convert_wildcard_to_regex
 
 if TYPE_CHECKING:
     from mreg_api.client import MregClient
-    from mreg_api.models.fields import HostName
     from mreg_api.types import IP_AddressT
     from mreg_api.types import IP_NetworkT
 
@@ -107,6 +107,10 @@ class ResourceManager(Generic[T], ABC):
         """Bind the manager to the client that owns it."""
         self._client: MregClient = client
 
+    def _normalize_id(self, ident: str | int) -> str | int:
+        """Normalise an identifier before use in lookups. Override to add hostname expansion."""
+        return ident
+
     @property
     @abstractmethod
     def model(self) -> type[T]:
@@ -127,7 +131,7 @@ class ResourceManager(Generic[T], ABC):
         if isinstance(ref, self.model):
             return ref
 
-        # Ideally this would use the primary path (URL identifier)
+        # Ideally this method call would use the primary path (URL identifier) not just int,
         # but we would need to either resolve the type of identifier, coerce
         # the value to str, or use a generic type variable for the identifier type.
         # For now, we only accept the id field for resolution.
@@ -136,7 +140,28 @@ class ResourceManager(Generic[T], ABC):
             raise EntityNotFound(f"{self.model.__name__} with id {ref!r} not found.")
         return obj
 
+    def _validate_json(self, data: str) -> T:
+        """Attempt to construct the manager's model type from JSON data.
+
+        Args:
+            data (str): JSON data to construct model with.
+
+        Returns:
+            T: An instance of the manager's model type.
+
+        """
+        return get_type_adapter(self.model).validate_json(data)
+
     def _validate(self, data: Any) -> T:
+        """Attempt to construct the manager's model type from data.
+
+        Args:
+            data (Any): Data to construct model with. Usually a dict.
+
+        Returns:
+            T: An instance of the manager's model type.
+
+        """
         return get_type_adapter(self.model).validate_python(data)
 
     def id_field_value(self, obj: T) -> str | int:
@@ -148,7 +173,7 @@ class ResourceManager(Generic[T], ABC):
         return self._endpoint().with_id(self.id_field_value(obj))
 
     def _fetch_by_field(self, field: str, value: str | int) -> T | None:
-        """Fetch a single object by a field, mirroring the old APIMixin.get_by_field."""
+        """Fetch a single object, querying by a field."""
         endpoint = self._endpoint()
 
         # Field is the ID used in the URL path. i.e. /hosts/example.com, /sshfps/123, etc.
@@ -156,12 +181,16 @@ class ResourceManager(Generic[T], ABC):
             resp = self._client.get(endpoint.with_id(value), ok404=True)
             if not resp:
                 return None
-            return self._validate(resp.json())
+            return self._validate_json(resp.text)
 
         # Lookup by non-ID field, i.e. `/hosts?ipaddress=foo` instead of `/hosts/{id}`.
         data = self._client.get_item_by_key_value(endpoint, field, value, ok404=True)
         if not data:
             return None
+        # TODO: refactor the get_list/get_item_by_key_value methods to return a response
+        # OR JSON strings, so we can pass everything through _validate_json().
+        # Pydantic's JSON parser is faster than passing everything through the stdlib
+        # JSON parser, and then through _validate().
         return self._validate(data)
 
     def _fetch_list_by_field(self, field: str, value: str | int) -> list[T]:
@@ -200,6 +229,7 @@ class ResourceManager(Generic[T], ABC):
         Returns:
             The resource, or ``None`` when `required` is False.
         """
+        ident = self._normalize_id(ident)
         obj = self._fetch_by_field(self._url_identifier, ident)
         if required and obj is None:
             raise EntityNotFound(f"{self.model.__name__} {ident!r} not found.")
@@ -214,6 +244,7 @@ class ResourceManager(Generic[T], ABC):
         Raises:
             EntityAlreadyExists: If a resource with `ident` exists.
         """
+        ident = self._normalize_id(ident)
         if self._fetch_by_field(self._url_identifier, ident) is not None:
             raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
@@ -275,6 +306,10 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     def _case_name(self, name: str) -> str:
         return name.lower() if self.name_lowercase else name
 
+    def _normalize_name(self, name: str) -> str:
+        """Normalise a name before use in lookups. Override to add hostname expansion."""
+        return self._case_name(name)
+
     # FIXME: Do we actually need an explicit name based lookup? Can we just use get_by_field() instead?
     #       get() should handle the "primary" path i.e. the URL identifier.
     #       The only affordance this gives us is the ability to format the name (lowercase, etc.)
@@ -289,7 +324,8 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         For the "must not exist" guard use :meth:`ensure_absent` (for named resources
         the external id-field is the name, so it covers name absence).
         """
-        obj = self._fetch_by_field(self.name_field, self._case_name(name))
+        name = self._normalize_name(name)
+        obj = self._fetch_by_field(self.name_field, name)
         if required and obj is None:
             raise EntityNotFound(f"{self.model.__name__} {name!r} not found.")
         return obj
@@ -304,7 +340,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         Returns:
             The patched resource.
         """
-        return self._patch(obj, {self.name_field: self._case_name(new_name)})
+        return self._patch(obj, {self.name_field: self._normalize_name(new_name)})
 
     # TODO: add list_by_name ? Didn't exist in prior version
 
@@ -320,7 +356,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         """
         from mreg_api.client import MregClient  # noqa: PLC0415
 
-        param, value = convert_wildcard_to_regex(self.name_field, self._case_name(name), True)
+        param, value = convert_wildcard_to_regex(self.name_field, self._normalize_name(name), True)
         # NOTE: why can we use T here? Is this a Python 3.11 thing?
         # return MregClient().get_typed(cls.endpoint(), list[T], params={param: value})
         return MregClient().get_typed(self._endpoint(), list[self.model], params={param: value})
@@ -338,12 +374,17 @@ class HistoryManager(ResourceManager[T], ABC):
         """
         ...
 
+    def _normalize_history_name(self, name: str) -> str:
+        """Normalise a name before use in history lookups. Override for hostname expansion."""
+        return name
+
     def history(self, name: str) -> list[HistoryItem]:
         """Get the audit history for a named resource.
 
         Relocated from the former ``HistoryItem.get``: fetches history through the
         owning client and constructs :class:`HistoryItem` models from the result.
         """
+        name = self._normalize_history_name(name)
         resource = self.history_resource
         params: QueryParams = {"resource": resource.resource(), "name": name}
         ret = self._client.get_typed(Endpoint.History, list[HistoryItem], params=params)
@@ -375,6 +416,15 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     @override
     def history_resource(self) -> HistoryResource:
         return HistoryResource.Host
+
+    def _normalize_id(self, ident: str | int) -> str | int:
+        return self._client.fqdn(ident) if isinstance(ident, str) else ident
+
+    def _normalize_name(self, name: str) -> str:
+        return self._client.fqdn(name)
+
+    def _normalize_history_name(self, name: str) -> str:
+        return self._client.fqdn(name)
 
     def _resolve(self, ref: int | Host) -> Host:
         """Resolve a host reference (instance or numeric id) to a Host."""
@@ -500,7 +550,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         Returns:
             Host | None: The created host, or None if creation failed.
         """
-        data: dict[str, Any] = {"name": str(name)}
+        data: dict[str, Any] = {"name": self._client.fqdn(name)}
         if comment:
             data["comment"] = comment
         if contacts:
@@ -524,7 +574,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         host = self._resolve(ref)
         data: dict[str, Any] = {}
         if name is not UNSET:
-            data["name"] = str(name)
+            data["name"] = self._client.fqdn(str(name))
         if comment is not UNSET:
             data["comment"] = comment
         if contacts is not UNSET:
@@ -603,6 +653,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
     def add_host(self, group: int | HostGroup, name: str) -> HostGroup:
         """Add a host to a host group."""
         group = self._resolve(group)
+        name = self._client.fqdn(name)
 
         self._client.post(
             Endpoint.HostGroupsAddHosts.with_params(group.name),
@@ -613,6 +664,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
     def remove_host(self, group: int | HostGroup, name: str) -> HostGroup:
         """Remove a host from a host group."""
         group = self._resolve(group)
+        name = self._client.fqdn(name)
 
         self._client.delete(
             Endpoint.HostGroupsRemoveHosts.with_params(group.name, name),

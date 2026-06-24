@@ -22,8 +22,6 @@ from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
-from mreg_api.models.fields import HostName
-from mreg_api.models.fields import hostname_domain
 from mreg_api.models.models import Host
 from mreg_api.types import HTTPMethod
 
@@ -633,117 +631,80 @@ def test_client_get_list_unique_invalid_json(httpserver: HTTPServer, client: Mre
     assert "Failed to validate JSON mapping" in exc_msg
 
 
-def test_client_set_domain() -> None:
-    """set_domain changes the hostname domain used for validation."""
+def test_client_fqdn_expands_bare_hostname() -> None:
+    """Fqdn appends the client domain to bare hostnames."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert hostname_domain.get() == "example.com"
-    assert HostName.validate_hostname("myhost") == "myhost.example.com"
-
-    client.set_domain("other.org")
-    assert client.get_domain() == "other.org"
-    assert client.get_domain() == hostname_domain.get()
-    assert HostName.validate_hostname("myhost") == "myhost.other.org"
+    assert client.fqdn("myhost") == "myhost.example.com"
 
 
-def test_client_reset_domain() -> None:
-    """reset_domain restores the hostname domain to the value from initialization."""
-    assert hostname_domain.get() == snapshot("uio.no")  # default domain
-
+def test_client_fqdn_passes_through_qualified() -> None:
+    """Fqdn does not alter hostnames that already contain a dot."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert hostname_domain.get() == "example.com"
-
-    # Set another domain
-    client.set_domain("other.org")
-    assert hostname_domain.get() == "other.org"
-
-    # Reset to original
-    client.reset_domain()
-    assert client.get_domain() == snapshot("example.com")
-
-    # Can be called multiple times (also in destructor)
-    client.reset_domain()
-    client.reset_domain()
-    assert client.get_domain() == snapshot("example.com")
+    assert client.fqdn("myhost.other.org") == "myhost.other.org"
 
 
-def test_client_reset_domain_after_multiple_set_domain() -> None:
-    """reset_domain always restores to the initialization value, not the previous value."""
+def test_client_fqdn_strips_trailing_dot() -> None:
+    """Fqdn strips trailing dot then returns as-is (already qualified)."""
     client = MregClient(url="http://example.com", domain="example.com")
+    assert client.fqdn("myhost.example.com.") == "myhost.example.com"
 
-    client.set_domain("first.org")
-    client.set_domain("second.org")
-    client.set_domain("third.org")
-    assert client.get_domain() == "third.org"
-    assert client.get_domain() == hostname_domain.get()
 
-    # reset_domain should go back to example.com, not third.org or second.org
-    client.reset_domain()
-    assert client.get_domain() == "example.com"
-    assert client.get_domain() == hostname_domain.get()
+def test_client_fqdn_bare_no_domain() -> None:
+    """Fqdn returns bare hostname when no domain is configured."""
+    client = MregClient(url="http://example.com", domain="")
+    assert client.fqdn("myhost") == "myhost"
 
 
 def test_client_domain_override_context_manager() -> None:
     """domain_override temporarily changes the hostname domain within a context."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert client.get_domain() == "example.com"
+    assert client.domain == "example.com"
 
     with client.domain_override("temp.net"):
-        assert client.get_domain() == "temp.net"
-        assert HostName.validate_hostname("myhost") == "myhost.temp.net"
+        assert client.domain == "temp.net"
+        assert client.fqdn("myhost") == "myhost.temp.net"
 
-    # After exiting context, domain should be restored
-    assert client.get_domain() == "example.com"
-    assert HostName.validate_hostname("myhost") == "myhost.example.com"
+    assert client.domain == "example.com"
+    assert client.fqdn("myhost") == "myhost.example.com"
 
 
 def test_client_domain_override_restores_on_exception() -> None:
     """domain_override restores the domain even when an exception occurs."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert client.get_domain() == "example.com"
 
     with pytest.raises(ValueError, match="test error"):
         with client.domain_override("temp.net"):
-            assert client.get_domain() == "temp.net"
+            assert client.domain == "temp.net"
             raise ValueError("test error")
 
-    # Domain should still be restored after exception
-    assert client.get_domain() == "example.com"
+    assert client.domain == "example.com"
 
 
 def test_client_domain_override_nested() -> None:
     """Nested domain_override contexts work correctly."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert client.get_domain() == "example.com"
 
     with client.domain_override("outer.org"):
-        assert client.get_domain() == "outer.org"
+        assert client.domain == "outer.org"
 
         with client.domain_override("inner.net"):
-            assert client.get_domain() == "inner.net"
+            assert client.domain == "inner.net"
 
-        # After inner context exits, should restore to outer value
-        assert client.get_domain() == "outer.org"
+        assert client.domain == "outer.org"
 
-    # After outer context exits, should restore to original
-    assert client.get_domain() == "example.com"
+    assert client.domain == "example.com"
 
 
-def test_client_domain_override_after_set_domain() -> None:
-    """domain_override works correctly after set_domain has been called."""
+def test_client_domain_direct_assignment() -> None:
+    """Domain attribute can be changed directly."""
     client = MregClient(url="http://example.com", domain="example.com")
-
-    client.set_domain("changed.org")
-    assert client.get_domain() == "changed.org"
+    client.domain = "changed.org"
+    assert client.fqdn("web") == "web.changed.org"
 
     with client.domain_override("temp.net"):
-        assert client.get_domain() == "temp.net"
+        assert client.domain == "temp.net"
 
-    # After context exits, should restore to the value before the context (changed.org)
-    assert client.get_domain() == "changed.org"
-
-    # reset_domain should still restore to original initialization value
-    client.reset_domain()
-    assert client.get_domain() == "example.com"
+    assert client.domain == "changed.org"
 
 
 def test_client_model_composition(client: MregClient, httpserver: HTTPServer) -> None:

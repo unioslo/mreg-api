@@ -11,7 +11,6 @@ from collections.abc import Generator
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from contextvars import Token
 from enum import StrEnum
 from typing import Any
 from typing import Concatenate
@@ -95,7 +94,8 @@ from mreg_api.models import Srv
 from mreg_api.models import UserInfo
 from mreg_api.models import Zone
 from mreg_api.models import ZoneFile
-from mreg_api.models.fields import hostname_domain
+from mreg_api.models.fields import HostName
+from mreg_api.models.fields import parse_hostname
 from mreg_api.models.models import TokenAuth
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
@@ -390,7 +390,7 @@ class MregClient(metaclass=SingletonMeta):
         )
 
         self.url: str = url
-        self._domain: str = domain  # Store initial domain for reset
+        self.domain: str = domain
         self._page_size: int | None = page_size
         self.user: str | None = user
 
@@ -404,8 +404,6 @@ class MregClient(metaclass=SingletonMeta):
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
         self.events: EventLog = EventLog(max_size=event_log_size)
-        self._original_domain_token: Token[str] = self.set_domain(self._domain)
-        self._reset_contextvars()
 
     @property
     def timeout(self) -> float | None:
@@ -427,46 +425,31 @@ class MregClient(metaclass=SingletonMeta):
         _ = last_request_url.set(None)
         _ = last_request_method.set(None)
 
-    def set_domain(self, domain: str) -> Token[str]:
-        """Set the default domain for hostname validation.
+    def fqdn(self, name: str) -> HostName:
+        """Normalise and expand a hostname using this client's configured domain.
 
-        Args:
-            domain (str): The domain to set for hostname validation.
+        Not _technically_ a FQDN, since we don't include a trailing dot,
+        but that's not a concept MREG operates on anyway.
         """
-        return hostname_domain.set(domain)
-
-    def get_domain(self) -> str:
-        """Get the current hostname domain used for validation.
-
-        Returns:
-            The current hostname domain.
-        """
-        return hostname_domain.get()
-
-    def reset_domain(self) -> None:
-        """Reset the hostname domain to the value from client initialization."""
-        _ = hostname_domain.set(self._domain)
+        return parse_hostname(name, self.domain)
 
     @contextmanager
     def domain_override(self, domain: str) -> Generator[None, None, None]:
-        """Temporarily override the hostname domain.
+        """Temporarily override the hostname domain used by :meth:`fqdn`.
 
         Args:
-            domain (str): The domain to use within the context.
+            domain: The domain to use within the context.
 
         Example:
             >>> with client.domain_override("example.com"):
-            ...     # hostname validation uses example.com here
-            ...     pass
-            >>> # hostname validation uses the original domain again
+            ...     client.fqdn("web")  # → "web.example.com"
         """
-        # Save token to support nested contexts purely for correctness reasons.
-        # It's unclear why one would ever want to use nested domain overrides.
-        token = hostname_domain.set(domain)
+        old = self.domain
+        self.domain = domain
         try:
             yield
         finally:
-            hostname_domain.reset(token)
+            self.domain = old
 
     def _get_cache_tag(self) -> str:
         """Get the cache tag for this client."""

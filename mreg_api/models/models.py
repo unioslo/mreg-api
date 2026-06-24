@@ -59,8 +59,10 @@ from mreg_api.models.abstracts import APIMixin
 from mreg_api.models.abstracts import FrozenModel
 from mreg_api.models.abstracts import FrozenModelWithTimestamps
 from mreg_api.models.fields import HostName
+from mreg_api.models.fields import HostNameField
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
+from mreg_api.models.fields import parse_hostname
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.types import IP_AddressT
@@ -2458,7 +2460,7 @@ class CNAME(FrozenModelWithTimestamps, WithHost, WithZone, WithTTL, APIMixin):
     """Represents a CNAME record."""
 
     id: int  # noqa: A003
-    name: HostName
+    name: HostNameField
     ttl: int | None = None
 
     @classmethod
@@ -2750,7 +2752,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
     """Model for an individual host."""
 
     id: int  # noqa: A003
-    name: HostName
+    name: HostNameField
     ipaddresses: list[IPAddress]
     cnames: list[CNAME] = []
     mxs: list[MX] = []
@@ -3047,7 +3049,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             return cls.get_by_mac_or_raise(mac)
 
         # Let us try to find the host by name...
-        identifier = HostName.parse_or_raise(identifier)
+        identifier = parse_hostname(identifier)
 
         if host := cls.get_by_field("name", identifier):
             return host
@@ -3150,7 +3152,7 @@ class Host(FrozenModelWithTimestamps, WithTTL, WithHistory, APIMixin):
             return cls.get_list_by_mac_or_raise(mac)
 
         # Let us try to find the host by name...
-        identifier = HostName.parse_or_raise(identifier)
+        identifier = parse_hostname(identifier)
 
         if host := cls.get_by_field("name", identifier):
             return [host]

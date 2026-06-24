@@ -14,14 +14,12 @@ from __future__ import annotations
 
 import logging
 import re
-from contextvars import ContextVar
 from typing import Annotated
 from typing import Any
+from typing import NewType
 
 from pydantic import AfterValidator
 from pydantic import BeforeValidator
-from pydantic import GetCoreSchemaHandler
-from pydantic_core import core_schema
 from pydantic_extra_types.mac_address import MacAddress as PydanticMacAddress
 
 from mreg_api.exceptions import InputFailure
@@ -29,100 +27,53 @@ from mreg_api.types import get_type_adapter
 
 logger = logging.getLogger(__name__)
 
-# Context variable for hostname domain - used during validation to append
-# the default domain to hostnames without domains. Set by MregClient on initialization.
-hostname_domain: ContextVar[str] = ContextVar("hostname_domain", default="uio.no")
+HostName = NewType("HostName", str)
+"""Validated hostname string type."""
+
+_HOSTNAME_RE = re.compile(r"^(\*\.)?([a-z0-9_][a-z0-9\-]*\.?)+$")
 
 
-class HostName(str):
-    """Hostname string type."""
+def parse_hostname(value: str, domain: str = "") -> HostName:
+    """Normalise and optionally expand a hostname.
 
-    @classmethod
-    def parse(cls, obj: Any) -> HostName | None:
-        """Parse a hostname from a string. Returns None if the hostname is invalid.
+    Normalisation: lowercase, strip trailing dot, validate shape.
+    Expansion: if no dot remains after normalisation and ``domain`` is non-empty,
+    append the domain.
 
-        Args:
-            obj: The object to parse.
+    Args:
+        value: Raw hostname string.
+        domain: Domain to append when the name has no dot after normalisation.
+            Pass ``""`` (default) to skip expansion.
 
-        Returns:
-            The hostname as a string or None if it is invalid.
-        """
-        try:
-            return cls.parse_or_raise(obj)
-        except InputFailure:
-            return None
+    Returns:
+        Normalised (and optionally expanded) :data:`HostName`.
 
-    @classmethod
-    def parse_or_raise(cls, obj: Any) -> HostName:
-        """Parse a hostname from a string. Returns the hostname as a string.
+    Raises:
+        InputFailure: If the value is not a valid hostname shape.
+    """
+    value = value.lower()
+    if value.endswith("."):  # strip trailing dot - may be unnecessary
+        value = value[:-1]
+    if _HOSTNAME_RE.search(value) is None:
+        raise InputFailure(f"Invalid input for hostname: {value}")
+    if "." not in value and domain:
+        value = f"{value}.{domain}"
+    return HostName(value)
 
-        Args:
-            obj: The object to parse.
 
-        Returns:
-            The hostname as a string.
+HostNameField = Annotated[HostName, AfterValidator(parse_hostname)]
+"""Pydantic-compatible hostname field type.
 
-        Raises:
-            ValueError: If the object is not a valid hostname.
-        """
-        try:
-            adapter = get_type_adapter(cls)
-            return cls(adapter.validate_python(obj))
-        except ValueError as e:
-            raise InputFailure(f"Invalid hostname '{obj}'") from e
+Use as a model field type where the server returns hostnames that should be
+normalised (lowercase, trailing dot stripped) on deserialisation.
 
-    @staticmethod
-    def validate_hostname(value: str) -> str:
-        """Validate the hostname."""
-        value = value.lower()
+No expansion occurs, since the server should always return fully qualified hostnames.
+Furthermore, we have no way to know what domain to expand to, so we don't attempt it.
 
-        if re.search(r"^(\*\.)?([a-z0-9_][a-z0-9\-]*\.?)+$", value) is None:
-            raise InputFailure(f"Invalid input for hostname: {value}")
-
-        # Assume user is happy with domain, but strip the dot.
-        if value.endswith("."):
-            return value[:-1]
-
-        # If a dot in name, assume long name.
-        if "." in value:
-            return value
-
-        domain = hostname_domain.get()
-        # Append domain name if in config and it does not end with it
-        if domain and not value.endswith(domain):
-            return f"{value}.{domain}"
-        return value
-
-    @classmethod
-    def __get_pydantic_core_schema__(
-        cls, source: type[Any], handler: GetCoreSchemaHandler
-    ) -> core_schema.CoreSchema:
-        """Return a Pydantic CoreSchema with the hostname validation.
-
-        Args:
-            source: The source type to be converted.
-            handler: The handler to get the CoreSchema.
-
-        Returns:
-            A Pydantic CoreSchema with the hostname validation.
-        """
-        return core_schema.with_info_before_validator_function(
-            cls._validate,
-            core_schema.str_schema(),
-        )
-
-    @classmethod
-    def _validate(cls, __input_value: str, _: Any) -> str:
-        """Validate a hostname from the provided str value.
-
-        Args:
-            __input_value: The str value to be validated.
-            _: The source type to be converted.
-
-        Returns:
-            The parsed hostname.
-        """
-        return cls.validate_hostname(__input_value)
+TODO: Consider if we should remove validation of incoming hostnames from the server.
+It is not really the client's responsibility to validate server data to _this_ level
+of granularity.
+"""
 
 
 class MacAddress(PydanticMacAddress):
