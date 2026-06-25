@@ -461,13 +461,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         return host
 
     def _record_ptr_event(self, host: Host, ip: str) -> None:
-        """Record that ``ip`` resolved to ``host`` via a PTR override.
-
-        PTR fallback is library-internal (the caller cannot otherwise tell the match
-        came from a PTR override), so it is always surfaced as an event; the CLI filters
-        events at display time (ADR-0001). CNAME resolution, in contrast, is composed by
-        the CLI and is not a library event.
-        """
+        """Record that ``ip`` resolved to ``host`` via a PTR override."""
         self._client.events.record(
             Event(
                 kind=EventKind.RESOLUTION,
