@@ -46,15 +46,26 @@ from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.models import CNAME
+from mreg_api.models import MX
+from mreg_api.models import NAPTR
+from mreg_api.models import SSHFP
+from mreg_api.models import TXT
+from mreg_api.models import BacnetID
+from mreg_api.models import HInfo
 from mreg_api.models import Host
 from mreg_api.models import HostGroup
+from mreg_api.models import IPAddress
 from mreg_api.models import Label
+from mreg_api.models import Location
 from mreg_api.models import Network
 from mreg_api.models import NetworkOrIP
 from mreg_api.models import NetworkPolicy
 from mreg_api.models import NetworkPolicyAttribute
 from mreg_api.models import NetworkPolicyAttributeValue
 from mreg_api.models import Permission
+from mreg_api.models import PTR_override
+from mreg_api.models import Srv
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
@@ -1223,3 +1234,596 @@ class NetworkManager(WriteResourceManager[Network]):
         if exrange is None:
             raise EntityNotFound(f"Excluded range {start} - {end} not found in {net.network!r}.")
         self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(net.network, exrange.id))
+
+
+def resolve_host_id(host: Host | int) -> int:
+    """Resolve a host reference to its numeric ID."""
+    if isinstance(host, Host):
+        return host.id
+    return host
+
+
+class IPAddressManager(WriteResourceManager[IPAddress]):
+    """Operations on :class:`~mreg_api.models.IPAddress` resources."""
+
+    @property
+    @override
+    def model(self) -> type[IPAddress]:
+        return IPAddress
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        ipaddress: IP_AddressT | str,
+        macaddress: str | MacAddress | None = None,
+        fetch_after_create: bool = True,
+    ) -> IPAddress | None:
+        """Create an IP address record."""
+        host_id = resolve_host_id(host)
+        data: dict[str, Any] = {"host": host_id, "ipaddress": str(ipaddress)}
+        if macaddress is not None:
+            data["macaddress"] = str(macaddress)
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | IPAddress,
+        *,
+        ipaddress: IP_AddressT | str | Unset = UNSET,
+        macaddress: str | MacAddress | None | Unset = UNSET,
+    ) -> IPAddress:
+        """Update an IP address record's mutable fields."""
+        ip = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if ipaddress is not UNSET:
+            data["ipaddress"] = str(ipaddress)
+        if macaddress is not UNSET:
+            data["macaddress"] = str(macaddress) if macaddress is not None else ""
+        return self._patch(ip, data)
+
+    def associate_mac(
+        self, ref: int | IPAddress, mac: str | MacAddress, *, force: bool = False
+    ) -> IPAddress:
+        """Associate a MAC address with an IP address.
+
+        Raises:
+            EntityAlreadyExists: If the IP already has a MAC and ``force`` is False.
+        """
+        ip = self._resolve(ref)
+        if ip.macaddress and not force:
+            raise EntityAlreadyExists(
+                f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}."
+            )
+        return self.update(ip, macaddress=mac)
+
+    def disassociate_mac(self, ref: int | IPAddress) -> IPAddress:
+        """Remove the MAC address from an IP address."""
+        ip = self._resolve(ref)
+        return self.update(ip, macaddress=None)
+
+    def list_by_host(self, host: int | Host) -> list[IPAddress]:
+        """List all IP address records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+    def list_by_ip(self, ip: IP_AddressT | str) -> list[IPAddress]:
+        """List all IP address records with a given IP address."""
+        return self._fetch_list_by_field("ipaddress", str(ip))
+
+
+class CNAMEManager(WriteResourceManager[CNAME]):
+    """Operations on :class:`~mreg_api.models.CNAME` resources."""
+
+    @property
+    @override
+    def model(self) -> type[CNAME]:
+        return CNAME
+
+    def _normalize_name(self, name: str) -> str:
+        return self._client.fqdn(name)
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        name: str | HostName,
+        fetch_after_create: bool = True,
+    ) -> CNAME | None:
+        """Create a CNAME record."""
+        host_id = resolve_host_id(host)
+        return self._create(
+            {"host": str(host_id), "name": self._client.fqdn(name)},
+            fetch_after_create=fetch_after_create,
+        )
+
+    def update(
+        self,
+        ref: int | CNAME,
+        *,
+        host: int | Host | Unset = UNSET,
+        name: str | HostName | Unset = UNSET,
+    ) -> CNAME:
+        """Update a CNAME record's mutable fields."""
+        cname = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if host is not UNSET:
+            data["host"] = host.id if isinstance(host, Host) else host
+        if name is not UNSET:
+            data["name"] = self._client.fqdn(str(name))
+        return self._patch(cname, data)
+
+    @overload
+    def get_by_name(self, name: str, *, required: Literal[True]) -> CNAME: ...
+    @overload
+    def get_by_name(self, name: str, *, required: Literal[False] = ...) -> CNAME | None: ...
+    def get_by_name(self, name: str, *, required: bool = False) -> CNAME | None:
+        """Get a CNAME record by alias name."""
+        obj = self._fetch_by_field("name", self._client.fqdn(name))
+        if required and obj is None:
+            raise EntityNotFound(f"CNAME {name!r} not found.")
+        return obj
+
+    def list_by_host(self, host: int | Host) -> list[CNAME]:
+        """List all CNAME records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class HInfoManager(WriteResourceManager[HInfo]):
+    """Operations on :class:`~mreg_api.models.HInfo` resources.
+
+    HInfo is a 1-per-host record; the URL identifier is the host ID (not a numeric row id).
+    """
+
+    _url_identifier: ClassVar[str] = "host"
+
+    @property
+    @override
+    def model(self) -> type[HInfo]:
+        return HInfo
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        cpu: str,
+        os: str,
+        fetch_after_create: bool = True,
+    ) -> HInfo | None:
+        """Create an HInfo record."""
+        host_id = resolve_host_id(host)
+        return self._create(
+            {"host": host_id, "cpu": cpu, "os": os}, fetch_after_create=fetch_after_create
+        )
+
+    def update(
+        self,
+        ref: int | HInfo,
+        *,
+        cpu: str | Unset = UNSET,
+        os: str | Unset = UNSET,
+    ) -> HInfo:
+        """Update an HInfo record's mutable fields."""
+        hinfo = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if cpu is not UNSET:
+            data["cpu"] = cpu
+        if os is not UNSET:
+            data["os"] = os
+        return self._patch(hinfo, data)
+
+    def get_by_host(self, host: int | Host, *, required: bool = False) -> HInfo | None:
+        """Get the HInfo record for a host."""
+        host_id = resolve_host_id(host)
+        obj = self._fetch_by_field("host", host_id)
+        if required and obj is None:
+            raise EntityNotFound(f"HInfo for host id {host_id!r} not found.")
+        return obj
+
+
+class TXTManager(WriteResourceManager[TXT]):
+    """Operations on :class:`~mreg_api.models.TXT` resources."""
+
+    @property
+    @override
+    def model(self) -> type[TXT]:
+        return TXT
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        txt: str,
+        fetch_after_create: bool = True,
+    ) -> TXT | None:
+        """Create a TXT record."""
+        host_id = resolve_host_id(host)
+        return self._create({"host": host_id, "txt": txt}, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | TXT,
+        *,
+        txt: str | Unset = UNSET,
+    ) -> TXT:
+        """Update a TXT record's mutable fields."""
+        txt_obj = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if txt is not UNSET:
+            data["txt"] = txt
+        return self._patch(txt_obj, data)
+
+    def list_by_host(self, host: int | Host) -> list[TXT]:
+        """List all TXT records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class MXManager(WriteResourceManager[MX]):
+    """Operations on :class:`~mreg_api.models.MX` resources."""
+
+    @property
+    @override
+    def model(self) -> type[MX]:
+        return MX
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        mx: str,
+        priority: int,
+        fetch_after_create: bool = True,
+    ) -> MX | None:
+        """Create an MX record."""
+        host_id = resolve_host_id(host)
+        return self._create(
+            {"host": host_id, "mx": mx, "priority": priority},
+            fetch_after_create=fetch_after_create,
+        )
+
+    def update(
+        self,
+        ref: int | MX,
+        *,
+        mx: str | Unset = UNSET,
+        priority: int | Unset = UNSET,
+    ) -> MX:
+        """Update an MX record's mutable fields."""
+        mx_obj = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if mx is not UNSET:
+            data["mx"] = mx
+        if priority is not UNSET:
+            data["priority"] = priority
+        return self._patch(mx_obj, data)
+
+    def list_by_host(self, host: int | Host) -> list[MX]:
+        """List all MX records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class NAPTRManager(WriteResourceManager[NAPTR]):
+    """Operations on :class:`~mreg_api.models.NAPTR` resources."""
+
+    @property
+    @override
+    def model(self) -> type[NAPTR]:
+        return NAPTR
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        preference: int,
+        order: int,
+        flag: str = "",
+        service: str = "",
+        regex: str = "",
+        replacement: str,
+        fetch_after_create: bool = True,
+    ) -> NAPTR | None:
+        """Create a NAPTR record."""
+        host_id = resolve_host_id(host)
+        return self._create(
+            {
+                "host": host_id,
+                "preference": preference,
+                "order": order,
+                "flag": flag,
+                "service": service,
+                "regex": regex,
+                "replacement": replacement,
+            },
+            fetch_after_create=fetch_after_create,
+        )
+
+    def update(
+        self,
+        ref: int | NAPTR,
+        *,
+        preference: int | Unset = UNSET,
+        order: int | Unset = UNSET,
+        flag: str | Unset = UNSET,
+        service: str | Unset = UNSET,
+        regex: str | Unset = UNSET,
+        replacement: str | Unset = UNSET,
+    ) -> NAPTR:
+        """Update a NAPTR record's mutable fields."""
+        naptr = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if preference is not UNSET:
+            data["preference"] = preference
+        if order is not UNSET:
+            data["order"] = order
+        if flag is not UNSET:
+            data["flag"] = flag
+        if service is not UNSET:
+            data["service"] = service
+        if regex is not UNSET:
+            data["regex"] = regex
+        if replacement is not UNSET:
+            data["replacement"] = replacement
+        return self._patch(naptr, data)
+
+    def list_by_host(self, host: int | Host) -> list[NAPTR]:
+        """List all NAPTR records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class SrvManager(WriteResourceManager[Srv]):
+    """Operations on :class:`~mreg_api.models.Srv` resources."""
+
+    @property
+    @override
+    def model(self) -> type[Srv]:
+        return Srv
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        name: str,
+        priority: int,
+        weight: int,
+        port: int,
+        ttl: int | None | Unset = UNSET,
+        fetch_after_create: bool = True,
+    ) -> Srv | None:
+        """Create a SRV record."""
+        host_id = resolve_host_id(host)
+        data: dict[str, Any] = {
+            "host": host_id,
+            "name": name,
+            "priority": priority,
+            "weight": weight,
+            "port": port,
+        }
+        if ttl is not UNSET:
+            data["ttl"] = ttl
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | Srv,
+        *,
+        name: str | Unset = UNSET,
+        priority: int | Unset = UNSET,
+        weight: int | Unset = UNSET,
+        port: int | Unset = UNSET,
+        ttl: int | None | Unset = UNSET,
+    ) -> Srv:
+        """Update a SRV record's mutable fields. Pass ``ttl=None`` to reset to default."""
+        srv = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if name is not UNSET:
+            data["name"] = name
+        if priority is not UNSET:
+            data["priority"] = priority
+        if weight is not UNSET:
+            data["weight"] = weight
+        if port is not UNSET:
+            data["port"] = port
+        if ttl is not UNSET:
+            data["ttl"] = ttl
+        return self._patch(srv, data)
+
+    def list_by_host(self, host: int | Host) -> list[Srv]:
+        """List all SRV records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class PTROverrideManager(WriteResourceManager[PTR_override]):
+    """Operations on :class:`~mreg_api.models.PTR_override` resources."""
+
+    @property
+    @override
+    def model(self) -> type[PTR_override]:
+        return PTR_override
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        ipaddress: IP_AddressT | str,
+        fetch_after_create: bool = True,
+    ) -> PTR_override | None:
+        """Create a PTR override record."""
+        host_id = resolve_host_id(host)
+        return self._create(
+            {"host": host_id, "ipaddress": str(ipaddress)},
+            fetch_after_create=fetch_after_create,
+        )
+
+    def update(
+        self,
+        ref: int | PTR_override,
+        *,
+        host: int | Host | Unset = UNSET,
+        ipaddress: IP_AddressT | str | Unset = UNSET,
+    ) -> PTR_override:
+        """Update a PTR override record's mutable fields."""
+        ptr = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if host is not UNSET:
+            data["host"] = host.id if isinstance(host, Host) else host
+        if ipaddress is not UNSET:
+            data["ipaddress"] = str(ipaddress)
+        return self._patch(ptr, data)
+
+    def list_by_host(self, host: int | Host) -> list[PTR_override]:
+        """List all PTR override records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class SSHFPManager(WriteResourceManager[SSHFP]):
+    """Operations on :class:`~mreg_api.models.SSHFP` resources."""
+
+    @property
+    @override
+    def model(self) -> type[SSHFP]:
+        return SSHFP
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        algorithm: int,
+        hash_type: int,
+        fingerprint: str,
+        ttl: int | None | Unset = UNSET,
+        fetch_after_create: bool = True,
+    ) -> SSHFP | None:
+        """Create an SSHFP record."""
+        host_id = resolve_host_id(host)
+        data: dict[str, Any] = {
+            "host": host_id,
+            "algorithm": algorithm,
+            "hash_type": hash_type,
+            "fingerprint": fingerprint,
+        }
+        if ttl is not UNSET:
+            data["ttl"] = ttl
+        return self._create(data, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | SSHFP,
+        *,
+        algorithm: int | Unset = UNSET,
+        hash_type: int | Unset = UNSET,
+        fingerprint: str | Unset = UNSET,
+        ttl: int | None | Unset = UNSET,
+    ) -> SSHFP:
+        """Update an SSHFP record's mutable fields. Pass ``ttl=None`` to reset to default."""
+        sshfp = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if algorithm is not UNSET:
+            data["algorithm"] = algorithm
+        if hash_type is not UNSET:
+            data["hash_type"] = hash_type
+        if fingerprint is not UNSET:
+            data["fingerprint"] = fingerprint
+        if ttl is not UNSET:
+            data["ttl"] = ttl
+        return self._patch(sshfp, data)
+
+    def list_by_host(self, host: int | Host) -> list[SSHFP]:
+        """List all SSHFP records for a host."""
+        host_id = resolve_host_id(host)
+        return self._fetch_list_by_field("host", host_id)
+
+
+class BacnetIDManager(WriteResourceManager[BacnetID]):
+    """Operations on :class:`~mreg_api.models.BacnetID` resources."""
+
+    @property
+    @override
+    def model(self) -> type[BacnetID]:
+        return BacnetID
+
+    def create(
+        self,
+        *,
+        hostname: str | HostName,
+        id: int,  # noqa: A002
+        fetch_after_create: bool = True,
+    ) -> BacnetID | None:
+        """Create a BacnetID record.
+
+        Args:
+            hostname: The FQDN of the host (used directly by the API, not a host id).
+            id: The BACnet device instance number (0–4194302).
+            fetch_after_create: Whether to fetch and return the created object.
+        """
+        return self._create(
+            {"hostname": str(hostname), "id": id},
+            fetch_after_create=fetch_after_create,
+        )
+
+    def update(
+        self,
+        ref: int | BacnetID,
+        *,
+        hostname: str | HostName | Unset = UNSET,
+    ) -> BacnetID:
+        """Update a BacnetID record's mutable fields."""
+        bacnet = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if hostname is not UNSET:
+            data["hostname"] = str(hostname)
+        return self._patch(bacnet, data)
+
+    def list_in_range(self, start: int, end: int) -> list[BacnetID]:
+        """List BacnetID records within a numeric id range (inclusive)."""
+        return self._client.get_typed(
+            self._endpoint(), list[BacnetID], params={"id__range": f"{start},{end}"}
+        )
+
+
+class LocationManager(WriteResourceManager[Location]):
+    """Operations on :class:`~mreg_api.models.Location` resources."""
+
+    _url_identifier: ClassVar[str] = "host"
+
+    @property
+    @override
+    def model(self) -> type[Location]:
+        return Location
+
+    def create(
+        self,
+        *,
+        host: int | Host,
+        loc: str,
+        fetch_after_create: bool = True,
+    ) -> Location | None:
+        """Create a LOC record."""
+        host_id = resolve_host_id(host)
+        return self._create({"host": host_id, "loc": loc}, fetch_after_create=fetch_after_create)
+
+    def update(
+        self,
+        ref: int | Location,
+        *,
+        loc: str | Unset = UNSET,
+    ) -> Location:
+        """Update a LOC record's mutable fields."""
+        loc_obj = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if loc is not UNSET:
+            data["loc"] = loc
+        return self._patch(loc_obj, data)
+
+    def get_by_host(self, host: int | Host, *, required: bool = False) -> Location | None:
+        """Get the LOC record for a host."""
+        host_id = resolve_host_id(host)
+        obj = self._fetch_by_field("host", host_id)
+        if required and obj is None:
+            raise EntityNotFound(f"Location for host id {host_id!r} not found.")
+        return obj
