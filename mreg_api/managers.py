@@ -158,10 +158,12 @@ class ResourceManager(Generic[T], ABC):
         if isinstance(ref, self.model):
             return ref
 
-        # Ideally this method call would use the primary path (URL identifier) not just int,
-        # but we would need to either resolve the type of identifier, coerce
-        # the value to str, or use a generic type variable for the identifier type.
-        # For now, we only accept the id field for resolution.
+        # TODO: use url identifier to resolve?
+        # I.e. `_resolve("testhost.example.com")` would use `_url_identifier`
+        # in the _fetch_by_field call. Requires us to support str args, as well
+        # as ensuring all other methods that call this method are calling it
+        # with the primary identifier in mind. Should potentially also
+        # always coerce `ref` arg to `str` here.
         obj = self._fetch_by_field("id", ref)  # TODO: resolve type narrowing!
         if obj is None:
             raise EntityNotFound(f"{self.model.__name__} with id {ref!r} not found.")
