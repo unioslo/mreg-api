@@ -17,23 +17,28 @@ the client; fetches data and builds models from it. Models themselves are dumb d
 _Avoid_: repository, service, DAO
 
 **Resource**:
-An API-backed entity type a manager operates on (Host, Network, Zone, …). Inherits
-the concrete `APIResource` base, which carries the endpoint metadata (`endpoint()`,
-`id_for_endpoint()`, `endpoint_with_id`) as pure data; carries no I/O.
+An API-backed entity type a manager operates on (Host, Network, Zone, …). Conforms
+to the `APIResource` Protocol by exposing an `endpoint()` classmethod; otherwise a
+plain Pydantic model that carries data only, no I/O. URL construction lives on the
+manager, not the model.
 _Avoid_: entity, record (when meaning the type)
 
 **External ID field**:
 The field the server uses as the URL identifier for a resource, which is not always
-`id`: Host→`name`, Network→`network`, Hinfo/Loc→`host`, most others→`id`. Derived
-from the endpoint (`Endpoint.external_id_field()`).
+`id`: Host→`name`, Network→`network`, HInfo/Location→`host`, most others→`id`.
+Declared on `Endpoint` via `external_id_field()` and mirrored as the manager's
+`_url_identifier` ClassVar, which the manager uses to construct endpoint URLs.
 _Avoid_: lookup key, natural key
 
 **Resolution** (a.k.a. "get by any means"):
-Taking one free-text human identifier and figuring out *what kind* it is (id vs IP
-vs MAC vs hostname vs CNAME) before fetching. A **CLI concern**, not a library one:
-the library exposes explicit per-kind getters (`get_by_id`, `get_by_ip`, …) and the
+Taking one free-text human identifier and figuring out _what_ it is before fetching.
+Two flavors, both a **CLI concern, not a library one**: discriminating _identifier
+kind_ (id vs IP vs MAC vs hostname vs CNAME for a Host) and discriminating _resource
+type_ (is this name a Role or an Atom?). The library exposes explicit per-kind /
+per-type getters (`client.roles.get_by_name`, `client.atoms.get_by_name`, …); the
 CLI composes them in a fixed order.
-_Avoid_: get_by_any_means (as a library method), smart get, magic get
+_Avoid_: get_by_any_means (as a library method), smart get, magic get,
+get_role_or_atom (as a library method)
 
 **HostName**:
 A marker (`NewType` over `str`) meaning "produced through our normalization":
