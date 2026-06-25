@@ -402,6 +402,9 @@ class HistoryManager(ResourceManager[T], ABC):
         """Normalise a name before use in history lookups. Override for hostname expansion."""
         return name
 
+    # TODO: refactor to also accept a resource instance
+    #       HOWEVER, we _must_ also accept names, because
+    #       history may refer to deleted items, thus no concrete instance!
     def history(self, name: str) -> list[HistoryItem]:
         """Get the audit history for a named resource.
 
@@ -1345,7 +1348,7 @@ class CNAMEManager(WriteResourceManager[CNAME]):
         cname = self._resolve(ref)
         data: dict[str, Any] = {}
         if host is not UNSET:
-            data["host"] = host.id if isinstance(host, Host) else host
+            data["host"] = resolve_host_id(host)
         if name is not UNSET:
             data["name"] = self._client.fqdn(str(name))
         return self._patch(cname, data)
@@ -1667,7 +1670,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         ptr = self._resolve(ref)
         data: dict[str, Any] = {}
         if host is not UNSET:
-            data["host"] = host.id if isinstance(host, Host) else host
+            data["host"] = resolve_host_id(host)
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
         return self._patch(ptr, data)
