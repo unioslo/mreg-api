@@ -323,6 +323,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     # NOTE: does not currently handle name-based lookups for resources that do
     # not support writes (but they don't exist per now!)
 
+    # TODO: should override _url_identifier instead?!
     name_field: ClassVar[str] = "name"
     name_lowercase: ClassVar[bool] = False
 
@@ -442,6 +443,8 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     def _normalize_id(self, ident: str | int) -> str | int:
         return self._client.fqdn(ident) if isinstance(ident, str) else ident
 
+    # NOTE: why do we have a separate _normalize_history_name?
+    #       They do the exact same thing...
     def _normalize_name(self, name: str) -> str:
         return self._client.fqdn(name)
 
