@@ -40,8 +40,10 @@ from mreg_api.endpoints import Endpoint
 from mreg_api.events import Event
 from mreg_api.events import EventKind
 from mreg_api.events import ObjectRef
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
@@ -51,6 +53,7 @@ from mreg_api.models import MX
 from mreg_api.models import NAPTR
 from mreg_api.models import SSHFP
 from mreg_api.models import TXT
+from mreg_api.models import Atom
 from mreg_api.models import BacnetID
 from mreg_api.models import HInfo
 from mreg_api.models import Host
@@ -65,6 +68,7 @@ from mreg_api.models import NetworkPolicyAttribute
 from mreg_api.models import NetworkPolicyAttributeValue
 from mreg_api.models import Permission
 from mreg_api.models import PTR_override
+from mreg_api.models import Role
 from mreg_api.models import Srv
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
@@ -765,6 +769,203 @@ class LabelManager(NamedResourceManager[Label]):
         """Set the description for the label."""
         label = self._resolve(label)
         return self.update(label, description=description)
+
+
+class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
+    """Operations on :class:`~mreg_api.models.Role` resources."""
+
+    _url_identifier: ClassVar[str] = "name"
+
+    @property
+    @override
+    def model(self) -> type[Role]:
+        return Role
+
+    @property
+    @override
+    def history_resource(self) -> HistoryResource:
+        return HistoryResource.HostPolicy_Role
+
+    def create(
+        self,
+        *,
+        name: str,
+        description: str = "",
+        fetch_after_create: bool = True,
+    ) -> Role | None:
+        """Create a role."""
+        return self._create(
+            {"name": name, "description": description}, fetch_after_create=fetch_after_create
+        )
+
+    def update(
+        self,
+        ref: int | Role,
+        *,
+        description: str | Unset = UNSET,
+    ) -> Role:
+        """Update a role's mutable fields."""
+        role = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        return self._patch(role, data)
+
+    def set_description(self, ref: int | Role, description: str) -> Role:
+        """Set the description for the role."""
+        role = self._resolve(ref)
+        return self.update(role, description=description)
+
+    @override
+    def delete(self, obj: Role) -> None:
+        """Delete a role.
+
+        Raises:
+            DeleteError: If the role is still in use on any hosts.
+        """
+        if obj.hosts:
+            hosts = ", ".join(obj.hosts)
+            raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
+        super().delete(obj)
+
+    def list_with_atom(self, atom_name: str) -> list[Role]:
+        """List all roles that contain a given atom.
+
+        Renamed from ``Role.get_roles_with_atom``.
+        """
+        return self._fetch_list_by_field("atoms__name__exact", atom_name)
+
+    def add_atom(self, ref: int | Role, atom_name: str) -> Role:
+        """Add an atom to the role.
+
+        Raises:
+            EntityNotFound: If the atom does not exist.
+            EntityAlreadyExists: If the atom is already a member of the role.
+        """
+        role = self._resolve(ref)
+        _ = AtomManager(self._client).get_by_name(atom_name, required=True)
+        if atom_name in role.atoms:
+            raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}")
+        self._client.post(
+            Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name}
+        )
+        return self._refetch(role)
+
+    def remove_atom(self, ref: int | Role, atom_name: str) -> Role:
+        """Remove an atom from the role.
+
+        Raises:
+            EntityOwnershipMismatch: If the atom is not a member of the role.
+        """
+        role = self._resolve(ref)
+        if atom_name not in role.atoms:
+            raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
+        self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
+        return self._refetch(role)
+
+    def add_host(self, ref: int | Role, name: str) -> Role:
+        """Add a host to the role by name."""
+        role = self._resolve(ref)
+        name = self._client.fqdn(name)
+        self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": name})
+        return self._refetch(role)
+
+    def remove_host(self, ref: int | Role, name: str) -> Role:
+        """Remove a host from the role by name."""
+        role = self._resolve(ref)
+        name = self._client.fqdn(name)
+        self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, name))
+        return self._refetch(role)
+
+    def get_labels(self, ref: int | Role) -> list[Label]:
+        """Get the labels associated with the role."""
+        role = self._resolve(ref)
+        labels = LabelManager(self._client)
+        return [labels.get(lid, required=True) for lid in role.labels]
+
+    def add_label(self, ref: int | Role, label_name: str) -> Role:
+        """Add a label to the role by name.
+
+        Raises:
+            EntityNotFound: If the label does not exist.
+            EntityAlreadyExists: If the role already has the label.
+        """
+        role = self._resolve(ref)
+        label = LabelManager(self._client).get_by_name(label_name, required=True)
+        if label.id in role.labels:
+            raise EntityAlreadyExists(f"Role {role.name!r} already has label {label_name!r}")
+        return self._patch(role, {"labels": [*role.labels, label.id]})
+
+    def remove_label(self, ref: int | Role, label_name: str) -> Role:
+        """Remove a label from the role by name.
+
+        Raises:
+            EntityNotFound: If the label does not exist.
+            EntityOwnershipMismatch: If the role does not have the label.
+        """
+        role = self._resolve(ref)
+        label = LabelManager(self._client).get_by_name(label_name, required=True)
+        if label.id not in role.labels:
+            raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label_name!r}")
+        return self._patch(role, {"labels": [lid for lid in role.labels if lid != label.id]})
+
+
+class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
+    """Operations on :class:`~mreg_api.models.Atom` resources."""
+
+    _url_identifier: ClassVar[str] = "name"
+
+    @property
+    @override
+    def model(self) -> type[Atom]:
+        return Atom
+
+    @property
+    @override
+    def history_resource(self) -> HistoryResource:
+        return HistoryResource.HostPolicy_Atom
+
+    def create(
+        self,
+        *,
+        name: str,
+        description: str = "",
+        fetch_after_create: bool = True,
+    ) -> Atom | None:
+        """Create an atom."""
+        return self._create(
+            {"name": name, "description": description}, fetch_after_create=fetch_after_create
+        )
+
+    def update(
+        self,
+        ref: int | Atom,
+        *,
+        description: str | Unset = UNSET,
+    ) -> Atom:
+        """Update an atom's mutable fields."""
+        atom = self._resolve(ref)
+        data: dict[str, Any] = {}
+        if description is not UNSET:
+            data["description"] = description
+        return self._patch(atom, data)
+
+    def set_description(self, ref: int | Atom, description: str) -> Atom:
+        """Set the description for the atom."""
+        atom = self._resolve(ref)
+        return self.update(atom, description=description)
+
+    @override
+    def delete(self, obj: Atom) -> None:
+        """Delete an atom.
+
+        Raises:
+            DeleteError: If the atom is still used in any roles.
+        """
+        if obj.roles:
+            roles = ", ".join(obj.roles)
+            raise DeleteError(f"Atom {obj.name!r} used in roles: {roles}")
+        super().delete(obj)
 
 
 class PermissionManager(WriteResourceManager[Permission]):
