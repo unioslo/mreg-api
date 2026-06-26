@@ -57,6 +57,9 @@ from mreg_api.models import SSHFP
 from mreg_api.models import TXT
 from mreg_api.models import Atom
 from mreg_api.models import BacnetID
+from mreg_api.models import DhcpHostIPv4
+from mreg_api.models import DhcpHostIPv6
+from mreg_api.models import DhcpHostIPv6ByIPv4
 from mreg_api.models import ForwardZone
 from mreg_api.models import ForwardZoneDelegation
 from mreg_api.models import HInfo
@@ -2451,3 +2454,69 @@ class DelegationManager:
         cls = self._model_for(zone)
         self._client.patch(cls.endpoint_with_name(zone, name), json={"comment": comment})
         return self.get(zone, name, required=True)
+
+
+# TODO: test subclassing here!
+
+
+class DhcpHostManager(ResourceManager[T], ABC):
+    """Read-only manager for DHCP host records (``client.dhcphost``).
+
+    This is a generic base class for the IPv4, IPv6, and IPv6-via-IPv4 managers.
+    Cannot be instantiated directly; use one of the concrete subclasses instead.
+    """
+
+    def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[T]:  # noqa: A002
+        """List DHCP hosts within the given IP range."""
+        return self._client.get_typed(
+            Endpoint.DhcpHostsByRange.with_params(str(ip), range),
+            list[self.model],
+        )
+
+
+class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
+    """Read-only manager for IPv4 DHCP host records (``client.dhcphost_ipv4``)."""
+
+    @property
+    @override
+    def model(self) -> type[DhcpHostIPv4]:
+        return DhcpHostIPv4
+
+    # def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[DhcpHostIPv4]:
+    #     """List IPv4 DHCP hosts within the given IP range."""
+    #     return self._client.get_typed(
+    #         Endpoint.DhcpHostsByRange.with_params(str(ip), range),
+    #         list[DhcpHostIPv4],
+    #     )
+
+
+class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
+    """Read-only manager for IPv6 DHCP host records (``client.dhcphost_ipv6``)."""
+
+    @property
+    @override
+    def model(self) -> type[DhcpHostIPv6]:
+        return DhcpHostIPv6
+
+    # def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[DhcpHostIPv6]:
+    #     """List IPv6 DHCP hosts within the given IP range."""
+    #     return self._client.get_typed(
+    #         Endpoint.DhcpHostsByRange.with_params(str(ip), range),
+    #         list[DhcpHostIPv6],
+    #     )
+
+
+class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
+    """Read-only manager for IPv6-via-IPv4 DHCP host records (``client.dhcphost_ipv6byipv4``)."""
+
+    @property
+    @override
+    def model(self) -> type[DhcpHostIPv6ByIPv4]:
+        return DhcpHostIPv6ByIPv4
+
+    # def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[DhcpHostIPv6ByIPv4]:
+    #     """List IPv6-by-IPv4 DHCP hosts within the given IPv4 range."""
+    #     return self._client.get_typed(
+    #         Endpoint.DhcpHostsIpv6ByIpv4ByRange.with_params(str(ip), range),
+    #         list[DhcpHostIPv6ByIPv4],
+    #     )
