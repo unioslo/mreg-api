@@ -302,12 +302,12 @@ class ResourceManager(Generic[T], ABC):
     # TODO: add warning or similar when used on non-paginated endpoints somehow.
     # Manually? Use contextvar? Who knows.
     @overload
-    def get_first(self, *, required: Literal[True], **query: str | int | float | bool | None) -> T: ...
+    def first(self, *, required: Literal[True], **query: str | int | float | bool | None) -> T: ...
     @overload
-    def get_first(
+    def first(
         self, *, required: Literal[False] = ..., **query: str | int | float | bool | None
     ) -> T | None: ...
-    def get_first(self, *, required: bool = False, **query: str | int | float | bool | None) -> T | None:
+    def first(self, *, required: bool = False, **query: str | int | float | bool | None) -> T | None:
         """Return the first resource, or ``None`` when ``required`` is False.
 
         Passes ``page_size=1`` to avoid over-fetching.
@@ -363,6 +363,22 @@ class WriteResourceManager(ResourceManager[T], ABC):
             obj (T): The resource to delete.
         """
         _ = self._client.delete(self._endpoint_with_id(obj))
+
+
+class CountableResourceManager(WriteResourceManager[T], ABC):
+    """Opt-in capability mixin: adds ``count`` to a ``WriteResourceManager``.
+
+    Inherit this alongside (or instead of) ``WriteResourceManager`` for any resource
+    whose list endpoint returns a DRF-paginated response with a ``count`` field.
+    DhcpHost managers must NOT inherit this (their endpoints are non-paginated).
+
+    Combine with other capabilities via multiple inheritance, the same way
+    ``HostManager`` combines ``NamedResourceManager`` + ``HistoryManager``.
+    """
+
+    def count(self) -> int:
+        """Return the server-reported total count of resources at this endpoint."""
+        return self._client.get_count(self._endpoint())
 
 
 class NamedResourceManager(WriteResourceManager[T], ABC):
