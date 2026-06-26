@@ -44,10 +44,12 @@ from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import EntityOwnershipMismatch
+from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models import CNAME
 from mreg_api.models import MX
 from mreg_api.models import NAPTR
@@ -55,6 +57,8 @@ from mreg_api.models import SSHFP
 from mreg_api.models import TXT
 from mreg_api.models import Atom
 from mreg_api.models import BacnetID
+from mreg_api.models import ForwardZone
+from mreg_api.models import ForwardZoneDelegation
 from mreg_api.models import HInfo
 from mreg_api.models import Host
 from mreg_api.models import HostGroup
@@ -68,12 +72,16 @@ from mreg_api.models import NetworkPolicyAttribute
 from mreg_api.models import NetworkPolicyAttributeValue
 from mreg_api.models import Permission
 from mreg_api.models import PTR_override
+from mreg_api.models import ReverseZone
+from mreg_api.models import ReverseZoneDelegation
 from mreg_api.models import Role
 from mreg_api.models import Srv
+from mreg_api.models import Zone
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
+from mreg_api.models.models import is_reverse_zone_name
 from mreg_api.types import IP_AddressT
 from mreg_api.types import QueryParams
 from mreg_api.types import get_type_adapter
@@ -2030,3 +2038,416 @@ class LocationManager(WriteResourceManager[Location]):
         if required and obj is None:
             raise EntityNotFound(f"Location for host id {host_id!r} not found.")
         return obj
+
+
+_ZONE_TTL_MIN = 300
+_ZONE_TTL_MAX = 68400
+
+
+def _valid_zone_ttl(ttl: int) -> int:
+    """Validate a zone TTL value (300–68400), mirroring the old model bounds."""
+    if ttl < _ZONE_TTL_MIN or ttl > _ZONE_TTL_MAX:
+        raise InputFailure(f"Invalid TTL value: {ttl} ({_ZONE_TTL_MIN}->{_ZONE_TTL_MAX})")
+    return ttl
+
+
+def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> None:
+    """Verify nameservers exist in mreg and have an A-record / glue.
+
+    Ported from ``Zone.verify_nameservers``; resolution of each nameserver now uses the
+    explicit ``client.hosts.get_by_name`` instead of the dropped ``get_by_any_means``.
+
+    Raises:
+        InputFailure: If no nameservers are given.
+        ForceMissing: If a nameserver is missing (or lacks glue) and ``force`` is False.
+    """
+    if not nameservers:
+        raise InputFailure("At least one nameserver is required")
+
+    errors: list[str] = []
+    for nameserver in nameservers:
+        host = client.hosts.get_by_name(nameserver)
+        if host is None:
+            if not force:
+                errors.append(f"{nameserver} is not in mreg, must force")
+        elif host.zone is None and not host.ipaddresses and not force:
+            errors.append(f"{nameserver} has no A-record/glue, must force")
+    if errors:
+        raise ForceMissing("\n".join(errors))
+
+
+_ZoneT = TypeVar("_ZoneT", bound=Zone)
+
+
+class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
+    """Private single-endpoint manager shared by the forward/reverse zone managers.
+
+    Each concrete subclass binds one model (hence one endpoint), honoring the
+    one-endpoint invariant of the base. The public surface is :class:`ZoneManager`,
+    which dispatches to these by zone-name shape.
+    """
+
+    _url_identifier: ClassVar[str] = "name"
+    nameservers_endpoint: ClassVar[Endpoint]
+    """The per-type nameservers endpoint (forward/reverse differ)."""
+
+    def create(
+        self,
+        *,
+        name: str,
+        email: str,
+        primary_ns: list[str],
+        fetch_after_create: bool = True,
+    ) -> _ZoneT | None:
+        """Create a zone of this manager's type. Caller verifies nameservers/absence."""
+        return self._create(
+            {"name": name, "email": email, "primary_ns": primary_ns},
+            fetch_after_create=fetch_after_create,
+        )
+
+    def update_soa(
+        self,
+        zone: _ZoneT,
+        *,
+        primary_ns: str | Unset = UNSET,
+        email: str | Unset = UNSET,
+        serialno: int | Unset = UNSET,
+        refresh: int | Unset = UNSET,
+        retry: int | Unset = UNSET,
+        expire: int | Unset = UNSET,
+        soa_ttl: int | Unset = UNSET,
+    ) -> _ZoneT:
+        """Update the zone's SOA fields. At least one field must be provided."""
+        data: dict[str, Any] = {}
+        if primary_ns is not UNSET:
+            data["primary_ns"] = primary_ns
+        if email is not UNSET:
+            data["email"] = email
+        if serialno is not UNSET:
+            data["serialno"] = serialno
+        if refresh is not UNSET:
+            data["refresh"] = refresh
+        if retry is not UNSET:
+            data["retry"] = retry
+        if expire is not UNSET:
+            data["expire"] = expire
+        if isinstance(soa_ttl, int):
+            data["soa_ttl"] = _valid_zone_ttl(soa_ttl)
+        if not data:
+            raise InputFailure("No fields to update")
+        return self._patch(zone, data)
+
+    def set_default_ttl(self, zone: _ZoneT, ttl: int) -> _ZoneT:
+        """Set the zone's default TTL."""
+        return self._patch(zone, {"default_ttl": _valid_zone_ttl(ttl)})
+
+    def set_nameservers(self, zone: _ZoneT, nameservers: list[str], *, force: bool = False) -> None:
+        """Replace the zone's nameservers (hits the per-type nameservers endpoint)."""
+        _verify_nameservers(self._client, nameservers, force=force)
+        self._client.patch(
+            self.nameservers_endpoint.with_params(zone.name), json={"primary_ns": nameservers}
+        )
+
+    def list_subzones(self, zone: _ZoneT) -> list[_ZoneT]:
+        """List subzones of the zone (excluding the zone itself)."""
+        zones = self._fetch_list_by_field("name__endswith", f".{zone.name}")
+        return [z for z in zones if z.name != zone.name]
+
+    def _ensure_deletable(self, zone: _ZoneT) -> None:
+        """Raise if the zone has registered entries or subzones."""
+        # XXX: Not foolproof (e.g. SRVs are not hosts), parity with old Zone.ensure_deletable.
+        hosts = self._client.hosts.list(zone=zone.id)
+        if hosts:
+            raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
+        subzones = self.list_subzones(zone)
+        if subzones:
+            names = ", ".join(z.name for z in subzones)
+            raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
+
+    @override
+    def delete(self, obj: _ZoneT, *, force: bool = False) -> None:
+        """Delete the zone, guarding against non-empty zones unless ``force``."""
+        if not force:
+            self._ensure_deletable(obj)
+        super().delete(obj)
+
+
+class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
+    """Private manager for forward zones."""
+
+    nameservers_endpoint: ClassVar[Endpoint] = Endpoint.ForwardZonesNameservers
+
+    @property
+    @override
+    def model(self) -> type[ForwardZone]:
+        return ForwardZone
+
+    def get_from_hostname(self, hostname: str) -> ForwardZoneDelegation | ForwardZone | None:
+        """Get the forward zone (or delegation) responsible for a hostname.
+
+        May return a :class:`ForwardZoneDelegation` when the hostname falls under a
+        delegated subzone.
+        """
+        name = self._client.fqdn(hostname)
+        resp = self._client.get(Endpoint.ForwardZoneForHost.with_id(name), ok404=True)
+        if not resp:
+            return None
+        blob = resp.json()
+        if "delegate" in blob:
+            return ForwardZoneDelegation.model_validate(blob)
+        if "zone" in blob:
+            return ForwardZone.model_validate(blob["zone"])
+        if "delegation" in blob:
+            return ForwardZoneDelegation.model_validate(blob["delegation"])
+        raise UnexpectedDataError(f"Unexpected response from server: {blob}", resp)
+
+
+class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
+    """Private manager for reverse zones."""
+
+    nameservers_endpoint: ClassVar[Endpoint] = Endpoint.ReverseZonesNameservers
+
+    @property
+    @override
+    def model(self) -> type[ReverseZone]:
+        return ReverseZone
+
+
+class ZoneManager:
+    """Public facade over the forward/reverse zone managers (``client.zones``).
+
+    Zones split into forward/reverse only because their endpoints differ; the
+    distinction is an endpoint artifact, not a domain one. This facade dispatches by
+    zone-name shape and keeps the per-type managers private. See ADR-0007.
+
+    Methods that take an existing zone accept either an instance or a name (resolved
+    by name shape).
+    """
+
+    def __init__(self, client: MregClient) -> None:
+        """Bind the facade and its private sub-managers to the client."""
+        self._client: MregClient = client
+        self._forward: _ForwardZoneManager = _ForwardZoneManager(client)
+        self._reverse: _ReverseZoneManager = _ReverseZoneManager(client)
+
+    def _sub_for_name(self, name: str) -> _ZoneSubManager[ForwardZone] | _ZoneSubManager[ReverseZone]:
+        return self._reverse if is_reverse_zone_name(name) else self._forward
+
+    def _resolve_zone(self, ref: str | ForwardZone | ReverseZone) -> ForwardZone | ReverseZone:
+        if isinstance(ref, (ForwardZone, ReverseZone)):
+            return ref
+        return self.get_by_name(ref, required=True)
+
+    def verify_nameservers(self, nameservers: list[str], force: bool = False) -> None:
+        """Verify nameservers exist in mreg and have glue (raises otherwise)."""
+        _verify_nameservers(self._client, nameservers, force=force)
+
+    @overload
+    def get_by_name(self, name: str, *, required: Literal[True]) -> ForwardZone | ReverseZone: ...
+    @overload
+    def get_by_name(
+        self, name: str, *, required: Literal[False] = ...
+    ) -> ForwardZone | ReverseZone | None: ...
+    def get_by_name(self, name: str, *, required: bool = False) -> ForwardZone | ReverseZone | None:
+        """Get a zone by name; forward/reverse chosen by name shape."""
+        return self._sub_for_name(name).get_by_name(name, required=required)
+
+    def ensure_absent(self, name: str) -> None:
+        """Raise EntityAlreadyExists if a zone with ``name`` exists."""
+        self._sub_for_name(name).ensure_absent(name)
+
+    def list_forward(self) -> list[ForwardZone]:
+        """List forward zones."""
+        return self._forward.list()
+
+    def list_reverse(self) -> list[ReverseZone]:
+        """List reverse zones."""
+        return self._reverse.list()
+
+    def get_from_hostname(self, hostname: str) -> ForwardZoneDelegation | ForwardZone | None:
+        """Get the forward zone (or delegation) responsible for a hostname."""
+        return self._forward.get_from_hostname(hostname)
+
+    def create(
+        self,
+        *,
+        name: str,
+        email: str,
+        primary_ns: list[str],
+        force: bool = False,
+        fetch_after_create: bool = True,
+    ) -> ForwardZone | ReverseZone | None:
+        """Create a forward or reverse zone (type chosen by name shape).
+
+        Verifies the nameservers and that no zone with this name exists first.
+        """
+        self.verify_nameservers(primary_ns, force=force)
+        sub = self._sub_for_name(name)
+        sub.ensure_absent(name)
+        return sub.create(
+            name=name, email=email, primary_ns=primary_ns, fetch_after_create=fetch_after_create
+        )
+
+    def update_soa(
+        self,
+        zone: str | ForwardZone | ReverseZone,
+        *,
+        primary_ns: str | Unset = UNSET,
+        email: str | Unset = UNSET,
+        serialno: int | Unset = UNSET,
+        refresh: int | Unset = UNSET,
+        retry: int | Unset = UNSET,
+        expire: int | Unset = UNSET,
+        soa_ttl: int | Unset = UNSET,
+    ) -> ForwardZone | ReverseZone:
+        """Update the zone's SOA fields."""
+        z = self._resolve_zone(zone)
+        kwargs: dict[str, Any] = {
+            "primary_ns": primary_ns,
+            "email": email,
+            "serialno": serialno,
+            "refresh": refresh,
+            "retry": retry,
+            "expire": expire,
+            "soa_ttl": soa_ttl,
+        }
+        if isinstance(z, ReverseZone):
+            return self._reverse.update_soa(z, **kwargs)
+        return self._forward.update_soa(z, **kwargs)
+
+    def set_default_ttl(
+        self, zone: str | ForwardZone | ReverseZone, ttl: int
+    ) -> ForwardZone | ReverseZone:
+        """Set the zone's default TTL."""
+        z = self._resolve_zone(zone)
+        if isinstance(z, ReverseZone):
+            return self._reverse.set_default_ttl(z, ttl)
+        return self._forward.set_default_ttl(z, ttl)
+
+    def set_nameservers(
+        self, zone: str | ForwardZone | ReverseZone, nameservers: list[str], *, force: bool = False
+    ) -> None:
+        """Replace the zone's nameservers."""
+        z = self._resolve_zone(zone)
+        if isinstance(z, ReverseZone):
+            self._reverse.set_nameservers(z, nameservers, force=force)
+        else:
+            self._forward.set_nameservers(z, nameservers, force=force)
+
+    def list_subzones(
+        self, zone: str | ForwardZone | ReverseZone
+    ) -> list[ForwardZone] | list[ReverseZone]:
+        """List subzones of the zone (excluding the zone itself)."""
+        z = self._resolve_zone(zone)
+        if isinstance(z, ReverseZone):
+            return self._reverse.list_subzones(z)
+        return self._forward.list_subzones(z)
+
+    def delete(self, zone: str | ForwardZone | ReverseZone, *, force: bool = False) -> None:
+        """Delete the zone, guarding against non-empty zones unless ``force``."""
+        z = self._resolve_zone(zone)
+        if isinstance(z, ReverseZone):
+            self._reverse.delete(z, force=force)
+        else:
+            self._forward.delete(z, force=force)
+
+
+class DelegationManager:
+    """Operations on zone delegations (``client.delegations``).
+
+    Delegations have no standalone endpoint; their type (forward/reverse) is derived
+    from the parent zone, so every method takes the parent zone as its first argument.
+    Kept separate from :class:`ZoneManager` to stay composition-ready (a future
+    ``client.zones.delegations``). See ADR-0007.
+    """
+
+    def __init__(self, client: MregClient) -> None:
+        """Bind the manager to the client."""
+        self._client: MregClient = client
+
+    def _model_for(self, zone: Zone) -> type[ForwardZoneDelegation | ReverseZoneDelegation]:
+        return ReverseZoneDelegation if zone.is_reverse() else ForwardZoneDelegation
+
+    def _ensure_in_zone(self, zone: Zone, name: str) -> None:
+        if not name.endswith(f".{zone.name}"):
+            raise InputFailure(f"Delegation {name!r} is not in {zone.name!r}")
+
+    @overload
+    def get(
+        self, zone: Zone, name: str, *, required: Literal[True]
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation: ...
+    @overload
+    def get(
+        self, zone: Zone, name: str, *, required: Literal[False] = ...
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None: ...
+    def get(
+        self, zone: Zone, name: str, *, required: bool = False
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+        """Get a delegation in ``zone`` by name."""
+        self._ensure_in_zone(zone, name)
+        cls = self._model_for(zone)
+        resp = self._client.get(cls.endpoint_with_name(zone, name), ok404=True)
+        if not resp:
+            if required:
+                raise EntityNotFound(f"Could not find delegation {name!r} in zone {zone.name!r}")
+            return None
+        return cls.model_validate_json(resp.text)
+
+    def list_by_zone(self, zone: Zone) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
+        """List all delegations for a zone."""
+        cls = self._model_for(zone)
+        return self._client.get_typed(cls.endpoint().with_params(zone.name), list[cls])
+
+    def create(
+        self,
+        zone: Zone,
+        *,
+        name: str,
+        nameservers: list[str],
+        comment: str = "",
+        force: bool = False,
+        fetch_after_create: bool = True,
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+        """Create a delegation in ``zone``.
+
+        Verifies the delegation name is within the zone and the nameservers exist.
+        Unless ``force``, also checks the delegated zone exists and matches the parent
+        zone type, and that the delegation does not already exist.
+        """
+        self._ensure_in_zone(zone, name)
+        _verify_nameservers(self._client, nameservers, force=force)
+
+        if not force:
+            delegated = self._client.zones.get_by_name(name)
+            if not delegated:
+                raise InputFailure(f"Zone {name!r} does not exist. Must force.")
+            if delegated.is_reverse() != zone.is_reverse():
+                raise InputFailure(f"Delegation {name!r} is not a {type(zone).__name__} zone")
+
+        if self.get(zone, name) is not None:
+            raise EntityAlreadyExists(f"Zone {zone.name!r} already has a delegation named {name!r}")
+
+        cls = self._model_for(zone)
+        self._client.post(
+            cls.endpoint().with_params(zone.name),
+            json={"name": name, "nameservers": nameservers, "comment": comment},
+        )
+        if fetch_after_create:
+            return self.get(zone, name, required=True)
+        return None
+
+    def delete(self, zone: Zone, name: str) -> None:
+        """Delete a delegation from ``zone``."""
+        self._ensure_in_zone(zone, name)
+        _ = self.get(zone, name, required=True)
+        cls = self._model_for(zone)
+        self._client.delete(cls.endpoint_with_name(zone, name))
+
+    def set_comment(
+        self, zone: Zone, name: str, comment: str
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
+        """Set (or clear, with ``""``) the comment for a delegation."""
+        _ = self.get(zone, name, required=True)
+        cls = self._model_for(zone)
+        self._client.patch(cls.endpoint_with_name(zone, name), json={"comment": comment})
+        return self.get(zone, name, required=True)
