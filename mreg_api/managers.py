@@ -2544,13 +2544,6 @@ class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
     def model(self) -> type[DhcpHostIPv4]:
         return DhcpHostIPv4
 
-    # def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[DhcpHostIPv4]:
-    #     """List IPv4 DHCP hosts within the given IP range."""
-    #     return self._client.get_typed(
-    #         Endpoint.DhcpHostsByRange.with_params(str(ip), range),
-    #         list[DhcpHostIPv4],
-    #     )
-
 
 class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
     """Read-only manager for IPv6 DHCP host records (``client.dhcphost_ipv6``)."""
@@ -2560,13 +2553,6 @@ class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
     def model(self) -> type[DhcpHostIPv6]:
         return DhcpHostIPv6
 
-    # def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[DhcpHostIPv6]:
-    #     """List IPv6 DHCP hosts within the given IP range."""
-    #     return self._client.get_typed(
-    #         Endpoint.DhcpHostsByRange.with_params(str(ip), range),
-    #         list[DhcpHostIPv6],
-    #     )
-
 
 class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
     """Read-only manager for IPv6-via-IPv4 DHCP host records (``client.dhcphost_ipv6byipv4``)."""
@@ -2575,10 +2561,3 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
     @override
     def model(self) -> type[DhcpHostIPv6ByIPv4]:
         return DhcpHostIPv6ByIPv4
-
-    # def list_by_range(self, ip: str | IP_AddressT, range: str) -> list[DhcpHostIPv6ByIPv4]:
-    #     """List IPv6-by-IPv4 DHCP hosts within the given IPv4 range."""
-    #     return self._client.get_typed(
-    #         Endpoint.DhcpHostsIpv6ByIpv4ByRange.with_params(str(ip), range),
-    #         list[DhcpHostIPv6ByIPv4],
-    #     )
