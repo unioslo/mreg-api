@@ -22,6 +22,7 @@ For resources that support history:
 
 from __future__ import annotations
 
+import functools
 import ipaddress
 from abc import ABC
 from abc import abstractmethod
@@ -1261,6 +1262,11 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         pol = self._resolve(ref)
         return self._client.get_typed(Network.endpoint(), list[Network], params={"policy": pol.id})
 
+    @functools.cached_property
+    def attribute(self) -> NetworkPolicyAttributeManager:
+        """Manager for network policy attributes (``client.networks.policy.attribute``)."""
+        return NetworkPolicyAttributeManager(self._client)
+
 
 class NetworkManager(WriteResourceManager[Network]):
     """Operations on :class:`~mreg_api.models.Network` resources."""
@@ -1448,6 +1454,11 @@ class NetworkManager(WriteResourceManager[Network]):
         if exrange is None:
             raise EntityNotFound(f"Excluded range {start} - {end} not found in {net.network!r}.")
         self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(net.network, exrange.id))
+
+    @functools.cached_property
+    def policy(self) -> NetworkPolicyManager:
+        """Manager for network policies (``client.networks.policy``)."""
+        return NetworkPolicyManager(self._client)
 
 
 def resolve_host_id(host: Host | int) -> int:
@@ -2353,6 +2364,11 @@ class ZoneManager:
             self._reverse.delete(z, force=force)
         else:
             self._forward.delete(z, force=force)
+
+    @functools.cached_property
+    def delegations(self) -> DelegationManager:
+        """Manager for zone delegations (``client.zones.delegations``)."""
+        return DelegationManager(self._client)
 
 
 class DelegationManager:
