@@ -299,6 +299,36 @@ class ResourceManager(Generic[T], ABC):
         params: QueryParams = dict(query)
         return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=limit)
 
+    # TODO: add warning or similar when used on non-paginated endpoints somehow.
+    # Manually? Use contextvar? Who knows.
+    @overload
+    def get_first(self, *, required: Literal[True], **query: str | int | float | bool | None) -> T: ...
+    @overload
+    def get_first(
+        self, *, required: Literal[False] = ..., **query: str | int | float | bool | None
+    ) -> T | None: ...
+    def get_first(self, *, required: bool = False, **query: str | int | float | bool | None) -> T | None:
+        """Return the first resource, or ``None`` when ``required`` is False.
+
+        Passes ``page_size=1`` to avoid over-fetching.
+
+        Suboptimal behavior on non-paginated endpoints, i.e.
+        `networks/{network}/unused_list`, `/dhcphosts`, etc.
+
+        Args:
+            required: When ``True``, raise if no resource exists (returns ``T``).
+            **query: Optional filter parameters forwarded to the list endpoint.
+
+        Raises:
+            EntityNotFound: If ``required`` is True and no resource is found.
+        """
+        params: QueryParams = {**dict(query), "page_size": 1}
+        results = self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=None)
+        obj = results[0] if results else None
+        if required and obj is None:
+            raise EntityNotFound(f"No {self.model.__name__} found.")
+        return obj
+
 
 class WriteResourceManager(ResourceManager[T], ABC):
     """Manager for performing CRUD operations on an API resource type."""
