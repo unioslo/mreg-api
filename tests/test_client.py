@@ -27,32 +27,15 @@ from mreg_api.models.models import Host
 from mreg_api.types import HTTPMethod
 
 
-def test_client_singleton() -> None:
-    client1 = MregClient(url="http://example.com", domain="example.com", timeout=30)
-    client2 = MregClient()
-    assert client1 is client2
-
-
-def test_client_reset_instance() -> None:
-    client1 = MregClient()
-    MregClient.reset_instance()
-    client2 = MregClient()
-    assert client1 is not client2
-
-
 def test_client_user_agent() -> None:
     """Test MregClient `user_agent` parameter."""
-    # No user agent specified - should use default
     expect = f"mreg-api-{__version__}"
     client = MregClient(url="http://example.com", domain="example.com")
     assert client.session.headers["User-Agent"] == expect
 
-    MregClient.reset_instance()
-
-    # Custom user agent specified
     custom_agent = "my-custom-agent/1.0"
-    client = MregClient(url="http://example.com", domain="example.com", user_agent=custom_agent)
-    assert client.session.headers["User-Agent"] == custom_agent
+    client2 = MregClient(url="http://example.com", domain="example.com", user_agent=custom_agent)
+    assert client2.session.headers["User-Agent"] == custom_agent
 
 
 def test_client_caching(httpserver: HTTPServer) -> None:

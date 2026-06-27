@@ -132,25 +132,6 @@ class Header(StrEnum):
     REQUEST_ID = "X-Request-Id"
 
 
-class SingletonMeta(type):
-    """A metaclass for singleton classes."""
-
-    _instances: dict[type, object] = {}
-
-    def __call__(cls: type[Any], *args: Any, **kwargs: Any):
-        """Get the singleton instance of the class."""
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue] # TODO: fix typing for this
-        return cls._instances[cls]
-
-    def reset_instance(self) -> None:
-        """Reset the singleton instance (useful for testing)."""
-        try:
-            del self._instances[self]
-        except KeyError:
-            pass
-
-
 class RequestRecord(NamedTuple):
     """A complete record of an HTTP request and its response.
 
@@ -294,28 +275,24 @@ def validate_paginated_response(response: Response) -> PaginatedResponse:
         raise MregValidationError.from_pydantic(e, "paginated JSON") from e
 
 
-class MregClient(metaclass=SingletonMeta):
+class MregClient:
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
-    methods for making API requests. It is designed to be used as
-    a singleton.
+    methods for making API requests.
 
     Authentication modes:
     1. Token: Provide token directly via set_token()
     2. Username/password: Call login() with credentials
 
     Example:
-        >>> client = MregClient()
+        >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
         >>> client.login("username", "password")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
+        >>> hosts = client.hosts.list()
 
         Or with token:
-        >>> client = MregClient()
+        >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
         >>> client.set_token("your-token-here")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
     """
 
     # Compose models on client for easy access
@@ -428,7 +405,7 @@ class MregClient(metaclass=SingletonMeta):
         event_log_size: int | None = 100,
         user_agent: str | None = None,
     ) -> None:
-        """Initialize the client (only once for singleton)."""
+        """Initialize the client."""
         if not user_agent:
             user_agent = f"mreg-api-{__version__}"
         self.session: httpx.Client = httpx.Client(

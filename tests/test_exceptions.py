@@ -41,8 +41,6 @@ def make_mock_response(
 
 def test_validation_error_get_host(httpserver: HTTPServer) -> None:
     """Test a validation error stemming from a GET request."""
-    if MregClient._instances:  # pyright: ignore[reportPrivateUsage]
-        MregClient.reset_instance()
     client = MregClient(url=httpserver.url_for("/"), domain="example.com")
 
     httpserver.expect_oneshot_request("/hosts/foobar").respond_with_json(

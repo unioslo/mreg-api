@@ -1,25 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Generator
-
 import pytest
 from pytest_httpserver import HTTPServer
 
 from mreg_api.client import MregClient
-
-
-@pytest.fixture(autouse=True, scope="function")
-def reset_instance_after_test() -> Generator[None, None, None]:
-    """Reset MregClient singleton instance after each test."""
-    try:
-        yield
-    finally:
-        try:
-            # FIXME: Can we force the destructor to be called?
-            # MregClient()._reset_contextvars()  # pyright: ignore[reportPrivateUsage]
-            MregClient.reset_instance()
-        except Exception:
-            pass
 
 
 @pytest.fixture
