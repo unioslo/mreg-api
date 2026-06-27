@@ -70,6 +70,7 @@ from mreg_api.models import HostGroup
 from mreg_api.models import IPAddress
 from mreg_api.models import Label
 from mreg_api.models import Location
+from mreg_api.models import NameServer
 from mreg_api.models import Network
 from mreg_api.models import NetworkOrIP
 from mreg_api.models import NetworkPolicy
@@ -2863,3 +2864,23 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.DhcpHostsIpv6ByIpv4
+
+
+class NameServerManager(NamedResourceManager[NameServer]):
+    """Access to :class:`~mreg_api.models.NameServer` resources (``client.nameservers``).
+
+    Nameservers are created and deleted implicitly through zone and delegation
+    operations; this manager exposes listing and lookup.
+    """
+
+    _url_identifier: ClassVar[str] = "name"
+
+    @property
+    @override
+    def model(self) -> type[NameServer]:
+        return NameServer
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Nameservers

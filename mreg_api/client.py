@@ -56,6 +56,7 @@ from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
 from mreg_api.managers import DhcpHostIPv6Manager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
+from mreg_api.managers import NameServerManager
 from mreg_api.managers import RoleManager
 from mreg_api.managers import ZoneManager
 from mreg_api.models import CNAME
@@ -393,6 +394,11 @@ class MregClient(metaclass=SingletonMeta):
     def delegations(self) -> DelegationManager:
         """Manager for zone delegation resources."""
         return DelegationManager(self)
+
+    @functools.cached_property
+    def nameservers(self) -> NameServerManager:
+        """Manager for nameserver resources (read-only)."""
+        return NameServerManager(self)
 
     @functools.cached_property
     def dhcphost_ipv4(self) -> DhcpHostIPv4Manager:
