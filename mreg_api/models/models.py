@@ -944,17 +944,9 @@ class Host(MregModelWithTimestamps):
 
 
 class HostList(MregModel):
-    """Model for a list of hosts.
-
-    This is the endpoint at /api/v1/hosts/.
-    """
+    """Model for a list of hosts."""
 
     results: list[Host]
-
-    @classmethod
-    def endpoint(cls) -> Endpoint:
-        """Return the endpoint for the class."""
-        return Endpoint.Hosts
 
 
 class DhcpHost(MregModel, ABC):

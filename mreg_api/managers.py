@@ -1424,16 +1424,16 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
     @functools.cached_property
     def attribute(self) -> NetworkPolicyAttributeManager:
-        """Manager for network policy attributes (``client.networks.policy.attribute``)."""
+        """Manager for network policy attributes (``client.network.policy.attribute``)."""
         return NetworkPolicyAttributeManager(self._client)
 
 
 class CommunityManager:
-    """Operations on network communities (``client.networks.communities``).
+    """Operations on network communities (``client.network.communities``).
 
     Communities are always scoped to a network — every method takes a network
     reference (address string or :class:`~mreg_api.models.Network` instance).
-    Exposed as ``client.networks.communities`` via :class:`NetworkManager`.
+    Exposed as ``client.network.communities`` via :class:`NetworkManager`.
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -1716,12 +1716,12 @@ class NetworkManager(WriteResourceManager[Network]):
 
     @functools.cached_property
     def policy(self) -> NetworkPolicyManager:
-        """Manager for network policies (``client.networks.policy``)."""
+        """Manager for network policies (``client.network.policy``)."""
         return NetworkPolicyManager(self._client)
 
     @functools.cached_property
     def communities(self) -> CommunityManager:
-        """Manager for network communities (``client.networks.communities``)."""
+        """Manager for network communities (``client.network.communities``)."""
         return CommunityManager(self._client)
 
 
@@ -2425,7 +2425,7 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
     """Verify nameservers exist in mreg and have an A-record / glue.
 
     Ported from ``Zone.verify_nameservers``; resolution of each nameserver now uses the
-    explicit ``client.hosts.get_by_name`` instead of the dropped ``get_by_any_means``.
+    explicit ``client.host.get_by_name`` instead of the dropped ``get_by_any_means``.
 
     Raises:
         InputFailure: If no nameservers are given.
@@ -2436,7 +2436,7 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
 
     errors: list[str] = []
     for nameserver in nameservers:
-        host = client.hosts.get_by_name(nameserver)
+        host = client.host.get_by_name(nameserver)
         if host is None:
             if not force:
                 errors.append(f"{nameserver} is not in mreg, must force")
@@ -2526,7 +2526,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
     def _ensure_deletable(self, zone: _ZoneT) -> None:
         """Raise if the zone has registered entries or subzones."""
         # XXX: Not foolproof (e.g. SRVs are not hosts), parity with old Zone.ensure_deletable.
-        hosts = self._client.hosts.list(zone=zone.id)
+        hosts = self._client.host.list(zone=zone.id)
         if hosts:
             raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
         subzones = self.list_subzones(zone)
@@ -2594,7 +2594,7 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
 
 
 class ZoneManager:
-    """Public facade over the forward/reverse zone managers (``client.zones``).
+    """Public facade over the forward/reverse zone managers (``client.zone``).
 
     Zones split into forward/reverse only because their endpoints differ; the
     distinction is an endpoint artifact, not a domain one. This facade dispatches by
@@ -2743,17 +2743,17 @@ class ZoneManager:
 
     @functools.cached_property
     def delegations(self) -> DelegationManager:
-        """Manager for zone delegations (``client.zones.delegations``)."""
+        """Manager for zone delegations (``client.zone.delegations``)."""
         return DelegationManager(self._client)
 
 
 class DelegationManager:
-    """Operations on zone delegations (``client.delegations``).
+    """Operations on zone delegations (``client.delegation``).
 
     Delegations have no standalone endpoint; their type (forward/reverse) is derived
     from the parent zone, so every method takes the parent zone as its first argument.
     Kept separate from :class:`ZoneManager` to stay composition-ready (a future
-    ``client.zones.delegations``). See ADR-0007.
+    ``client.zone.delegations``). See ADR-0007.
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -2819,7 +2819,7 @@ class DelegationManager:
         _verify_nameservers(self._client, nameservers, force=force)
 
         if not force:
-            delegated = self._client.zones.get_by_name(name)
+            delegated = self._client.zone.get_by_name(name)
             if not delegated:
                 raise InputFailure(f"Zone {name!r} does not exist. Must force.")
             if delegated.is_reverse() != zone.is_reverse():
@@ -2872,7 +2872,7 @@ class DhcpHostManager(ResourceManager[T], ABC):
 
 
 class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
-    """Read-only manager for IPv4 DHCP host records (``client.dhcphost_ipv4``)."""
+    """Read-only manager for IPv4 DHCP host records (``client.dhcphostipv4``)."""
 
     @property
     @override
@@ -2886,7 +2886,7 @@ class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
 
 
 class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
-    """Read-only manager for IPv6 DHCP host records (``client.dhcphost_ipv6``)."""
+    """Read-only manager for IPv6 DHCP host records (``client.dhcphostipv6``)."""
 
     @property
     @override
@@ -2900,7 +2900,7 @@ class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
 
 
 class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
-    """Read-only manager for IPv6-via-IPv4 DHCP host records (``client.dhcphost_ipv6byipv4``)."""
+    """Read-only manager for IPv6-via-IPv4 DHCP host records (``client.dhcphostipv6byipv4``)."""
 
     @property
     @override
@@ -2914,7 +2914,7 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
 
 
 class NameServerManager(NamedResourceManager[NameServer]):
-    """Access to :class:`~mreg_api.models.NameServer` resources (``client.nameservers``).
+    """Access to :class:`~mreg_api.models.NameServer` resources (``client.nameserver``).
 
     Nameservers are created and deleted implicitly through zone and delegation
     operations; this manager exposes listing and lookup.
@@ -2934,7 +2934,7 @@ class NameServerManager(NamedResourceManager[NameServer]):
 
 
 class ServerVersionManager:
-    """Access to server version metadata (``client.server_version``)."""
+    """Access to server version metadata (``client.serverversion``)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -2957,7 +2957,7 @@ class ServerVersionManager:
 
 
 class ServerLibrariesManager:
-    """Access to server library metadata (``client.server_libraries``)."""
+    """Access to server library metadata (``client.serverlibraries``)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -2981,7 +2981,7 @@ class ServerLibrariesManager:
 
 
 class UserInfoManager:
-    """Access to user information (``client.user_info``)."""
+    """Access to user information (``client.userinfo``)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -3022,7 +3022,7 @@ class UserInfoManager:
 
 
 class LDAPHealthManager:
-    """Access to LDAP health status (``client.ldap_health``)."""
+    """Access to LDAP health status (``client.ldaphealth``)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -3049,7 +3049,7 @@ class LDAPHealthManager:
 
 
 class HeartbeatHealthManager:
-    """Access to heartbeat health status (``client.heartbeat_health``)."""
+    """Access to heartbeat health status (``client.heartbeathealth``)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""

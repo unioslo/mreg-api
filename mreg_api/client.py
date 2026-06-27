@@ -50,58 +50,37 @@ from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.managers import AtomManager
+from mreg_api.managers import BacnetIDManager
+from mreg_api.managers import CNAMEManager
 from mreg_api.managers import DelegationManager
 from mreg_api.managers import DhcpHostIPv4Manager
 from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
 from mreg_api.managers import DhcpHostIPv6Manager
 from mreg_api.managers import HealthManager
 from mreg_api.managers import HeartbeatHealthManager
+from mreg_api.managers import HInfoManager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
+from mreg_api.managers import IPAddressManager
+from mreg_api.managers import LabelManager
 from mreg_api.managers import LDAPHealthManager
+from mreg_api.managers import LocationManager
+from mreg_api.managers import MXManager
 from mreg_api.managers import NameServerManager
+from mreg_api.managers import NAPTRManager
+from mreg_api.managers import NetworkManager
+from mreg_api.managers import NetworkPolicyAttributeManager
+from mreg_api.managers import NetworkPolicyManager
+from mreg_api.managers import PermissionManager
+from mreg_api.managers import PTROverrideManager
 from mreg_api.managers import RoleManager
 from mreg_api.managers import ServerLibrariesManager
 from mreg_api.managers import ServerVersionManager
+from mreg_api.managers import SrvManager
+from mreg_api.managers import SSHFPManager
+from mreg_api.managers import TXTManager
 from mreg_api.managers import UserInfoManager
 from mreg_api.managers import ZoneManager
-from mreg_api.models import CNAME
-from mreg_api.models import MX
-from mreg_api.models import NAPTR
-from mreg_api.models import SSHFP
-from mreg_api.models import TXT
-from mreg_api.models import Atom
-from mreg_api.models import BacnetID
-from mreg_api.models import Community
-from mreg_api.models import Delegation
-from mreg_api.models import DhcpHostIPv4
-from mreg_api.models import DhcpHostIPv6
-from mreg_api.models import DhcpHostIPv6ByIPv4
-from mreg_api.models import ExcludedRange
-from mreg_api.models import ForwardZone
-from mreg_api.models import ForwardZoneDelegation
-from mreg_api.models import HInfo
-from mreg_api.models import Host
-from mreg_api.models import HostCommunity
-from mreg_api.models import HostGroup
-from mreg_api.models import HostList
-from mreg_api.models import HostPolicy
-from mreg_api.models import IPAddress
-from mreg_api.models import Label
-from mreg_api.models import Location
-from mreg_api.models import NameServer
-from mreg_api.models import Network
-from mreg_api.models import NetworkPolicy
-from mreg_api.models import NetworkPolicyAttribute
-from mreg_api.models import NetworkPolicyAttributeValue
-from mreg_api.models import Permission
-from mreg_api.models import PTR_override
-from mreg_api.models import ReverseZone
-from mreg_api.models import ReverseZoneDelegation
-from mreg_api.models import Role
-from mreg_api.models import Srv
-from mreg_api.models import Zone
-from mreg_api.models import ZoneFile
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import parse_hostname
 from mreg_api.models.models import TokenAuth
@@ -288,131 +267,172 @@ class MregClient:
     Example:
         >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
         >>> client.login("username", "password")
-        >>> hosts = client.hosts.list()
+        >>> hosts = client.host.list()
 
         Or with token:
         >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
         >>> client.set_token("your-token-here")
     """
 
-    # Compose models on client for easy access
-    atom: type[Atom] = Atom
-    bacnet_id: type[BacnetID] = BacnetID
-    cname: type[CNAME] = CNAME
-    community: type[Community] = Community
-    delegation: type[Delegation] = Delegation
-    dhcp_host_ipv4: type[DhcpHostIPv4] = DhcpHostIPv4
-    dhcp_host_ipv6: type[DhcpHostIPv6] = DhcpHostIPv6
-    dhcp_host_ipv6byipv4: type[DhcpHostIPv6ByIPv4] = DhcpHostIPv6ByIPv4
-    excluded_range: type[ExcludedRange] = ExcludedRange
-    forward_zone: type[ForwardZone] = ForwardZone
-    forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation
-    hinfo: type[HInfo] = HInfo
-    host: type[Host] = Host
-    host_community: type[HostCommunity] = HostCommunity
-    host_group: type[HostGroup] = HostGroup
-    host_list: type[HostList] = HostList
-    host_policy: type[HostPolicy] = HostPolicy
-    ip_address: type[IPAddress] = IPAddress
-    label: type[Label] = Label
-    location: type[Location] = Location
-    mx: type[MX] = MX
-    name_server: type[NameServer] = NameServer
-    naptr: type[NAPTR] = NAPTR
-    network: type[Network] = Network
-    network_policy: type[NetworkPolicy] = NetworkPolicy
-    network_policy_attribute: type[NetworkPolicyAttribute] = NetworkPolicyAttribute
-    network_policy_attribute_value: type[NetworkPolicyAttributeValue] = NetworkPolicyAttributeValue
-    permission: type[Permission] = Permission
-    ptr_override: type[PTR_override] = PTR_override
-    reverse_zone: type[ReverseZone] = ReverseZone
-    reverse_zone_delegation: type[ReverseZoneDelegation] = ReverseZoneDelegation
-    role: type[Role] = Role
-    srv: type[Srv] = Srv
-    sshfp: type[SSHFP] = SSHFP
-    txt: type[TXT] = TXT
-    zone: type[Zone] = Zone
-    zonefile: type[ZoneFile] = ZoneFile
-
     @functools.cached_property
-    def hosts(self) -> HostManager:
-        """Manager for host resources."""
-        return HostManager(self)
-
-    @functools.cached_property
-    def hostgroups(self) -> HostGroupManager:
-        """Manager for host group resources."""
-        return HostGroupManager(self)
-
-    @functools.cached_property
-    def roles(self) -> RoleManager:
-        """Manager for host policy role resources."""
-        return RoleManager(self)
-
-    @functools.cached_property
-    def atoms(self) -> AtomManager:
+    def atom(self) -> AtomManager:
         """Manager for host policy atom resources."""
         return AtomManager(self)
 
     @functools.cached_property
-    def zones(self) -> ZoneManager:
-        """Manager for forward/reverse zone resources."""
-        return ZoneManager(self)
+    def bacnetid(self) -> BacnetIDManager:
+        """Manager for BACnet ID resources."""
+        return BacnetIDManager(self)
 
     @functools.cached_property
-    def delegations(self) -> DelegationManager:
+    def cname(self) -> CNAMEManager:
+        """Manager for CNAME resources."""
+        return CNAMEManager(self)
+
+    @functools.cached_property
+    def delegation(self) -> DelegationManager:
         """Manager for zone delegation resources."""
         return DelegationManager(self)
 
     @functools.cached_property
-    def nameservers(self) -> NameServerManager:
-        """Manager for nameserver resources (read-only)."""
-        return NameServerManager(self)
-
-    @functools.cached_property
-    def dhcphost_ipv4(self) -> DhcpHostIPv4Manager:
+    def dhcphostipv4(self) -> DhcpHostIPv4Manager:
         """Manager for IPv4 DHCP host records."""
         return DhcpHostIPv4Manager(self)
 
     @functools.cached_property
-    def dhcphost_ipv6(self) -> DhcpHostIPv6Manager:
+    def dhcphostipv6(self) -> DhcpHostIPv6Manager:
         """Manager for IPv6 DHCP host records."""
         return DhcpHostIPv6Manager(self)
 
     @functools.cached_property
-    def dhcphost_ipv6byipv4(self) -> DhcpHostIPv6ByIPv4Manager:
+    def dhcphostipv6byipv4(self) -> DhcpHostIPv6ByIPv4Manager:
         """Manager for IPv6-via-IPv4 DHCP host records."""
         return DhcpHostIPv6ByIPv4Manager(self)
-
-    @functools.cached_property
-    def server_version(self) -> ServerVersionManager:
-        """Manager for server version metadata."""
-        return ServerVersionManager(self)
-
-    @functools.cached_property
-    def server_libraries(self) -> ServerLibrariesManager:
-        """Manager for server library metadata."""
-        return ServerLibrariesManager(self)
-
-    @functools.cached_property
-    def user_info(self) -> UserInfoManager:
-        """Manager for user information."""
-        return UserInfoManager(self)
-
-    @functools.cached_property
-    def ldap_health(self) -> LDAPHealthManager:
-        """Manager for LDAP health status."""
-        return LDAPHealthManager(self)
-
-    @functools.cached_property
-    def heartbeat_health(self) -> HeartbeatHealthManager:
-        """Manager for heartbeat health status."""
-        return HeartbeatHealthManager(self)
 
     @functools.cached_property
     def health(self) -> HealthManager:
         """Manager for combined health information."""
         return HealthManager(self)
+
+    @functools.cached_property
+    def heartbeathealth(self) -> HeartbeatHealthManager:
+        """Manager for heartbeat health status."""
+        return HeartbeatHealthManager(self)
+
+    @functools.cached_property
+    def hinfo(self) -> HInfoManager:
+        """Manager for HINFO resources."""
+        return HInfoManager(self)
+
+    @functools.cached_property
+    def host(self) -> HostManager:
+        """Manager for host resources."""
+        return HostManager(self)
+
+    @functools.cached_property
+    def hostgroup(self) -> HostGroupManager:
+        """Manager for host group resources."""
+        return HostGroupManager(self)
+
+    @functools.cached_property
+    def ipaddress(self) -> IPAddressManager:
+        """Manager for IP address resources."""
+        return IPAddressManager(self)
+
+    @functools.cached_property
+    def label(self) -> LabelManager:
+        """Manager for label resources."""
+        return LabelManager(self)
+
+    @functools.cached_property
+    def ldaphealth(self) -> LDAPHealthManager:
+        """Manager for LDAP health status."""
+        return LDAPHealthManager(self)
+
+    @functools.cached_property
+    def location(self) -> LocationManager:
+        """Manager for location resources."""
+        return LocationManager(self)
+
+    @functools.cached_property
+    def mx(self) -> MXManager:
+        """Manager for MX record resources."""
+        return MXManager(self)
+
+    @functools.cached_property
+    def nameserver(self) -> NameServerManager:
+        """Manager for nameserver resources (read-only)."""
+        return NameServerManager(self)
+
+    @functools.cached_property
+    def naptr(self) -> NAPTRManager:
+        """Manager for NAPTR record resources."""
+        return NAPTRManager(self)
+
+    @functools.cached_property
+    def network(self) -> NetworkManager:
+        """Manager for network resources."""
+        return NetworkManager(self)
+
+    @functools.cached_property
+    def networkpolicy(self) -> NetworkPolicyManager:
+        """Manager for network policy resources."""
+        return NetworkPolicyManager(self)
+
+    @functools.cached_property
+    def networkpolicyattribute(self) -> NetworkPolicyAttributeManager:
+        """Manager for network policy attribute resources."""
+        return NetworkPolicyAttributeManager(self)
+
+    @functools.cached_property
+    def permission(self) -> PermissionManager:
+        """Manager for permission resources."""
+        return PermissionManager(self)
+
+    @functools.cached_property
+    def ptroverride(self) -> PTROverrideManager:
+        """Manager for PTR override resources."""
+        return PTROverrideManager(self)
+
+    @functools.cached_property
+    def role(self) -> RoleManager:
+        """Manager for host policy role resources."""
+        return RoleManager(self)
+
+    @functools.cached_property
+    def serverlibraries(self) -> ServerLibrariesManager:
+        """Manager for server library metadata."""
+        return ServerLibrariesManager(self)
+
+    @functools.cached_property
+    def serverversion(self) -> ServerVersionManager:
+        """Manager for server version metadata."""
+        return ServerVersionManager(self)
+
+    @functools.cached_property
+    def srv(self) -> SrvManager:
+        """Manager for SRV record resources."""
+        return SrvManager(self)
+
+    @functools.cached_property
+    def sshfp(self) -> SSHFPManager:
+        """Manager for SSHFP record resources."""
+        return SSHFPManager(self)
+
+    @functools.cached_property
+    def txt(self) -> TXTManager:
+        """Manager for TXT record resources."""
+        return TXTManager(self)
+
+    @functools.cached_property
+    def userinfo(self) -> UserInfoManager:
+        """Manager for user information."""
+        return UserInfoManager(self)
+
+    @functools.cached_property
+    def zone(self) -> ZoneManager:
+        """Manager for forward/reverse zone resources."""
+        return ZoneManager(self)
 
     def __init__(
         self,
