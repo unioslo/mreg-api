@@ -54,10 +54,16 @@ from mreg_api.managers import DelegationManager
 from mreg_api.managers import DhcpHostIPv4Manager
 from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
 from mreg_api.managers import DhcpHostIPv6Manager
+from mreg_api.managers import HealthManager
+from mreg_api.managers import HeartbeatHealthManager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
+from mreg_api.managers import LDAPHealthManager
 from mreg_api.managers import NameServerManager
 from mreg_api.managers import RoleManager
+from mreg_api.managers import ServerLibrariesManager
+from mreg_api.managers import ServerVersionManager
+from mreg_api.managers import UserInfoManager
 from mreg_api.managers import ZoneManager
 from mreg_api.models import CNAME
 from mreg_api.models import MX
@@ -74,8 +80,6 @@ from mreg_api.models import DhcpHostIPv6ByIPv4
 from mreg_api.models import ExcludedRange
 from mreg_api.models import ForwardZone
 from mreg_api.models import ForwardZoneDelegation
-from mreg_api.models import HealthInfo
-from mreg_api.models import HeartbeatHealth
 from mreg_api.models import HInfo
 from mreg_api.models import Host
 from mreg_api.models import HostCommunity
@@ -84,7 +88,6 @@ from mreg_api.models import HostList
 from mreg_api.models import HostPolicy
 from mreg_api.models import IPAddress
 from mreg_api.models import Label
-from mreg_api.models import LDAPHealth
 from mreg_api.models import Location
 from mreg_api.models import NameServer
 from mreg_api.models import Network
@@ -96,10 +99,7 @@ from mreg_api.models import PTR_override
 from mreg_api.models import ReverseZone
 from mreg_api.models import ReverseZoneDelegation
 from mreg_api.models import Role
-from mreg_api.models import ServerLibraries
-from mreg_api.models import ServerVersion
 from mreg_api.models import Srv
-from mreg_api.models import UserInfo
 from mreg_api.models import Zone
 from mreg_api.models import ZoneFile
 from mreg_api.models.fields import HostName
@@ -334,14 +334,6 @@ class MregClient:
     zone: type[Zone] = Zone
     zonefile: type[ZoneFile] = ZoneFile
 
-    # Fetch-based types for meta endpoints
-    health_info: type[HealthInfo] = HealthInfo
-    heartbeat_health: type[HeartbeatHealth] = HeartbeatHealth
-    ldap_health: type[LDAPHealth] = LDAPHealth
-    server_libraries: type[ServerLibraries] = ServerLibraries
-    server_version: type[ServerVersion] = ServerVersion
-    user_info: type[UserInfo] = UserInfo
-
     @functools.cached_property
     def hosts(self) -> HostManager:
         """Manager for host resources."""
@@ -391,6 +383,36 @@ class MregClient:
     def dhcphost_ipv6byipv4(self) -> DhcpHostIPv6ByIPv4Manager:
         """Manager for IPv6-via-IPv4 DHCP host records."""
         return DhcpHostIPv6ByIPv4Manager(self)
+
+    @functools.cached_property
+    def server_version(self) -> ServerVersionManager:
+        """Manager for server version metadata."""
+        return ServerVersionManager(self)
+
+    @functools.cached_property
+    def server_libraries(self) -> ServerLibrariesManager:
+        """Manager for server library metadata."""
+        return ServerLibrariesManager(self)
+
+    @functools.cached_property
+    def user_info(self) -> UserInfoManager:
+        """Manager for user information."""
+        return UserInfoManager(self)
+
+    @functools.cached_property
+    def ldap_health(self) -> LDAPHealthManager:
+        """Manager for LDAP health status."""
+        return LDAPHealthManager(self)
+
+    @functools.cached_property
+    def heartbeat_health(self) -> HeartbeatHealthManager:
+        """Manager for heartbeat health status."""
+        return HeartbeatHealthManager(self)
+
+    @functools.cached_property
+    def health(self) -> HealthManager:
+        """Manager for combined health information."""
+        return HealthManager(self)
 
     def __init__(
         self,

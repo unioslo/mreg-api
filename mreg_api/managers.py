@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import functools
 import ipaddress
+import logging
 from abc import ABC
 from abc import abstractmethod
 from typing import TYPE_CHECKING
@@ -63,12 +64,16 @@ from mreg_api.models import DhcpHostIPv6
 from mreg_api.models import DhcpHostIPv6ByIPv4
 from mreg_api.models import ForwardZone
 from mreg_api.models import ForwardZoneDelegation
+from mreg_api.models import HealthInfo
+from mreg_api.models import HeartbeatHealth
 from mreg_api.models import HInfo
 from mreg_api.models import Host
 from mreg_api.models import HostContactModification
 from mreg_api.models import HostGroup
 from mreg_api.models import IPAddress
 from mreg_api.models import Label
+from mreg_api.models import LDAPHealth
+from mreg_api.models import Library
 from mreg_api.models import Location
 from mreg_api.models import NameServer
 from mreg_api.models import Network
@@ -81,7 +86,12 @@ from mreg_api.models import PTR_override
 from mreg_api.models import ReverseZone
 from mreg_api.models import ReverseZoneDelegation
 from mreg_api.models import Role
+from mreg_api.models import ServerLibraries
+from mreg_api.models import ServerVersion
 from mreg_api.models import Srv
+from mreg_api.models import UserDjangoStatus
+from mreg_api.models import UserInfo
+from mreg_api.models import UserMregStatus
 from mreg_api.models import Zone
 from mreg_api.models import ZoneFile
 from mreg_api.models.abstracts import MregModel
@@ -98,6 +108,8 @@ from mreg_api.utilities.shared import convert_wildcard_to_regex
 if TYPE_CHECKING:
     from mreg_api.client import MregClient
     from mreg_api.types import IP_NetworkT
+
+logger = logging.getLogger(__name__)
 
 
 class Unset:
@@ -433,12 +445,8 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         Returns:
             A list of resource objects.
         """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
         param, value = convert_wildcard_to_regex(self.name_field, self._normalize_name(name), True)
-        # NOTE: why can we use T here? Is this a Python 3.11 thing?
-        # return MregClient().get_typed(cls.endpoint(), list[T], params={param: value})
-        return MregClient().get_typed(self.endpoint, list[self.model], params={param: value})
+        return self._client.get_typed(self.endpoint, list[self.model], params={param: value})
 
 
 class HistoryManager(ResourceManager[T], ABC):
@@ -2923,3 +2931,161 @@ class NameServerManager(NamedResourceManager[NameServer]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.Nameservers
+
+
+class ServerVersionManager:
+    """Access to server version metadata (``client.server_version``)."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the manager with a client instance."""
+        self._client = client
+
+    def get(self, *, required: bool = False) -> ServerVersion:
+        """Fetch the server version from the meta endpoint.
+
+        Args:
+            required: When ``True``, raise on error. When ``False``, return
+                ``ServerVersion(version="Unknown")`` on failure.
+        """
+        try:
+            response = self._client.get(Endpoint.MetaVersion)
+            return ServerVersion.model_validate(response.json())
+        except Exception:
+            if required:
+                raise
+            return ServerVersion(version="Unknown")
+
+
+class ServerLibrariesManager:
+    """Access to server library metadata (``client.server_libraries``)."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the manager with a client instance."""
+        self._client = client
+
+    def get(self, *, required: bool = False) -> ServerLibraries:
+        """Fetch the server library list from the meta endpoint.
+
+        Args:
+            required: When ``True``, raise on error. When ``False``, return
+                ``ServerLibraries(libraries=[])`` on failure.
+        """
+        try:
+            response = self._client.get_typed(Endpoint.MetaLibraries, dict[str, str])
+            libraries = [Library(name=name, version=version) for name, version in response.items()]
+            return ServerLibraries(libraries=libraries)
+        except Exception:
+            if required:
+                raise
+            return ServerLibraries(libraries=[])
+
+
+class UserInfoManager:
+    """Access to user information (``client.user_info``)."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the manager with a client instance."""
+        self._client = client
+
+    def get(self, *, required: bool = False, user: str | None = None) -> UserInfo:
+        """Fetch user information from the meta endpoint.
+
+        Args:
+            required: When ``True``, raise on error. When ``False``, return a
+                zeroed-out ``UserInfo`` on failure.
+            user: The username to fetch. If ``None``, fetches the current user.
+        """
+        try:
+            endpoint: str = Endpoint.MetaUser
+            if user:
+                endpoint = f"{endpoint}?username={user}"
+            response = self._client.get(endpoint)
+            return UserInfo.model_validate(response.json())
+        except Exception:
+            if required:
+                raise
+            return UserInfo(
+                username="Unknown",
+                django_status=UserDjangoStatus(superuser=False, staff=False, active=False),
+                mreg_status=UserMregStatus(
+                    superuser=False,
+                    admin=False,
+                    group_admin=False,
+                    network_admin=False,
+                    hostpolicy_admin=False,
+                    dns_wildcard_admin=False,
+                    underscore_admin=False,
+                ),
+                groups=[],
+                permissions=[],
+            )
+
+
+class LDAPHealthManager:
+    """Access to LDAP health status (``client.ldap_health``)."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the manager with a client instance."""
+        self._client = client
+
+    def get(self, *, required: bool = False) -> LDAPHealth:
+        """Fetch LDAP health from the health endpoint.
+
+        A 503 response means LDAP is down and is not treated as a hard error.
+
+        Args:
+            required: When ``True``, raise on non-503 errors.
+        """
+        try:
+            self._client.get(Endpoint.HealthLDAP)
+            return LDAPHealth(status="OK")
+        except GetError as e:
+            if required:
+                raise
+            logger.error("Failed to fetch LDAP health: %s", e)
+            if e.response and e.response.status_code == 503:
+                return LDAPHealth(status="Down")
+            return LDAPHealth(status="Unknown")
+
+
+class HeartbeatHealthManager:
+    """Access to heartbeat health status (``client.heartbeat_health``)."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the manager with a client instance."""
+        self._client = client
+
+    def get(self, *, required: bool = False) -> HeartbeatHealth:
+        """Fetch heartbeat health from the health endpoint.
+
+        Args:
+            required: When ``True``, raise on error. When ``False``, return
+                ``HeartbeatHealth(uptime=-1, start_time=0)`` on failure.
+        """
+        try:
+            result = self._client.get(Endpoint.HealthHeartbeat)
+            return HeartbeatHealth.model_validate_json(result.text)
+        except Exception as e:
+            if required:
+                raise
+            logger.error("Failed to fetch heartbeat: %s", e)
+            return HeartbeatHealth(uptime=-1, start_time=0)
+
+
+class HealthManager:
+    """Access to combined health information (``client.health``)."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the manager with a client instance."""
+        self._client = client
+
+    def get(self, *, required: bool = False) -> HealthInfo:
+        """Fetch combined health from all health endpoints.
+
+        Args:
+            required: Forwarded to both sub-managers. When ``True``, raises
+                on any failure instead of returning a default object.
+        """
+        heartbeat = HeartbeatHealthManager(self._client).get(required=required)
+        ldap = LDAPHealthManager(self._client).get(required=required)
+        return HealthInfo(heartbeat=heartbeat, ldap=ldap)

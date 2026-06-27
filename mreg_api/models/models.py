@@ -13,9 +13,7 @@ from datetime import timedelta
 from functools import cached_property
 from typing import Any
 from typing import Literal
-from typing import Protocol
 from typing import Self
-from typing import TypeVar
 from typing import cast
 from typing import overload
 
@@ -30,7 +28,6 @@ from pydantic import model_validator
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
@@ -46,8 +43,6 @@ from mreg_api.types import IP_AddressT
 from mreg_api.types import IP_NetworkT
 
 logger = logging.getLogger(__name__)
-
-T = TypeVar("T")
 
 IPNetMode = Literal["ipv4", "ipv6", "ip", "network", "networkv4", "networkv6"]
 
@@ -1072,57 +1067,10 @@ class UserPermission(BaseModel):
         return ", ".join(self.labels)
 
 
-FetchT_co = TypeVar("FetchT_co", covariant=True)
-
-
-class Fetchable(Protocol[FetchT_co]):
-    """Interface for classes that implement a `fetch()` method.
-
-    This protocol is designed for endpoints that don't operate on resource IDs,
-    unlike standard APIMixin classes which implement `get()` with an ID parameter.
-
-    The `fetch()` method sends a GET request to the class's endpoint without
-    requiring an ID, typically for singleton resources, status endpoints, or
-    metadata endpoints that return a single object or status response rather
-    than a collection.
-
-    Since the response structure and object construction vary by endpoint type,
-    there is no general `fetch()` implementation provided by APIMixin. Each
-    implementing class must define its own `fetch()` method to handle the
-    specific response format and construct the appropriate object.
-    """
-
-    def fetch(self, *, ignore_errors: bool = True) -> FetchT_co: ...  # noqa: D102
-
-
 class ServerVersion(BaseModel):
     """Model for server version metadata."""
 
     version: str
-
-    @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> ServerVersion:
-        """Fetch the server version from the endpoint.
-
-        Args:
-            ignore_errors: Whether to ignore errors.
-
-        Raises:
-            GetError: If the response data is invalid and ignore_errors is False.
-            httpx.RequestError: If the HTTP request fails and ignore_errors is False.
-
-        Returns:
-            An instance of ServerVersion with the fetched data.
-        """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        try:
-            response = MregClient().get(Endpoint.MetaVersion)
-            return cls.model_validate(response.json())
-        except Exception as e:
-            if ignore_errors:
-                return cls(version="Unknown")
-            raise e
 
 
 class Library(BaseModel):
@@ -1136,34 +1084,6 @@ class ServerLibraries(BaseModel):
     """Model for server libraries metadata."""
 
     libraries: list[Library]
-
-    @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> ServerLibraries:
-        """Fetch the server libraries from the endpoint.
-
-        Args:
-            ignore_errors: Whether to ignore errors.
-
-        Raises:
-            GetError: If the response data is invalid and ignore_errors is False.
-            httpx.RequestError: If the HTTP request fails and ignore_errors is False.
-
-        Returns:
-            An instance of ServerLibraries with the fetched data.
-        """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        try:
-            response = MregClient().get_typed(Endpoint.MetaLibraries, dict[str, str])
-            libraries: list[Library] = []
-
-            for name, version in response.items():
-                libraries.append(Library(name=name, version=version))
-            return cls(libraries=libraries)
-        except Exception as e:
-            if ignore_errors:
-                return cls(libraries=[])
-            raise e
 
 
 class TokenInfo(BaseModel):
@@ -1187,83 +1107,11 @@ class UserInfo(BaseModel):
     groups: list[str]
     permissions: list[UserPermission]
 
-    @classmethod
-    def fetch(cls, *, ignore_errors: bool = True, user: str | None = None) -> UserInfo:
-        """Fetch the user information from the endpoint.
-
-        Args:
-            ignore_errors: Whether to ignore errors.
-            user: The username to fetch information for. If None, fetch information for the
-                current user.
-
-        Raises:
-            GetError: If the response data is invalid and ignore_errors is False.
-            httpx.RequestError: If the HTTP request fails and ignore_errors is False.
-
-        Returns:
-            An instance of UserInfo with the fetched data.
-        """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        try:
-            endpoint = Endpoint.MetaUser
-            if user:
-                endpoint = f"{endpoint}?username={user}"
-
-            response = MregClient().get(endpoint)
-            return cls.model_validate(response.json())
-        except Exception as e:
-            if ignore_errors:
-                return cls(
-                    username="Unknown",
-                    django_status=UserDjangoStatus(superuser=False, staff=False, active=False),
-                    mreg_status=UserMregStatus(
-                        superuser=False,
-                        admin=False,
-                        group_admin=False,
-                        network_admin=False,
-                        hostpolicy_admin=False,
-                        dns_wildcard_admin=False,
-                        underscore_admin=False,
-                    ),
-                    groups=[],
-                    permissions=[],
-                )
-            raise e
-
 
 class LDAPHealth(BaseModel):
     """Model for LDAP health endpoint."""
 
     status: str
-
-    @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> Self:
-        """Fetch the LDAP status from the endpoint.
-
-        Args:
-            ignore_errors: Ignore non-503 errors. 503 means LDAP is down,
-                and should not be treated as an error in the traditional sense.
-
-        Raises:
-            GetError: If the response code is not 200 or 503.
-
-        Returns:
-            An instance of LDAPStatus.
-        """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        try:
-            MregClient().get(Endpoint.HealthLDAP)
-            return cls(status="OK")
-        except GetError as e:
-            if ignore_errors:
-                logger.error("Failed to fetch LDAP health: %s", e)
-                if e.response and e.response.status_code == 503:
-                    return cls(status="Down")
-                else:
-                    return cls(status="Unknown")
-            raise e
 
 
 class HeartbeatHealth(BaseModel):
@@ -1277,45 +1125,12 @@ class HeartbeatHealth(BaseModel):
         # If we got a negative datetime, we weren't able to fetch the heartbeat
         return str(timedelta(seconds=self.uptime)) if self.uptime > 0 else "Unknown"
 
-    @classmethod
-    def fetch(cls, *, ignore_errors: bool = True) -> Self:
-        """Fetch the heartbeat status from the endpoint.
-
-        Args:
-            ignore_errors: Ignore HTTP errors and return dummy object with negative uptime.
-
-        Returns:
-            An instance of HeartbeatHealth with the fetched data.
-        """
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        try:
-            result = MregClient().get(Endpoint.HealthHeartbeat)
-            return cls.model_validate_json(result.text)
-        except Exception as e:
-            if ignore_errors:
-                logger.error("Failed to fetch heartbeat: %s", e)
-                return cls(uptime=-1, start_time=0)
-            raise e
-
 
 class HealthInfo(BaseModel):
     """Combined information from all health endpoints."""
 
     heartbeat: HeartbeatHealth
     ldap: LDAPHealth
-
-    @classmethod
-    def fetch(cls) -> HealthInfo:
-        """Fetch the health information from the endpoint.
-
-        Returns:
-            An instance of HealthInfo with the fetched data.
-        """
-        return cls(
-            heartbeat=HeartbeatHealth.fetch(),
-            ldap=LDAPHealth.fetch(),
-        )
 
 
 class TokenAuth(MregModel):
