@@ -687,6 +687,38 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         )
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
+    def networks(self, ref: int | Host) -> dict[Network, list[IPAddress]]:
+        """Return a dict mapping each network to the host's IP addresses on that network.
+
+        Networks not registered in MREG produce a placeholder via
+        :meth:`~mreg_api.models.Network.dummy_network_from_ip`.
+        """
+        host = self._resolve(ref)
+        net_manager = NetworkManager(self._client)
+        result: dict[Network, list[IPAddress]] = {}
+        for ip in host.ipaddresses:
+            network = net_manager.get_by_ip(ip.ipaddress)
+            if network is None:
+                network = Network.dummy_network_from_ip(ip)
+            if network not in result:
+                result[network] = []
+            result[network].append(ip)
+        return result
+
+    def vlans(self, ref: int | Host) -> dict[int, list[IPAddress]]:
+        """Return a dict mapping VLAN ID to host IPs on that VLAN. IPs with no VLAN map to 0."""
+        result: dict[int, list[IPAddress]] = {}
+        for network, ips in self.networks(ref).items():
+            vlan = network.vlan or 0
+            if vlan not in result:
+                result[vlan] = []
+            result[vlan].extend(ips)
+        return result
+
+    def all_ips_on_same_vlan(self, ref: int | Host) -> bool:
+        """Return True if all host IPs share a single VLAN (or there are no IPs)."""
+        return len(self.vlans(ref)) <= 1
+
 
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
     """Operations on :class:`~mreg_api.models.HostGroup` resources."""
