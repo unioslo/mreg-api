@@ -7,7 +7,8 @@ strings). It does **not** expose a single `get(identifier)` that guesses the kin
 
 The old `Host.get_by_any_means` / `Network.get_by_any_means` took one free-text arg
 and tried kinds in a fixed order (Host: id→IP→MAC→name→CNAME; Network:
-IP/network→id). That order-of-resolution heuristic exists because a human types one
+IP→network CIDR→numeric id). `get_by_any_means_or_raise` was the raising variant;
+both are dropped. That order-of-resolution heuristic exists because a human types one
 ambiguous string into the CLI — it is a CLI/UX concern. Baking it into the library
 makes `get("42")` ambiguous (host named "42" vs host id 42; hostname that looks like
 a MAC), which is unacceptable for a typed library API.

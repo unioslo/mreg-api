@@ -33,7 +33,7 @@ Keeps the CLI-useful "fail if it already exists" check (e.g. host add) explicit.
 
 ## history — returns `[]` on no history
 
-`HistoryCapableManager.history(name)` returns `list[HistoryItem]`, **empty when there
+`HistoryManager.history(name)` returns `list[HistoryItem]`, **empty when there
 is no history**. No-history is a valid state, not a not-found error. (The old
 `HistoryItem.get` raised `EntityNotFound("No history found")`.)
 

@@ -17,10 +17,9 @@ the client; fetches data and builds models from it. Models themselves are dumb d
 _Avoid_: repository, service, DAO
 
 **Resource**:
-An API-backed entity type a manager operates on (Host, Network, Zone, …). Conforms
-to the `APIResource` Protocol by exposing an `endpoint()` classmethod; otherwise a
-plain Pydantic model that carries data only, no I/O. URL construction lives on the
-manager, not the model.
+An API-backed entity type a manager operates on (Host, Network, Zone, …). A frozen
+Pydantic model (`MregModel`) that carries data only — no I/O, no HTTP calls. URL
+construction lives on the manager, not the model.
 _Avoid_: entity, record (when meaning the type)
 
 **External ID field**:
