@@ -48,6 +48,7 @@ class Endpoint(str, Enum):
     NetworksUnusedCount = "/api/v1/networks/{}/unused_count"
     NetworksUnusedList = "/api/v1/networks/{}/unused_list"
     NetworksFirstUnused = "/api/v1/networks/{}/first_unused"
+    NetworksRandomUnused = "/api/v1/networks/{}/random_unused"
     NetworksReservedList = "/api/v1/networks/{}/reserved_list"
     NetworksUsedHostList = "/api/v1/networks/{}/used_host_list"
     NetworksAddExcludedRanges = "/api/v1/networks/{}/excluded_ranges/"

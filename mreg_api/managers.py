@@ -1592,6 +1592,13 @@ class NetworkManager(WriteResourceManager[Network]):
             self._client.get_typed(Endpoint.NetworksFirstUnused.with_params(net.network), str)
         )
 
+    def get_random_available_ip(self, ref: str | int | Network) -> IP_AddressT:
+        """Return a random available IP address in the network."""
+        net = self._resolve_net(ref)
+        return ipaddress.ip_address(
+            self._client.get_typed(Endpoint.NetworksRandomUnused.with_params(net.network), str)
+        )
+
     def get_used_count(self, ref: str | int | Network) -> int:
         """Return the number of used IP addresses in the network."""
         net = self._resolve_net(ref)
