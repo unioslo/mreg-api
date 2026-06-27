@@ -5,17 +5,13 @@ from __future__ import annotations
 import datetime
 from enum import Enum
 from typing import Any
-from typing import Self
 
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import ValidationError
 from pydantic import field_validator
 
-from mreg_api.endpoints import Endpoint
-from mreg_api.exceptions import EntityNotFound
 from mreg_api.types import JsonMapping
-from mreg_api.types import QueryParams
 from mreg_api.types import parse_json_mapping_string
 
 
@@ -74,29 +70,3 @@ class HistoryItem(BaseModel):
             return parse_json_mapping_string(v)
         except ValidationError as e:
             raise ValueError("Failed to parse history data as JSON") from e
-
-    @classmethod
-    def get(cls, name: str, resource: HistoryResource) -> list[Self]:
-        """Get history items for a resource."""
-        from mreg_api.client import MregClient  # noqa: PLC0415
-
-        client = MregClient()
-        params: QueryParams = {"resource": resource.resource(), "name": name}
-        ret = client.get_typed(Endpoint.History, list[cls], params=params)
-        if len(ret) == 0:
-            raise EntityNotFound(f"No history found for {name}")
-
-        model_ids = ",".join({str(i.mid) for i in ret})
-        params = {
-            "resource": resource.resource(),
-            "model_id__in": model_ids,
-        }
-        ret = client.get_typed(Endpoint.History, list[cls], params=params)
-
-        params = {
-            "data__relation": resource.relation(),
-            "data__id__in": model_ids,
-        }
-        ret.extend(client.get_typed(Endpoint.History, list[cls], params=params))
-
-        return ret

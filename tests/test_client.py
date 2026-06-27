@@ -16,6 +16,7 @@ from mreg_api.__about__ import __version__
 from mreg_api.client import MregClient
 from mreg_api.client import check_response
 from mreg_api.client import strip_none
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
@@ -76,10 +77,10 @@ def test_client_caching(httpserver: HTTPServer) -> None:
 
     init_endpoint()
     # First fetch - should hit the server
-    hosts1 = Host.get_list()
+    hosts1 = client.hosts.list()
 
     # Second fetch - should use the cache
-    hosts2 = Host.get_list()
+    hosts2 = client.hosts.list()
 
     assert hosts1 == hosts2
 
@@ -88,16 +89,16 @@ def test_client_caching(httpserver: HTTPServer) -> None:
     init_endpoint()
 
     # First fetch - should hit the server
-    resp = client.get(str(Host.endpoint()), params=None, ok404=False)
+    resp = client.get(str(Endpoint.Hosts), params=None, ok404=False)
 
     # Ensure that trying to access the endpoint now raises an exception (oneshot)
     with pytest.raises(GetError) as exc_info:
-        client._do_get(str(Host.endpoint()), params=None, ok404=False)
+        client._do_get(str(Endpoint.Hosts), params=None, ok404=False)
     assert "No handler found" in exc_info.value.response.text
     assert exc_info.value.response.status_code == snapshot(500)
 
     # We know the endpoint doesn't work, so this is certain to go via the cache
-    resp2 = client.get(str(Host.endpoint()), params=None, ok404=False)
+    resp2 = client.get(str(Endpoint.Hosts), params=None, ok404=False)
 
     assert resp.content == resp2.content
     assert resp.json() == snapshot(
@@ -136,11 +137,11 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         {"detail": "Mutation successful"}
     )
 
-    hosts_pre_mutation = Host.get_list()
+    hosts_pre_mutation = client.hosts.list()
     assert len(hosts_pre_mutation) == 1
 
     # Assert we can access the cached data
-    hosts_pre_mutation_cached = Host.get_list()
+    hosts_pre_mutation_cached = client.hosts.list()
     assert len(hosts_pre_mutation_cached) == 1
 
     # We don't care about the mutation response or respecting what it would actually do
@@ -173,7 +174,7 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         ]
     )
 
-    hosts_post_mutation = Host.get_list()
+    hosts_post_mutation = client.hosts.list()
     assert len(hosts_post_mutation) == 2
 
 
@@ -194,7 +195,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
             }
         ]
     )
-    hosts1 = Host.get_list()
+    hosts1 = client.hosts.list()
     assert len(client.get_client_history()) == 1
 
     # Perform same fetches within the context manager - should bypass cache
@@ -219,7 +220,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
                 },
             ]
         )
-        hosts2 = Host.get_list()
+        hosts2 = client.hosts.list()
         assert len(client.get_client_history()) == 2
 
         assert len(hosts1) == 1
@@ -229,7 +230,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     info_pre = client.get_cache_info()
     assert info_pre is not None
 
-    hosts3 = Host.get_list()
+    hosts3 = client.hosts.list()
     assert len(client.get_client_history()) == 2  # History unchanged
     assert len(hosts3) == len(hosts1) == 1
 
@@ -258,7 +259,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
                 }
             ]
         )
-        hosts1 = Host.get_list()
+        hosts1 = client.hosts.list()
         assert len(client.get_client_history()) == 1
 
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
@@ -282,7 +283,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             ]
         )
         # Second fetch should hit the cache - not the new handler
-        hosts2 = Host.get_list()
+        hosts2 = client.hosts.list()
         assert len(client.get_client_history()) == 1
         assert len(hosts1) == len(hosts2) == 1
 
@@ -307,7 +308,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             },
         ]
     )
-    hosts3 = Host.get_list()
+    hosts3 = client.hosts.list()
     assert len(client.get_client_history()) == 2
     assert len(hosts3) == 2
 
@@ -712,7 +713,7 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
     assert hasattr(client, "host")
     assert client.host is Host
 
-    # Test that we can use the composed model to make requests
+    # Test that we can use the manager to make requests
     httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_json(
         [
             {
@@ -726,7 +727,7 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
         ]
     )
 
-    assert client.host.get_list() == snapshot(
+    assert client.hosts.list() == snapshot(
         [
             Host(
                 created_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.UTC),
@@ -769,15 +770,15 @@ def _client_models() -> list[type]:
             continue  # Skip exported names that aren't classes
         elif inspect.isabstract(model_cls):  # Skip any ABCs that are exported
             continue
-        # All models with a get or fetch method should be accessible via the client
-        if any(hasattr(model_cls, attr) for attr in ["get", "fetch"]):
+        # All concrete model types should be accessible via the client
+        if hasattr(model_cls, "endpoint") or any(hasattr(model_cls, attr) for attr in ["fetch"]):
             client_models.append(model_cls)
     return client_models
 
 
 @pytest.mark.parametrize("model", _client_models())
 def test_client_model_composition_dynamic(model: type, client: MregClient) -> None:
-    """Ensure all models with get/fetch are accessible via client attributes."""
+    """Ensure all concrete models are accessible via client attributes."""
     attr_name = _to_snake_case(model.__name__)
     assert hasattr(client, attr_name)
     assert getattr(client, attr_name) is model
@@ -790,7 +791,7 @@ def test_exported_abcs() -> None:
         obj = getattr(models, name)
         if inspect.isabstract(obj):
             abcs.append(name)
-    assert abcs == snapshot(["DhcpHost", "HostPolicy"])
+    assert abcs == snapshot([])
 
 
 @pytest.mark.parametrize(

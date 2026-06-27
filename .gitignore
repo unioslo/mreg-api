@@ -110,3 +110,8 @@ venv.bak/
 mreg/.idea
 
 *.log
+
+# Claude
+.claude/settings.local.json
+CLAUDE.local.md
+!.claude/CLAUDE.md

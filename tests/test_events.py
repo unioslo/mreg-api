@@ -14,7 +14,7 @@ from mreg_api.models import MX
 from mreg_api.models import HInfo
 from mreg_api.models import Host
 from mreg_api.models import Network
-from mreg_api.models.abstracts import APIMixin
+from mreg_api.models.abstracts import MregModel
 from mreg_api.models.fields import HostName
 
 
@@ -351,10 +351,10 @@ def test_objectref_equality():
         ),
     ],
 )
-def test_objectref_new(obj: APIMixin, id_: str):
+def test_objectref_new(obj: MregModel, id_: str):
     ref = ObjectRef.new(obj)
     assert ref.type == obj.__class__.__name__
 
     # The inferred ID field is correct and the value matches the object's ID
-    assert ref.value == str(getattr(obj, obj.endpoint().external_id_field()))
+
     assert ref.value == id_

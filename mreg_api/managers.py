@@ -31,7 +31,6 @@ from typing import Any
 from typing import ClassVar
 from typing import Generic
 from typing import Literal
-from typing import Protocol
 from typing import TypeVar
 from typing import overload
 
@@ -58,6 +57,7 @@ from mreg_api.models import SSHFP
 from mreg_api.models import TXT
 from mreg_api.models import Atom
 from mreg_api.models import BacnetID
+from mreg_api.models import Community
 from mreg_api.models import DhcpHostIPv4
 from mreg_api.models import DhcpHostIPv6
 from mreg_api.models import DhcpHostIPv6ByIPv4
@@ -65,6 +65,7 @@ from mreg_api.models import ForwardZone
 from mreg_api.models import ForwardZoneDelegation
 from mreg_api.models import HInfo
 from mreg_api.models import Host
+from mreg_api.models import HostContactModification
 from mreg_api.models import HostGroup
 from mreg_api.models import IPAddress
 from mreg_api.models import Label
@@ -81,6 +82,8 @@ from mreg_api.models import ReverseZoneDelegation
 from mreg_api.models import Role
 from mreg_api.models import Srv
 from mreg_api.models import Zone
+from mreg_api.models import ZoneFile
+from mreg_api.models.abstracts import MregModel
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.history import HistoryItem
@@ -96,20 +99,6 @@ if TYPE_CHECKING:
     from mreg_api.types import IP_NetworkT
 
 
-class APIResource(Protocol):
-    """Structural type for a model that maps to an API resource.
-
-    Resources only need to expose their endpoint as pure metadata; all I/O lives on
-    the managers. This is the lower bound for the model type a manager can operate
-    on, and the type of :attr:`ResourceManager._model`.
-    """
-
-    @classmethod
-    def endpoint(cls) -> Endpoint:
-        """Return the endpoint for the resource."""
-        ...
-
-
 class Unset:
     """Sentinel for "unchanged" parameters in update methods."""
 
@@ -121,7 +110,7 @@ class Unset:
 UNSET = Unset()
 
 
-T = TypeVar("T", bound=APIResource)
+T = TypeVar("T", bound=MregModel)
 
 
 class ResourceManager(Generic[T], ABC):
@@ -156,8 +145,11 @@ class ResourceManager(Generic[T], ABC):
         """The model type this manager operates on."""
         raise NotImplementedError
 
-    def _endpoint(self) -> Endpoint:
-        return self.model.endpoint()
+    @property
+    @abstractmethod
+    def endpoint(self) -> Endpoint:
+        """Return the API endpoint for this manager's resource type."""
+        ...
 
     def _resolve(self, ref: int | T) -> T:
         """Resolve an object reference (instance or numeric id) to an instance of the model.
@@ -211,11 +203,11 @@ class ResourceManager(Generic[T], ABC):
 
     # TODO: test for all model types/managers! getattr is not great!
     def _endpoint_with_id(self, obj: T) -> str:
-        return self._endpoint().with_id(self.id_field_value(obj))
+        return self.endpoint.with_id(self.id_field_value(obj))
 
     def _fetch_by_field(self, field: str, value: str | int) -> T | None:
         """Fetch a single object, querying by a field."""
-        endpoint = self._endpoint()
+        endpoint = self.endpoint
 
         # Field is the ID used in the URL path. i.e. /hosts/example.com, /sshfps/123, etc.
         if self._url_identifier != "id" and field == self._url_identifier:
@@ -237,7 +229,7 @@ class ResourceManager(Generic[T], ABC):
     def _fetch_list_by_field(self, field: str, value: str | int) -> list[T]:
         """Fetch all objects matching a field, mirroring old APIMixin.get_list_by_field."""
         params: QueryParams = {field: value}
-        return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=500)
+        return self._client.get_typed(self.endpoint, list[self.model], params=params, limit=500)
 
     # NOTE: add toggleable _refetch behavior? Return None if refetching is disabled?
     def _refetch(self, obj: T) -> T:
@@ -297,7 +289,7 @@ class ResourceManager(Generic[T], ABC):
     ) -> list[T]:
         """List resources, optionally filtered by query parameters."""
         params: QueryParams = dict(query)
-        return self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=limit)
+        return self._client.get_typed(self.endpoint, list[self.model], params=params, limit=limit)
 
     # TODO: add warning or similar when used on non-paginated endpoints somehow.
     # Manually? Use contextvar? Who knows.
@@ -323,7 +315,7 @@ class ResourceManager(Generic[T], ABC):
             EntityNotFound: If ``required`` is True and no resource is found.
         """
         params: QueryParams = {**dict(query), "page_size": 1}
-        results = self._client.get_typed(self._endpoint(), list[self.model], params=params, limit=None)
+        results = self._client.get_typed(self.endpoint, list[self.model], params=params, limit=None)
         obj = results[0] if results else None
         if required and obj is None:
             raise EntityNotFound(f"No {self.model.__name__} found.")
@@ -341,7 +333,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
         ``Location`` header to refetch from (many endpoints don't), or when
         ``fetch_after_create`` is ``False``.
         """
-        response = self._client.post(self._endpoint(), json=data)
+        response = self._client.post(self.endpoint, json=data)
         if fetch_after_create and "Location" in response.headers:
             return self._client.get_typed(response.headers["Location"], self.model)
         return None
@@ -353,8 +345,6 @@ class WriteResourceManager(ResourceManager[T], ABC):
         """
         _ = self._client.patch(self._endpoint_with_id(obj), json=data, params=params)
         return self._refetch(obj)
-
-    # --- public CRUD -----------------------------------------------------
 
     def delete(self, obj: T) -> None:
         """Delete a resource.
@@ -378,14 +368,14 @@ class CountableResourceManager(WriteResourceManager[T], ABC):
 
     def count(self) -> int:
         """Return the server-reported total count of resources at this endpoint."""
-        return self._client.get_count(self._endpoint())
+        return self._client.get_count(self.endpoint)
 
 
 class NamedResourceManager(WriteResourceManager[T], ABC):
     """Extended WriteResourceManager for resources that support name-based lookups."""
 
-    # NOTE: does not currently handle name-based lookups for resources that do
-    # not support writes (but they don't exist per now!)
+    # NOTE: write methods are inherited even for managers where the underlying
+    # API endpoint may not support writes (e.g. NameServerManager).
 
     # TODO: should override _url_identifier instead?!
     name_field: ClassVar[str] = "name"
@@ -447,7 +437,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         param, value = convert_wildcard_to_regex(self.name_field, self._normalize_name(name), True)
         # NOTE: why can we use T here? Is this a Python 3.11 thing?
         # return MregClient().get_typed(cls.endpoint(), list[T], params={param: value})
-        return MregClient().get_typed(self._endpoint(), list[self.model], params={param: value})
+        return MregClient().get_typed(self.endpoint, list[self.model], params={param: value})
 
 
 class HistoryManager(ResourceManager[T], ABC):
@@ -501,6 +491,11 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     @override
     def model(self) -> type[Host]:
         return Host
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Hosts
 
     @property
     @override
@@ -669,6 +664,28 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             data["ttl"] = ttl
         return self._patch(host, data)
 
+    def add_contacts(self, ref: int | Host, contacts: list[str]) -> HostContactModification:
+        """Add contacts to a host (atomic; POST to /hosts/{name}/contacts/)."""
+        host = self._resolve(ref)
+        resp = self._client.post(
+            Endpoint.HostsContacts.with_params(host.name), json={"emails": contacts}
+        )
+        return get_type_adapter(HostContactModification).validate_json(resp.text)
+
+    def clear_contacts(self, ref: int | Host) -> HostContactModification:
+        """Remove all contacts from a host (atomic; DELETE /hosts/{name}/contacts/)."""
+        host = self._resolve(ref)
+        resp = self._client.delete(Endpoint.HostsContacts.with_params(host.name))
+        return get_type_adapter(HostContactModification).validate_json(resp.text)
+
+    def remove_contacts(self, ref: int | Host, contacts: list[str]) -> HostContactModification:
+        """Remove specific contacts from a host (atomic; DELETE /hosts/{name}/contacts/)."""
+        host = self._resolve(ref)
+        resp = self._client.delete(
+            Endpoint.HostsContacts.with_params(host.name), json={"emails": contacts}
+        )
+        return get_type_adapter(HostContactModification).validate_json(resp.text)
+
 
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
     """Operations on :class:`~mreg_api.models.HostGroup` resources."""
@@ -679,6 +696,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
     @override
     def model(self) -> type[HostGroup]:
         return HostGroup
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.HostGroups
 
     @property
     @override
@@ -791,6 +813,22 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
                 parents.extend(self.list_parents(pobj))
         return parents
 
+    def list_by_host(self, host: int | Host, *, traverse: bool = False) -> list[HostGroup]:
+        """List all hostgroups that include the given host.
+
+        Args:
+            host: Host instance or numeric host ID.
+            traverse: If True, also include all parent groups recursively.
+        """
+        host_id = host.id if isinstance(host, Host) else host
+        direct = self._fetch_list_by_field("hosts", host_id)
+        if not traverse:
+            return sorted(direct, key=lambda g: g.name)
+        groups: list[HostGroup] = list(direct)
+        for group in direct:
+            groups.extend(self.list_parents(group))
+        return sorted(groups, key=lambda g: g.name)
+
 
 class LabelManager(NamedResourceManager[Label]):
     """Operations on :class:`~mreg_api.models.Label` resources."""
@@ -799,6 +837,11 @@ class LabelManager(NamedResourceManager[Label]):
     @override
     def model(self) -> type[Label]:
         return Label
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Labels
 
     def create(
         self,
@@ -840,6 +883,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     @override
     def model(self) -> type[Role]:
         return Role
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.HostPolicyRoles
 
     @property
     @override
@@ -969,6 +1017,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label_name!r}")
         return self._patch(role, {"labels": [lid for lid in role.labels if lid != label.id]})
 
+    def list_by_host(self, host: int | Host) -> list[Role]:
+        """List all roles that include the given host."""
+        host_id = host.id if isinstance(host, Host) else host
+        return self._fetch_list_by_field("hosts", host_id)
+
 
 class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
     """Operations on :class:`~mreg_api.models.Atom` resources."""
@@ -979,6 +1032,11 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
     @override
     def model(self) -> type[Atom]:
         return Atom
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.HostPolicyAtoms
 
     @property
     @override
@@ -1035,6 +1093,11 @@ class PermissionManager(WriteResourceManager[Permission]):
     @override
     def model(self) -> type[Permission]:
         return Permission
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.PermissionNetgroupRegex
 
     def create(
         self,
@@ -1175,6 +1238,11 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
     def model(self) -> type[NetworkPolicyAttribute]:
         return NetworkPolicyAttribute
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.NetworkPolicyAttributes
+
     def create(
         self,
         *,
@@ -1211,7 +1279,7 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         """Get all network policies that use this attribute."""
         attr = self._resolve(ref)
         return self._client.get_typed(
-            NetworkPolicy.endpoint(), list[NetworkPolicy], params={"attributes": attr.id}
+            Endpoint.NetworkPolicies, list[NetworkPolicy], params={"attributes": attr.id}
         )
 
 
@@ -1224,6 +1292,11 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
     @override
     def model(self) -> type[NetworkPolicy]:
         return NetworkPolicy
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.NetworkPolicies
 
     def create(
         self,
@@ -1306,12 +1379,99 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
     def networks(self, ref: int | NetworkPolicy) -> list[Network]:
         """Get all networks that use this policy."""
         pol = self._resolve(ref)
-        return self._client.get_typed(Network.endpoint(), list[Network], params={"policy": pol.id})
+        return self._client.get_typed(Endpoint.Networks, list[Network], params={"policy": pol.id})
 
     @functools.cached_property
     def attribute(self) -> NetworkPolicyAttributeManager:
         """Manager for network policy attributes (``client.networks.policy.attribute``)."""
         return NetworkPolicyAttributeManager(self._client)
+
+
+class CommunityManager:
+    """Operations on network communities (``client.networks.communities``).
+
+    Communities are always scoped to a network — every method takes a network
+    reference (address string or :class:`~mreg_api.models.Network` instance).
+    Exposed as ``client.networks.communities`` via :class:`NetworkManager`.
+    """
+
+    def __init__(self, client: MregClient) -> None:
+        """Bind the manager to the client."""
+        self._client = client
+
+    @staticmethod
+    def _net_addr(ref: str | Network) -> str:
+        """Return the network address string from a string or Network instance."""
+        return ref.network if isinstance(ref, Network) else ref
+
+    def list(self, network: str | Network) -> list[Community]:
+        """List all communities for a network."""
+        addr = self._net_addr(network)
+        return self._client.get_typed(Endpoint.NetworkCommunities.with_params(addr), list[Community])
+
+    def get_by_name(
+        self, network: str | Network, name: str, *, required: bool = False
+    ) -> Community | None:
+        """Get a community by name within a network."""
+        community = next((c for c in self.list(network) if c.name == name), None)
+        if required and community is None:
+            raise EntityNotFound(f"Community {name!r} not found in network {network!r}.")
+        return community
+
+    def create(self, network: str | Network, *, name: str, description: str) -> bool:
+        """Create a community in a network."""
+        addr = self._net_addr(network)
+        resp = self._client.post(
+            Endpoint.NetworkCommunities.with_params(addr),
+            json={"name": name, "description": description},
+        )
+        return resp.is_success if resp else False
+
+    def delete(self, network: str | Network, community: int | Community) -> None:
+        """Delete a community from a network."""
+        addr = self._net_addr(network)
+        community_id = community.id if isinstance(community, Community) else community
+        self._client.delete(Endpoint.NetworkCommunity.with_params(addr, community_id))
+
+    def get_hosts(self, network: str | Network, community: int | Community) -> list[Host]:
+        """List all hosts in a community."""
+        addr = self._net_addr(network)
+        community_id = community.id if isinstance(community, Community) else community
+        return self._client.get_typed(
+            Endpoint.NetworkCommunityHosts.with_params(addr, community_id), list[Host]
+        )
+
+    def add_host(
+        self,
+        network: str | Network,
+        community: int | Community,
+        host: int | Host,
+        *,
+        ipaddress: IP_AddressT | str | None = None,
+    ) -> bool:
+        """Add a host to a community."""
+        addr = self._net_addr(network)
+        community_id = community.id if isinstance(community, Community) else community
+        host_id = host.id if isinstance(host, Host) else host
+        data: dict[str, Any] = {"id": host_id}
+        if ipaddress is not None:
+            data["ipaddress"] = str(ipaddress)
+        resp = self._client.post(
+            Endpoint.NetworkCommunityHosts.with_params(addr, community_id), json=data
+        )
+        return resp.is_success if resp else False
+
+    def remove_host(
+        self,
+        network: str | Network,
+        community: int | Community,
+        host: int | Host,
+    ) -> None:
+        """Remove a host from a community."""
+        addr = self._net_addr(network)
+        community_id = community.id if isinstance(community, Community) else community
+        host_id = host.id if isinstance(host, Host) else host
+        self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id))
 
 
 class NetworkManager(WriteResourceManager[Network]):
@@ -1323,6 +1483,11 @@ class NetworkManager(WriteResourceManager[Network]):
     @override
     def model(self) -> type[Network]:
         return Network
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Networks
 
     def _resolve_net(self, ref: str | int | Network) -> Network:
         """Resolve a network reference (address string, numeric id, or instance)."""
@@ -1506,6 +1671,11 @@ class NetworkManager(WriteResourceManager[Network]):
         """Manager for network policies (``client.networks.policy``)."""
         return NetworkPolicyManager(self._client)
 
+    @functools.cached_property
+    def communities(self) -> CommunityManager:
+        """Manager for network communities (``client.networks.communities``)."""
+        return CommunityManager(self._client)
+
 
 def resolve_host_id(host: Host | int) -> int:
     """Resolve a host reference to its numeric ID."""
@@ -1521,6 +1691,11 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
     @override
     def model(self) -> type[IPAddress]:
         return IPAddress
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Ipaddresses
 
     def create(
         self,
@@ -1591,6 +1766,11 @@ class CNAMEManager(WriteResourceManager[CNAME]):
     def model(self) -> type[CNAME]:
         return CNAME
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Cnames
+
     def _normalize_name(self, name: str) -> str:
         return self._client.fqdn(name)
 
@@ -1614,14 +1794,17 @@ class CNAMEManager(WriteResourceManager[CNAME]):
         *,
         host: int | Host | Unset = UNSET,
         name: str | HostName | Unset = UNSET,
+        ttl: int | None | Unset = UNSET,
     ) -> CNAME:
-        """Update a CNAME record's mutable fields."""
+        """Update a CNAME record's mutable fields. Pass ``ttl=None`` to reset to default."""
         cname = self._resolve(ref)
         data: dict[str, Any] = {}
-        if host is not UNSET:
+        if not isinstance(host, Unset):
             data["host"] = resolve_host_id(host)
         if name is not UNSET:
             data["name"] = self._client.fqdn(str(name))
+        if ttl is not UNSET:
+            data["ttl"] = ttl
         return self._patch(cname, data)
 
     @overload
@@ -1633,6 +1816,18 @@ class CNAMEManager(WriteResourceManager[CNAME]):
         obj = self._fetch_by_field("name", self._client.fqdn(name))
         if required and obj is None:
             raise EntityNotFound(f"CNAME {name!r} not found.")
+        return obj
+
+    def get_by_host_and_name(
+        self, host: int | Host, name: str, *, required: bool = False
+    ) -> CNAME | None:
+        """Get a CNAME record matching both the host and alias name."""
+        host_id = resolve_host_id(host)
+        fqdn = self._client.fqdn(name)
+        cnamas = self._fetch_list_by_field("host", host_id)
+        obj = next((c for c in cnamas if c.name == fqdn), None)
+        if required and obj is None:
+            raise EntityNotFound(f"CNAME {name!r} for host {host_id} not found.")
         return obj
 
     def list_by_host(self, host: int | Host) -> list[CNAME]:
@@ -1653,6 +1848,11 @@ class HInfoManager(WriteResourceManager[HInfo]):
     @override
     def model(self) -> type[HInfo]:
         return HInfo
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Hinfos
 
     def create(
         self,
@@ -1701,6 +1901,11 @@ class TXTManager(WriteResourceManager[TXT]):
     def model(self) -> type[TXT]:
         return TXT
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Txts
+
     def create(
         self,
         *,
@@ -1739,6 +1944,11 @@ class MXManager(WriteResourceManager[MX]):
     def model(self) -> type[MX]:
         return MX
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Mxs
+
     def create(
         self,
         *,
@@ -1775,6 +1985,20 @@ class MXManager(WriteResourceManager[MX]):
         host_id = resolve_host_id(host)
         return self._fetch_list_by_field("host", host_id)
 
+    def get_by_all(self, host: int | Host, mx: str, priority: int) -> MX:
+        """Get an MX record matching host, mx value, and priority.
+
+        Raises:
+            EntityNotFound: If no matching MX record exists.
+        """
+        host_id = resolve_host_id(host)
+        obj = self._client.get_list_unique(
+            self.endpoint, params={"host": str(host_id), "mx": mx, "priority": str(priority)}
+        )
+        if not obj:
+            raise EntityNotFound(f"MX {mx!r} with priority {priority} not found for host {host_id}.")
+        return MX.model_validate(obj)
+
 
 class NAPTRManager(WriteResourceManager[NAPTR]):
     """Operations on :class:`~mreg_api.models.NAPTR` resources."""
@@ -1783,6 +2007,11 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
     @override
     def model(self) -> type[NAPTR]:
         return NAPTR
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Naptrs
 
     def create(
         self,
@@ -1853,6 +2082,11 @@ class SrvManager(WriteResourceManager[Srv]):
     def model(self) -> type[Srv]:
         return Srv
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Srvs
+
     def create(
         self,
         *,
@@ -1916,6 +2150,11 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
     def model(self) -> type[PTR_override]:
         return PTR_override
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.PTR_overrides
+
     def create(
         self,
         *,
@@ -1940,7 +2179,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         """Update a PTR override record's mutable fields."""
         ptr = self._resolve(ref)
         data: dict[str, Any] = {}
-        if host is not UNSET:
+        if not isinstance(host, Unset):
             data["host"] = resolve_host_id(host)
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
@@ -1959,6 +2198,11 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
     @override
     def model(self) -> type[SSHFP]:
         return SSHFP
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Sshfps
 
     def create(
         self,
@@ -2018,6 +2262,11 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
     def model(self) -> type[BacnetID]:
         return BacnetID
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.BacnetID
+
     def create(
         self,
         *,
@@ -2053,8 +2302,16 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
     def list_in_range(self, start: int, end: int) -> list[BacnetID]:
         """List BacnetID records within a numeric id range (inclusive)."""
         return self._client.get_typed(
-            self._endpoint(), list[BacnetID], params={"id__range": f"{start},{end}"}
+            self.endpoint, list[BacnetID], params={"id__range": f"{start},{end}"}
         )
+
+    def get_by_host(self, hostname: str | HostName, *, required: bool = False) -> BacnetID | None:
+        """Get the BacnetID record for a host by its FQDN."""
+        name = self._client.fqdn(hostname)
+        obj = self._fetch_by_field("hostname", name)
+        if required and obj is None:
+            raise EntityNotFound(f"BacnetID record for host {name!r} not found.")
+        return obj
 
 
 class LocationManager(WriteResourceManager[Location]):
@@ -2066,6 +2323,11 @@ class LocationManager(WriteResourceManager[Location]):
     @override
     def model(self) -> type[Location]:
         return Location
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.Locs
 
     def create(
         self,
@@ -2242,6 +2504,11 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
     def model(self) -> type[ForwardZone]:
         return ForwardZone
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.ForwardZones
+
     def get_from_hostname(self, hostname: str) -> ForwardZoneDelegation | ForwardZone | None:
         """Get the forward zone (or delegation) responsible for a hostname.
 
@@ -2271,6 +2538,11 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
     @override
     def model(self) -> type[ReverseZone]:
         return ReverseZone
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.ReverseZones
 
 
 class ZoneManager:
@@ -2411,6 +2683,16 @@ class ZoneManager:
         else:
             self._forward.delete(z, force=force)
 
+    def zone_file(self, zone_name: str, *, exclude_private: bool = False) -> str | None:
+        """Return the zone file content for the named zone, or None if not found."""
+        params: QueryParams = {}
+        if exclude_private:
+            params["excludePrivate"] = "1"
+        resp = self._client.get(Endpoint.Zonefiles.with_id(zone_name), params=params, ok404=True)
+        if not resp:
+            return None
+        return ZoneFile.model_validate(resp.text).root
+
     @functools.cached_property
     def delegations(self) -> DelegationManager:
         """Manager for zone delegations (``client.zones.delegations``)."""
@@ -2432,6 +2714,12 @@ class DelegationManager:
 
     def _model_for(self, zone: Zone) -> type[ForwardZoneDelegation | ReverseZoneDelegation]:
         return ReverseZoneDelegation if zone.is_reverse() else ForwardZoneDelegation
+
+    def _endpoint_for(self, zone: Zone) -> Endpoint:
+        """Return the delegations endpoint for the given zone's type."""
+        return (
+            Endpoint.ReverseZonesDelegations if zone.is_reverse() else Endpoint.ForwardZonesDelegations
+        )
 
     def _ensure_in_zone(self, zone: Zone, name: str) -> None:
         if not name.endswith(f".{zone.name}"):
@@ -2461,7 +2749,7 @@ class DelegationManager:
     def list_by_zone(self, zone: Zone) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """List all delegations for a zone."""
         cls = self._model_for(zone)
-        return self._client.get_typed(cls.endpoint().with_params(zone.name), list[cls])
+        return self._client.get_typed(self._endpoint_for(zone).with_params(zone.name), list[cls])
 
     def create(
         self,
@@ -2492,9 +2780,8 @@ class DelegationManager:
         if self.get(zone, name) is not None:
             raise EntityAlreadyExists(f"Zone {zone.name!r} already has a delegation named {name!r}")
 
-        cls = self._model_for(zone)
         self._client.post(
-            cls.endpoint().with_params(zone.name),
+            self._endpoint_for(zone).with_params(zone.name),
             json={"name": name, "nameservers": nameservers, "comment": comment},
         )
         if fetch_after_create:
@@ -2544,6 +2831,11 @@ class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
     def model(self) -> type[DhcpHostIPv4]:
         return DhcpHostIPv4
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.DhcpHostsIpv4
+
 
 class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
     """Read-only manager for IPv6 DHCP host records (``client.dhcphost_ipv6``)."""
@@ -2553,6 +2845,11 @@ class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
     def model(self) -> type[DhcpHostIPv6]:
         return DhcpHostIPv6
 
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.DhcpHostsIpv6
+
 
 class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
     """Read-only manager for IPv6-via-IPv4 DHCP host records (``client.dhcphost_ipv6byipv4``)."""
@@ -2561,3 +2858,8 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
     @override
     def model(self) -> type[DhcpHostIPv6ByIPv4]:
         return DhcpHostIPv6ByIPv4
+
+    @property
+    @override
+    def endpoint(self) -> Endpoint:
+        return Endpoint.DhcpHostsIpv6ByIpv4

@@ -23,6 +23,7 @@ from mreg_api.models.models import HeartbeatHealth
 from mreg_api.models.models import HInfo
 from mreg_api.models.models import Host
 from mreg_api.models.models import HostCommunity
+from mreg_api.models.models import HostContactModification
 from mreg_api.models.models import HostGroup
 from mreg_api.models.models import HostList
 from mreg_api.models.models import HostPolicy
@@ -72,6 +73,7 @@ __all__ = [
     "HInfo",
     "Host",
     "HostCommunity",
+    "HostContactModification",
     "HostGroup",
     "HostList",
     "HostPolicy",

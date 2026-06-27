@@ -49,8 +49,15 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
+from mreg_api.managers import AtomManager
+from mreg_api.managers import DelegationManager
+from mreg_api.managers import DhcpHostIPv4Manager
+from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
+from mreg_api.managers import DhcpHostIPv6Manager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
+from mreg_api.managers import RoleManager
+from mreg_api.managers import ZoneManager
 from mreg_api.models import CNAME
 from mreg_api.models import MX
 from mreg_api.models import NAPTR
@@ -366,6 +373,41 @@ class MregClient(metaclass=SingletonMeta):
     def hostgroups(self) -> HostGroupManager:
         """Manager for host group resources."""
         return HostGroupManager(self)
+
+    @functools.cached_property
+    def roles(self) -> RoleManager:
+        """Manager for host policy role resources."""
+        return RoleManager(self)
+
+    @functools.cached_property
+    def atoms(self) -> AtomManager:
+        """Manager for host policy atom resources."""
+        return AtomManager(self)
+
+    @functools.cached_property
+    def zones(self) -> ZoneManager:
+        """Manager for forward/reverse zone resources."""
+        return ZoneManager(self)
+
+    @functools.cached_property
+    def delegations(self) -> DelegationManager:
+        """Manager for zone delegation resources."""
+        return DelegationManager(self)
+
+    @functools.cached_property
+    def dhcphost_ipv4(self) -> DhcpHostIPv4Manager:
+        """Manager for IPv4 DHCP host records."""
+        return DhcpHostIPv4Manager(self)
+
+    @functools.cached_property
+    def dhcphost_ipv6(self) -> DhcpHostIPv6Manager:
+        """Manager for IPv6 DHCP host records."""
+        return DhcpHostIPv6Manager(self)
+
+    @functools.cached_property
+    def dhcphost_ipv6byipv4(self) -> DhcpHostIPv6ByIPv4Manager:
+        """Manager for IPv6-via-IPv4 DHCP host records."""
+        return DhcpHostIPv6ByIPv4Manager(self)
 
     def __init__(
         self,
