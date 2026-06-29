@@ -2933,6 +2933,24 @@ class NameServerManager(NamedResourceManager[NameServer]):
         return Endpoint.Nameservers
 
 
+class MetaManagerNamespace:
+    """Class that composes managers for the various /api/meta endpoints."""
+
+    def __init__(self, client: MregClient) -> None:
+        """Initialize the namespace with a client instance."""
+        self._client = client
+        self.version = ServerVersionManager(client)
+        self.libraries = ServerLibrariesManager(client)
+        self.userinfo = UserInfoManager(client)
+        self.ldap = LDAPHealthManager(client)
+        self.heartbeat = HeartbeatHealthManager(client)
+        self.health = HealthManager(
+            client,
+            heartbeat_manager=self.heartbeat,
+            ldap_manager=self.ldap,
+        )
+
+
 class ServerVersionManager:
     """Access to server version metadata (``client.serverversion``)."""
 
@@ -3075,9 +3093,24 @@ class HeartbeatHealthManager:
 class HealthManager:
     """Access to combined health information (``client.health``)."""
 
-    def __init__(self, client: MregClient) -> None:
-        """Initialize the manager with a client instance."""
+    def __init__(
+        self,
+        client: MregClient,
+        heartbeat_manager: HeartbeatHealthManager | None = None,
+        ldap_manager: LDAPHealthManager | None = None,
+    ) -> None:
+        """Initialize the manager with a client instance.
+
+        Optionally takes in existing heartbeat and LDAP managers to avoid creating new ones.
+        """
         self._client = client
+        if heartbeat_manager is None:
+            heartbeat_manager = HeartbeatHealthManager(client)
+        self._heartbeat_manager = heartbeat_manager
+
+        if ldap_manager is None:
+            ldap_manager = LDAPHealthManager(client)
+        self._ldap_manager = ldap_manager
 
     def get(self, *, required: bool = False) -> HealthInfo:
         """Fetch combined health from all health endpoints.
@@ -3086,6 +3119,6 @@ class HealthManager:
             required: Forwarded to both sub-managers. When ``True``, raises
                 on any failure instead of returning a default object.
         """
-        heartbeat = HeartbeatHealthManager(self._client).get(required=required)
-        ldap = LDAPHealthManager(self._client).get(required=required)
+        heartbeat = self._heartbeat_manager.get(required=required)
+        ldap = self._ldap_manager.get(required=required)
         return HealthInfo(heartbeat=heartbeat, ldap=ldap)

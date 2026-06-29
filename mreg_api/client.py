@@ -56,15 +56,13 @@ from mreg_api.managers import DelegationManager
 from mreg_api.managers import DhcpHostIPv4Manager
 from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
 from mreg_api.managers import DhcpHostIPv6Manager
-from mreg_api.managers import HealthManager
-from mreg_api.managers import HeartbeatHealthManager
 from mreg_api.managers import HInfoManager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
 from mreg_api.managers import IPAddressManager
 from mreg_api.managers import LabelManager
-from mreg_api.managers import LDAPHealthManager
 from mreg_api.managers import LocationManager
+from mreg_api.managers import MetaManagerNamespace
 from mreg_api.managers import MXManager
 from mreg_api.managers import NameServerManager
 from mreg_api.managers import NAPTRManager
@@ -74,12 +72,9 @@ from mreg_api.managers import NetworkPolicyManager
 from mreg_api.managers import PermissionManager
 from mreg_api.managers import PTROverrideManager
 from mreg_api.managers import RoleManager
-from mreg_api.managers import ServerLibrariesManager
-from mreg_api.managers import ServerVersionManager
 from mreg_api.managers import SrvManager
 from mreg_api.managers import SSHFPManager
 from mreg_api.managers import TXTManager
-from mreg_api.managers import UserInfoManager
 from mreg_api.managers import ZoneManager
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import parse_hostname
@@ -310,16 +305,6 @@ class MregClient:
         return DhcpHostIPv6ByIPv4Manager(self)
 
     @functools.cached_property
-    def health(self) -> HealthManager:
-        """Manager for combined health information."""
-        return HealthManager(self)
-
-    @functools.cached_property
-    def heartbeathealth(self) -> HeartbeatHealthManager:
-        """Manager for heartbeat health status."""
-        return HeartbeatHealthManager(self)
-
-    @functools.cached_property
     def hinfo(self) -> HInfoManager:
         """Manager for HINFO resources."""
         return HInfoManager(self)
@@ -345,14 +330,14 @@ class MregClient:
         return LabelManager(self)
 
     @functools.cached_property
-    def ldaphealth(self) -> LDAPHealthManager:
-        """Manager for LDAP health status."""
-        return LDAPHealthManager(self)
-
-    @functools.cached_property
     def location(self) -> LocationManager:
         """Manager for location resources."""
         return LocationManager(self)
+
+    @functools.cached_property
+    def meta(self) -> MetaManagerNamespace:
+        """Manager for meta endpoints."""
+        return MetaManagerNamespace(self)
 
     @functools.cached_property
     def mx(self) -> MXManager:
@@ -400,16 +385,6 @@ class MregClient:
         return RoleManager(self)
 
     @functools.cached_property
-    def serverlibraries(self) -> ServerLibrariesManager:
-        """Manager for server library metadata."""
-        return ServerLibrariesManager(self)
-
-    @functools.cached_property
-    def serverversion(self) -> ServerVersionManager:
-        """Manager for server version metadata."""
-        return ServerVersionManager(self)
-
-    @functools.cached_property
     def srv(self) -> SrvManager:
         """Manager for SRV record resources."""
         return SrvManager(self)
@@ -423,11 +398,6 @@ class MregClient:
     def txt(self) -> TXTManager:
         """Manager for TXT record resources."""
         return TXTManager(self)
-
-    @functools.cached_property
-    def userinfo(self) -> UserInfoManager:
-        """Manager for user information."""
-        return UserInfoManager(self)
 
     @functools.cached_property
     def zone(self) -> ZoneManager:
