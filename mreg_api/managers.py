@@ -402,9 +402,10 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         return self._case_name(name)
 
     # FIXME: Do we actually need an explicit name based lookup? Can we just use get_by_field() instead?
-    #       get() should handle the "primary" path i.e. the URL identifier.
-    #       The only affordance this gives us is the ability to format the name (lowercase, etc.)
-    #       before performing the lookup.
+    #       get() should IDEALLY handle the "primary" path i.e. the URL identifier.
+    #       So if we could do `client.host.get("ExAMple.com")` and it know that
+    #       the URL identifier is "name" and it should normalize the name, then we don't need
+    #       a separate get_by_name() method.
     @overload
     def get_by_name(self, name: str, *, required: Literal[True]) -> T: ...
     @overload
@@ -1433,7 +1434,6 @@ class CommunityManager:
 
     Communities are always scoped to a network — every method takes a network
     reference (address string or :class:`~mreg_api.models.Network` instance).
-    Exposed as ``client.network.communities`` via :class:`NetworkManager`.
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -1529,6 +1529,17 @@ class NetworkManager(WriteResourceManager[Network]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.Networks
+
+    # NOTE: expose as properties so we don't need to override __init__ and call `super()`
+    @functools.cached_property
+    def policy(self) -> NetworkPolicyManager:
+        """Manager for network policies (``client.network.policy``)."""
+        return NetworkPolicyManager(self._client)
+
+    @functools.cached_property
+    def communities(self) -> CommunityManager:
+        """Manager for network communities (``client.network.communities``)."""
+        return CommunityManager(self._client)
 
     def _resolve_net(self, ref: str | int | Network) -> Network:
         """Resolve a network reference (address string, numeric id, or instance)."""
@@ -1713,16 +1724,6 @@ class NetworkManager(WriteResourceManager[Network]):
         if exrange is None:
             raise EntityNotFound(f"Excluded range {start} - {end} not found in {net.network!r}.")
         self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(net.network, exrange.id))
-
-    @functools.cached_property
-    def policy(self) -> NetworkPolicyManager:
-        """Manager for network policies (``client.network.policy``)."""
-        return NetworkPolicyManager(self._client)
-
-    @functools.cached_property
-    def communities(self) -> CommunityManager:
-        """Manager for network communities (``client.network.communities``)."""
-        return CommunityManager(self._client)
 
 
 def resolve_host_id(host: Host | int) -> int:
