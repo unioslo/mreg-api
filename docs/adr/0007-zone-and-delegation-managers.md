@@ -13,7 +13,7 @@ The manager base (`ResourceManager`) is built around **one endpoint per manager*
 every fetch path calls the argument-less `self._endpoint()`. The CLI confirms the
 distinction barely surfaces: `Zone.get_zone_or_raise(name)` is used type-agnostically
 everywhere (delete, SOA, TTL, nameservers, delegations); the only places that need an
-explicit type are `zone list --forward/--reverse` and `ForwardZone.get_from_hostname`
+explicit type are `zone list --forward/--reverse` and `ForwardZone.get_from_host`
 (forward-only, 4 call sites).
 
 ## Decision
@@ -23,7 +23,7 @@ explicit type are `zone list --forward/--reverse` and `ForwardZone.get_from_host
 each a clean `NamedResourceManager` honoring the one-endpoint invariant. Public methods
 dispatch by name shape (`is_reverse_zone_name`): `get_by_name`/`create` return the
 `ForwardZone | ReverseZone` union; `list_forward()` / `list_reverse()` give the narrow
-typed lists; `get_from_hostname` delegates to the forward sub-manager.
+typed lists; `get_from_host` delegates to the forward sub-manager.
 
 **Delegations get their own `DelegationManager`** (zone-scoped methods: `create(zone, …)`,
 `list_by_zone(zone)`, `delete`, `set_comment`), even though delegations have no standalone

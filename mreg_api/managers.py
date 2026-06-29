@@ -186,6 +186,19 @@ class ResourceManager(Generic[T], ABC):
             raise EntityNotFound(f"{self.model.__name__} with id {ref!r} not found.")
         return obj
 
+    def _resolve_hostname(self, host: str | HostName | Host) -> str:
+        """Resolve a host reference to its fully qualified name.
+
+        Args:
+            host: A host reference, which can be a string, HostName, or Host instance.
+
+        Returns:
+            The fully qualified name of the host as a string.
+        """
+        if isinstance(host, Host):
+            return host.name
+        return self._client.fqdn(str(host))
+
     def _validate_json(self, data: str) -> T:
         """Attempt to construct the manager's model type from JSON data.
 
@@ -403,6 +416,25 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         """Normalise a name before use in lookups. Override to add hostname expansion."""
         return self._case_name(name)
 
+    @override
+    def ensure_absent(self, ident: str | int) -> None:
+        """Assert that no resource with ``name`` exists.
+
+        The "must not exist" guard (replaces the old ``get_x_and_raise``); kept a
+        distinct verb rather than a return-typed-``None`` overload of :meth:`get`.
+
+        Raises:
+            EntityAlreadyExists: If a resource with `name` exists.
+        """
+        if isinstance(ident, int):
+            # If the identifier is an integer, we assume it's an ID and not a name.
+            # In this case, we can delegate to the parent class's ensure_absent method.
+            super().ensure_absent(ident)
+            return
+        # If we have a string, delegate to internal get_by_name method
+        if self.get_by_name(ident, required=False) is not None:
+            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
+
     # FIXME: Do we actually need an explicit name based lookup? Can we just use get_by_field() instead?
     #       get() should IDEALLY handle the "primary" path i.e. the URL identifier.
     #       So if we could do `client.host.get("ExAMple.com")` and it know that
@@ -448,7 +480,8 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         Returns:
             A list of resource objects.
         """
-        param, value = convert_wildcard_to_regex(self.name_field, self._normalize_name(name), True)
+        # NOTE: no normalization or validation - this is a regex pattern, not a host name
+        param, value = convert_wildcard_to_regex(self.name_field, name, True)
         return self._client.get_typed(self.endpoint, list[self.model], params={param: value})
 
 
@@ -877,6 +910,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
 class LabelManager(NamedResourceManager[Label]):
     """Operations on :class:`~mreg_api.models.Label` resources."""
 
+    # NOTE: the regular labels endpoint uses IDs for lookups, but it is possible
+    # to fetch by name when using the /labels/name endpoint.
+    # This makes no sense, of course, but that's how it is.
+    _url_identifier: ClassVar[str] = "id"
+
     @property
     @override
     def model(self) -> type[Label]:
@@ -892,12 +930,14 @@ class LabelManager(NamedResourceManager[Label]):
         *,
         name: str,
         description: str,
-        fetch_after_create: bool = True,
+        fetch_after_create: bool = False,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
     ) -> Label | None:
-        """Create a label."""
-        return self._create(
-            {"name": name, "description": description}, fetch_after_create=fetch_after_create
-        )
+        """Create a label.
+
+        NOTE: The API does not return a Location header for label creation, fetching after creation
+        is not supported.
+        """
+        return self._create({"name": name, "description": description}, fetch_after_create=False)
 
     def update(
         self,
@@ -1735,6 +1775,13 @@ def resolve_host_id(host: Host | int) -> int:
     return host
 
 
+def resolve_host_name(host: Host | str | HostName, client: MregClient) -> str:
+    """Resolve a host reference to its fully qualified name."""
+    if isinstance(host, Host):
+        return host.name
+    return client.fqdn(str(host))
+
+
 class IPAddressManager(WriteResourceManager[IPAddress]):
     """Operations on :class:`~mreg_api.models.IPAddress` resources."""
 
@@ -1809,8 +1856,10 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         return self._fetch_list_by_field("ipaddress", str(ip))
 
 
-class CNAMEManager(WriteResourceManager[CNAME]):
+class CNAMEManager(NamedResourceManager[CNAME]):
     """Operations on :class:`~mreg_api.models.CNAME` resources."""
+
+    _url_identifier: ClassVar[str] = "name"
 
     @property
     @override
@@ -2321,34 +2370,23 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
     def create(
         self,
         *,
-        hostname: str | HostName,
+        host: str | HostName | Host,
         id: int,  # noqa: A002
         fetch_after_create: bool = True,
     ) -> BacnetID | None:
         """Create a BacnetID record.
 
         Args:
-            hostname: The FQDN of the host (used directly by the API, not a host id).
-            id: The BACnet device instance number (0–4194302).
+            host: The host to create a BacnetID for.
+            id: The BACnet id.
             fetch_after_create: Whether to fetch and return the created object.
         """
         return self._create(
-            {"hostname": str(hostname), "id": id},
+            {"hostname": self._resolve_hostname(host), "id": id},
             fetch_after_create=fetch_after_create,
         )
 
-    def update(
-        self,
-        ref: int | BacnetID,
-        *,
-        hostname: str | HostName | Unset = UNSET,
-    ) -> BacnetID:
-        """Update a BacnetID record's mutable fields."""
-        bacnet = self._resolve(ref)
-        data: dict[str, Any] = {}
-        if hostname is not UNSET:
-            data["hostname"] = str(hostname)
-        return self._patch(bacnet, data)
+    # NOTE: PATCH and PUT not allowed for this endpoint!
 
     def list_in_range(self, start: int, end: int) -> list[BacnetID]:
         """List BacnetID records within a numeric id range (inclusive)."""
@@ -2356,9 +2394,9 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
             self.endpoint, list[BacnetID], params={"id__range": f"{start},{end}"}
         )
 
-    def get_by_host(self, hostname: str | HostName, *, required: bool = False) -> BacnetID | None:
+    def get_by_host(self, host: str | HostName | Host, *, required: bool = False) -> BacnetID | None:
         """Get the BacnetID record for a host by its FQDN."""
-        name = self._client.fqdn(hostname)
+        name = self._resolve_hostname(host)
         obj = self._fetch_by_field("hostname", name)
         if required and obj is None:
             raise EntityNotFound(f"BacnetID record for host {name!r} not found.")
@@ -2424,7 +2462,7 @@ def _valid_zone_ttl(ttl: int) -> int:
     return ttl
 
 
-def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> None:
+def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> list[str]:
     """Verify nameservers exist in mreg and have an A-record / glue.
 
     Utility function shared by various managers that interact with nameservers.
@@ -2437,15 +2475,25 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
         raise InputFailure("At least one nameserver is required")
 
     errors: list[str] = []
+    verified: list[str] = []  # NOTE: should be list[HostName], but invariant, etc.. cba.
     for nameserver in nameservers:
-        host = client.host.get_by_name(nameserver)
+        host = client.host.get_by_name(nameserver, required=False)
+        # HACK: bypass checks if force is enabled, return name as-is, expanded and validated
+        if force:
+            verified.append(client.fqdn(nameserver))  # HACK
+            continue
+
         if host is None:
             if not force:
                 errors.append(f"{nameserver} is not in mreg, must force")
-        elif host.zone is None and not host.ipaddresses and not force:
-            errors.append(f"{nameserver} has no A-record/glue, must force")
+        else:
+            if host.zone is None and not host.ipaddresses and not force:
+                errors.append(f"{nameserver} has no A-record/glue, must force")
+
     if errors:
         raise ForceMissing("\n".join(errors))
+
+    return verified
 
 
 _ZoneT = TypeVar("_ZoneT", bound=Zone)
@@ -2472,6 +2520,8 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         fetch_after_create: bool = True,
     ) -> _ZoneT | None:
         """Create a zone of this manager's type. Caller verifies nameservers/absence."""
+        # FIXME: if called directly, name servers do not get passed through client.fqdn
+        # This could lead to bugs in the future.
         return self._create(
             {"name": name, "email": email, "primary_ns": primary_ns},
             fetch_after_create=fetch_after_create,
@@ -2492,6 +2542,9 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         """Update the zone's SOA fields. At least one field must be provided."""
         data: dict[str, Any] = {}
         if primary_ns is not UNSET:
+            # FIXME: if called directly, name servers do not get passed through client.fqdn
+            # This could lead to bugs in the future. If called through ZoneManager,
+            # name servers are verified and validated/formatted.
             data["primary_ns"] = primary_ns
         if email is not UNSET:
             data["email"] = email
@@ -2515,7 +2568,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
 
     def set_nameservers(self, zone: _ZoneT, nameservers: list[str], *, force: bool = False) -> None:
         """Replace the zone's nameservers (hits the per-type nameservers endpoint)."""
-        _verify_nameservers(self._client, nameservers, force=force)
+        nameservers = _verify_nameservers(self._client, nameservers, force=force)
         self._client.patch(
             self.nameservers_endpoint.with_params(zone.name), json={"primary_ns": nameservers}
         )
@@ -2559,13 +2612,13 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
     def endpoint(self) -> Endpoint:
         return Endpoint.ForwardZones
 
-    def get_from_hostname(self, hostname: str) -> ForwardZoneDelegation | ForwardZone | None:
-        """Get the forward zone (or delegation) responsible for a hostname.
+    def get_from_host(self, host: str | HostName | Host) -> ForwardZoneDelegation | ForwardZone | None:
+        """Get the forward zone (or delegation) responsible for a host or hostname.
 
         May return a :class:`ForwardZoneDelegation` when the hostname falls under a
         delegated subzone.
         """
-        name = self._client.fqdn(hostname)
+        name = self._resolve_hostname(host)
         resp = self._client.get(Endpoint.ForwardZoneForHost.with_id(name), ok404=True)
         if not resp:
             return None
@@ -2620,9 +2673,9 @@ class ZoneManager:
             return ref
         return self.get_by_name(ref, required=True)
 
-    def verify_nameservers(self, nameservers: list[str], force: bool = False) -> None:
+    def verify_nameservers(self, nameservers: list[str], force: bool = False) -> list[str]:
         """Verify nameservers exist in mreg and have glue (raises otherwise)."""
-        _verify_nameservers(self._client, nameservers, force=force)
+        return _verify_nameservers(self._client, nameservers, force=force)
 
     @overload
     def get_by_name(self, name: str, *, required: Literal[True]) -> ForwardZone | ReverseZone: ...
@@ -2646,9 +2699,9 @@ class ZoneManager:
         """List reverse zones."""
         return self._reverse.list()
 
-    def get_from_hostname(self, hostname: str) -> ForwardZoneDelegation | ForwardZone | None:
-        """Get the forward zone (or delegation) responsible for a hostname."""
-        return self._forward.get_from_hostname(hostname)
+    def get_from_host(self, host: str | HostName | Host) -> ForwardZoneDelegation | ForwardZone | None:
+        """Get the forward zone (or delegation) responsible for a host or hostname."""
+        return self._forward.get_from_host(host)
 
     def create(
         self,
@@ -2663,11 +2716,11 @@ class ZoneManager:
 
         Verifies the nameservers and that no zone with this name exists first.
         """
-        self.verify_nameservers(primary_ns, force=force)
+        verified_ns = self.verify_nameservers(primary_ns, force=force)
         sub = self._sub_for_name(name)
         sub.ensure_absent(name)
         return sub.create(
-            name=name, email=email, primary_ns=primary_ns, fetch_after_create=fetch_after_create
+            name=name, email=email, primary_ns=verified_ns, fetch_after_create=fetch_after_create
         )
 
     def update_soa(
@@ -2818,7 +2871,7 @@ class DelegationManager:
         zone type, and that the delegation does not already exist.
         """
         self._ensure_in_zone(zone, name)
-        _verify_nameservers(self._client, nameservers, force=force)
+        nameservers = _verify_nameservers(self._client, nameservers, force=force)
 
         if not force:
             delegated = self._client.zone.get_by_name(name)
