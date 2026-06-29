@@ -33,7 +33,7 @@ HostName = NewType("HostName", str)
 _HOSTNAME_RE = re.compile(r"^(\*\.)?([a-z0-9_][a-z0-9\-]*\.?)+$")
 
 
-def parse_hostname(value: str, domain: str = "") -> HostName:
+def parse_hostname(value: str, domain: str | None = None) -> HostName:
     """Normalise and optionally expand a hostname.
 
     Normalisation: lowercase, strip trailing dot, validate shape.
@@ -43,7 +43,7 @@ def parse_hostname(value: str, domain: str = "") -> HostName:
     Args:
         value: Raw hostname string.
         domain: Domain to append when the name has no dot after normalisation.
-            Pass ``""`` (default) to skip expansion.
+            Pass ``None`` (default) to skip expansion.
 
     Returns:
         Normalised (and optionally expanded) :data:`HostName`.
@@ -56,7 +56,7 @@ def parse_hostname(value: str, domain: str = "") -> HostName:
         value = value[:-1]
     if _HOSTNAME_RE.search(value) is None:
         raise InputFailure(f"Invalid input for hostname: {value}")
-    if "." not in value and domain:
+    if "." not in value and domain:  # skip if domain is "" or None
         value = f"{value}.{domain}"
     return HostName(value)
 

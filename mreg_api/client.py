@@ -406,8 +406,8 @@ class MregClient:
 
     def __init__(
         self,
-        url: str = "https://mreg.uio.no",
-        domain: str = "uio.no",
+        url: str,
+        domain: str | None = None,
         user: str | None = None,
         timeout: int | float | None = 60,
         cache: CacheConfig | bool = False,
@@ -427,7 +427,7 @@ class MregClient:
         )
 
         self.url: str = url
-        self.domain: str = domain
+        self.domain: str | None = domain
         self._page_size: int | None = page_size
         self.user: str | None = user
 
@@ -471,7 +471,7 @@ class MregClient:
         return parse_hostname(name, self.domain)
 
     @contextmanager
-    def domain_override(self, domain: str) -> Generator[None, None, None]:
+    def domain_override(self, domain: str | None) -> Generator[None, None, None]:
         """Temporarily override the hostname domain used by :meth:`fqdn`.
 
         Args:

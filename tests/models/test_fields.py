@@ -142,10 +142,16 @@ def test_parse_hostname_trailing_dot_then_qualified() -> None:
 
 
 def test_parse_hostname_returns_hostname_type() -> None:
+    """Test that parse_hostname returns a str on runtime."""
     result = parse_hostname("example.com")
     assert isinstance(result, str)
     # HostName is a NewType of str — runtime identity is str
     assert type(result) is str
+
+
+def test_parse_hostname_domain_none_is_equal_empty_str() -> None:
+    """Test that parse_hostname returns the same result for None and empty string domains."""
+    assert parse_hostname("web", None) == parse_hostname("web", "") == "web"
 
 
 MacAddressValidationFailure = pytest.mark.xfail(raises=InputFailure, strict=True)
