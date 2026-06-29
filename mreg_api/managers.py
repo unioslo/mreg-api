@@ -317,8 +317,8 @@ class ResourceManager(Generic[T], ABC):
 
         Passes ``page_size=1`` to avoid over-fetching.
 
-        Suboptimal behavior on non-paginated endpoints, i.e.
-        `networks/{network}/unused_list`, `/dhcphosts`, etc.
+        Over-fetches on certain non-standard endpoints that do not implement pagination
+        such as `networks/{network}/unused_list`, `/dhcphosts`, and others.
 
         Args:
             required: When ``True``, raise if no resource exists (returns ``T``).
@@ -2425,8 +2425,7 @@ def _valid_zone_ttl(ttl: int) -> int:
 def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> None:
     """Verify nameservers exist in mreg and have an A-record / glue.
 
-    Ported from ``Zone.verify_nameservers``; resolution of each nameserver now uses the
-    explicit ``client.host.get_by_name`` instead of the dropped ``get_by_any_means``.
+    Utility function shared by various managers that interact with nameservers.
 
     Raises:
         InputFailure: If no nameservers are given.
