@@ -179,6 +179,11 @@ def check_response(response: Response, operation_type: HTTPMethod, url: str) -> 
             )
         else:
             msg = response.text
+
+        # Fall back on reason phrase if derived message is empty
+        if not msg:
+            msg = response.reason_phrase
+
         cls = determine_http_error_class(operation_type)
         raise cls(msg, response)
 
@@ -1195,6 +1200,7 @@ class MregClient:
         resp = validate_paginated_response(response)
 
         if limit and resp.count > abs(limit):
+            # TODO: append to error message that limit can be increased/disabled
             raise TooManyResults(f"Too many hits ({resp.count}), please refine your search criteria.")
 
         # Iterate over all pages and collect the results
