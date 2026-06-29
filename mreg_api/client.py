@@ -748,10 +748,11 @@ class MregClient:
             params = None
         else:
             params = params or {}
-            # Add default params if we are passing in params
-            if self._page_size:
-                # Add page_size to params if set and not paginating
-                _ = params.setdefault("page_size", self._page_size)
+            # Add default GET params if we are passing in params
+            # Only passes default params to GET requests while NOT paginating
+            if method == "GET":
+                if self._page_size:
+                    _ = params.setdefault("page_size", self._page_size)
 
         url = urljoin(self.url, path)
 
