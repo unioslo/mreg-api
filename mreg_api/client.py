@@ -1094,11 +1094,17 @@ class MregClient:
         except ValidationError as e:
             raise MregValidationError.from_pydantic(e, "JSON mapping") from e
 
-    def get_first(self, path: str) -> JsonMapping | None:
+    def get_first(self, path: str, params: QueryParams | None = None) -> JsonMapping | None:
         """Get the first item from a list endpoint."""
-        response = self.get(path, params={"page_size": 1})
+        if params is None:
+            params = {}
 
-        # Non-paginated results, return them directly
+        # Set a default page size of 1 to minimize data transfer.
+        # Callers may override this (but they really shouldn't!)
+        params.setdefault("page_size", 1)
+
+        response = self.get(path, params=params)
+
         if "count" not in response.text:
             content = validate_list_response(response)
         else:
@@ -1106,6 +1112,7 @@ class MregClient:
             content = resp.results
         if not content:
             return None
+        # Ensure that the first item is a mapping (dictionary)
         return JsonMappingValidator.validate_python(content[0])
 
     def get_count(self, path: str) -> int:

@@ -327,12 +327,14 @@ class ResourceManager(Generic[T], ABC):
         Raises:
             EntityNotFound: If ``required`` is True and no resource is found.
         """
-        params: QueryParams = {**dict(query), "page_size": 1}
-        results = self._client.get_typed(self.endpoint, list[self.model], params=params, limit=None)
-        obj = results[0] if results else None
-        if required and obj is None:
-            raise EntityNotFound(f"No {self.model.__name__} found.")
-        return obj
+        params: QueryParams = dict(query)
+        res = self._client.get_first(self.endpoint, params)
+        if res is None:
+            if required:
+                raise EntityNotFound(f"No {self.model.__name__} found.")
+            else:
+                return None
+        return get_type_adapter(self.model).validate_python(res)
 
 
 class WriteResourceManager(ResourceManager[T], ABC):
