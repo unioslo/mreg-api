@@ -199,6 +199,14 @@ class ResourceManager(Generic[T], ABC):
             return host.name
         return self._client.fqdn(str(host))
 
+    def _resolve_label_id(self, label: int | str | Label) -> int:
+        """Resolve a label reference to its numeric ID."""
+        if isinstance(label, int):
+            return label
+        if isinstance(label, Label):
+            return label.id
+        return LabelManager(self._client).get_by_name(str(label), required=True).id
+
     def _validate_json(self, data: str) -> T:
         """Attempt to construct the manager's model type from JSON data.
 
@@ -816,43 +824,51 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         group = self._resolve(group)
         return self.update(group, description=description)
 
-    def add_group(self, group: int | HostGroup, name: str) -> HostGroup:
+    def _resolve_hostgroup_name(self, hostgroup: str | HostGroup) -> str:
+        """Resolve a host group reference (instance or name) to a string name."""
+        if isinstance(hostgroup, HostGroup):
+            return hostgroup.name
+        return str(hostgroup)
+
+    def add_group(self, group: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
         """Add a group to a host group."""
         group = self._resolve(group)
+        subgroup_name = self._resolve_hostgroup_name(subgroup)
 
         self._client.post(
             Endpoint.HostGroupsAddHostGroups.with_params(group.name),
-            json={"name": name},
+            json={"name": subgroup_name},
         )
         return self._refetch(group)
 
-    def remove_group(self, group: int | HostGroup, name: str) -> HostGroup:
+    def remove_group(self, group: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
         """Remove a group from a host group."""
         group = self._resolve(group)
+        subgroup_name = self._resolve_hostgroup_name(subgroup)
 
         self._client.delete(
-            Endpoint.HostGroupsRemoveHostGroups.with_params(group.name, name),
+            Endpoint.HostGroupsRemoveHostGroups.with_params(group.name, subgroup_name),
         )
         return self._refetch(group)
 
-    def add_host(self, group: int | HostGroup, name: str) -> HostGroup:
+    def add_host(self, group: int | HostGroup, host: str | Host) -> HostGroup:
         """Add a host to a host group."""
         group = self._resolve(group)
-        name = self._client.fqdn(name)
+        hostname = self._resolve_hostname(host)
 
         self._client.post(
             Endpoint.HostGroupsAddHosts.with_params(group.name),
-            json={"name": name},
+            json={"name": hostname},
         )
         return self._refetch(group)
 
-    def remove_host(self, group: int | HostGroup, name: str) -> HostGroup:
+    def remove_host(self, group: int | HostGroup, host: str | Host) -> HostGroup:
         """Remove a host from a host group."""
         group = self._resolve(group)
-        name = self._client.fqdn(name)
+        hostname = self._resolve_hostname(host)
 
         self._client.delete(
-            Endpoint.HostGroupsRemoveHosts.with_params(group.name, name),
+            Endpoint.HostGroupsRemoveHosts.with_params(group.name, hostname),
         )
         return self._refetch(group)
 
@@ -978,6 +994,12 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     def history_resource(self) -> HistoryResource:
         return HistoryResource.HostPolicy_Role
 
+    def _resolve_atom_name(self, atom: str | Atom) -> str:
+        """Resolve an atom reference (instance or name) to a string name."""
+        if isinstance(atom, Atom):
+            return atom.name
+        return str(atom)
+
     def create(
         self,
         *,
@@ -1020,14 +1042,15 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
         super().delete(obj)
 
-    def list_with_atom(self, atom_name: str) -> list[Role]:
+    def list_with_atom(self, atom: str | Atom) -> list[Role]:
         """List all roles that contain a given atom.
 
         Renamed from ``Role.get_roles_with_atom``.
         """
+        atom_name = self._resolve_atom_name(atom)
         return self._fetch_list_by_field("atoms__name__exact", atom_name)
 
-    def add_atom(self, ref: int | Role, atom_name: str) -> Role:
+    def add_atom(self, ref: int | Role, atom: str | Atom) -> Role:
         """Add an atom to the role.
 
         Raises:
@@ -1035,6 +1058,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             EntityAlreadyExists: If the atom is already a member of the role.
         """
         role = self._resolve(ref)
+        atom_name = self._resolve_atom_name(atom)
         _ = AtomManager(self._client).get_by_name(atom_name, required=True)
         if atom_name in role.atoms:
             raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}")
@@ -1043,30 +1067,33 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         )
         return self._refetch(role)
 
-    def remove_atom(self, ref: int | Role, atom_name: str) -> Role:
+    def remove_atom(self, ref: int | Role, atom: str | Atom) -> Role:
         """Remove an atom from the role.
 
         Raises:
             EntityOwnershipMismatch: If the atom is not a member of the role.
         """
         role = self._resolve(ref)
+        atom_name = self._resolve_atom_name(atom)
         if atom_name not in role.atoms:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
         self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
         return self._refetch(role)
 
-    def add_host(self, ref: int | Role, name: str) -> Role:
+    def add_host(self, ref: int | Role, host: str | Host) -> Role:
         """Add a host to the role by name."""
         role = self._resolve(ref)
-        name = self._client.fqdn(name)
-        self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": name})
+        hostname = self._resolve_hostname(host)
+        self._client.post(
+            Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname}
+        )
         return self._refetch(role)
 
-    def remove_host(self, ref: int | Role, name: str) -> Role:
+    def remove_host(self, ref: int | Role, host: str | Host) -> Role:
         """Remove a host from the role by name."""
         role = self._resolve(ref)
-        name = self._client.fqdn(name)
-        self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, name))
+        hostname = self._resolve_hostname(host)
+        self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
         return self._refetch(role)
 
     def get_labels(self, ref: int | Role) -> list[Label]:
@@ -1075,31 +1102,31 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         labels = LabelManager(self._client)
         return [labels.get(lid, required=True) for lid in role.labels]
 
-    def add_label(self, ref: int | Role, label_name: str) -> Role:
-        """Add a label to the role by name.
+    def add_label(self, ref: int | Role, label: int | str | Label) -> Role:
+        """Add a label to the role.
 
         Raises:
             EntityNotFound: If the label does not exist.
             EntityAlreadyExists: If the role already has the label.
         """
         role = self._resolve(ref)
-        label = LabelManager(self._client).get_by_name(label_name, required=True)
-        if label.id in role.labels:
-            raise EntityAlreadyExists(f"Role {role.name!r} already has label {label_name!r}")
-        return self._patch(role, {"labels": [*role.labels, label.id]})
+        label_id = self._resolve_label_id(label)
+        if label_id in role.labels:
+            raise EntityAlreadyExists(f"Role {role.name!r} already has label {label!r}")
+        return self._patch(role, {"labels": [*role.labels, label_id]})
 
-    def remove_label(self, ref: int | Role, label_name: str) -> Role:
-        """Remove a label from the role by name.
+    def remove_label(self, ref: int | Role, label: int | str | Label) -> Role:
+        """Remove a label from the role.
 
         Raises:
             EntityNotFound: If the label does not exist.
             EntityOwnershipMismatch: If the role does not have the label.
         """
         role = self._resolve(ref)
-        label = LabelManager(self._client).get_by_name(label_name, required=True)
-        if label.id not in role.labels:
-            raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label_name!r}")
-        return self._patch(role, {"labels": [lid for lid in role.labels if lid != label.id]})
+        label_id = self._resolve_label_id(label)
+        if label_id not in role.labels:
+            raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label!r}")
+        return self._patch(role, {"labels": [lid for lid in role.labels if lid != label_id]})
 
     def list_by_host(self, host: int | Host) -> list[Role]:
         """List all roles that include the given host."""
@@ -1231,38 +1258,38 @@ class PermissionManager(WriteResourceManager[Permission]):
             data["labels"] = labels
         return self._patch(perm, data)
 
-    def add_label(self, ref: int | Permission, label_name: str) -> Permission:
-        """Add a label to the permission by label name.
+    def add_label(self, ref: int | Permission, label: int | str | Label) -> Permission:
+        """Add a label to the permission.
 
         Args:
             ref: The permission (instance or numeric id).
-            label_name: The name of the label to add.
+            label: The label to add (instance, name, or numeric id).
 
         Raises:
             EntityNotFound: If the label does not exist.
             EntityAlreadyExists: If the permission already has this label.
         """
         perm = self._resolve(ref)
-        label = LabelManager(self._client).get_by_name(label_name, required=True)
-        if label.id in perm.labels:
-            raise EntityAlreadyExists(f"Permission already has label {label_name!r}.")
-        return self.update(perm, labels=[*perm.labels, label.id])
+        label_id = self._resolve_label_id(label)
+        if label_id in perm.labels:
+            raise EntityAlreadyExists(f"Permission already has label {label!r}.")
+        return self.update(perm, labels=[*perm.labels, label_id])
 
-    def remove_label(self, ref: int | Permission, label_name: str) -> Permission:
-        """Remove a label from the permission by label name.
+    def remove_label(self, ref: int | Permission, label: int | str | Label) -> Permission:
+        """Remove a label from the permission.
 
         Args:
             ref: The permission (instance or numeric id).
-            label_name: The name of the label to remove.
+            label: The label to remove (instance, name, or numeric id).
 
         Raises:
             EntityNotFound: If the label does not exist or the permission lacks it.
         """
         perm = self._resolve(ref)
-        label = LabelManager(self._client).get_by_name(label_name, required=True)
-        if label.id not in perm.labels:
-            raise EntityNotFound(f"Permission does not have label {label_name!r}.")
-        return self.update(perm, labels=[lid for lid in perm.labels if lid != label.id])
+        label_id = self._resolve_label_id(label)
+        if label_id not in perm.labels:
+            raise EntityNotFound(f"Permission does not have label {label!r}.")
+        return self.update(perm, labels=[lid for lid in perm.labels if lid != label_id])
 
     @overload
     def get_by_triplet(
@@ -1448,13 +1475,22 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         attrs = [*pol.attributes, NetworkPolicyAttributeValue(name=attr.name, value=value)]
         return self._patch(pol, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
-    def remove_attribute(self, ref: int | NetworkPolicy, attribute_name: str) -> NetworkPolicy:
-        """Remove an attribute from a policy by name.
+    def _resolve_attribute_name(self, attribute: str | NetworkPolicyAttribute) -> str:
+        """Resolve an attribute reference (instance or name) to a string name."""
+        if isinstance(attribute, NetworkPolicyAttribute):
+            return attribute.name
+        return str(attribute)
+
+    def remove_attribute(
+        self, ref: int | NetworkPolicy, attribute: str | NetworkPolicyAttribute
+    ) -> NetworkPolicy:
+        """Remove an attribute from a policy.
 
         Raises:
             EntityNotFound: If the policy does not have this attribute.
         """
         pol = self._resolve(ref)
+        attribute_name = self._resolve_attribute_name(attribute)
         if not pol.get_attribute(attribute_name):
             raise EntityNotFound(f"Policy {pol.name!r} does not have attribute {attribute_name!r}.")
         attrs = [a for a in pol.attributes if a.name != attribute_name]
@@ -1471,6 +1507,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         return NetworkPolicyAttributeManager(self._client)
 
 
+# NOTE: WHY does this not inherit from the regular ResourceManager?
 class CommunityManager:
     """Operations on network communities (``client.network.communities``).
 
@@ -1524,6 +1561,7 @@ class CommunityManager:
             Endpoint.NetworkCommunityHosts.with_params(addr, community_id), list[Host]
         )
 
+    # NOTE: Why add host by ID here?
     def add_host(
         self,
         network: str | Network,
@@ -1544,6 +1582,7 @@ class CommunityManager:
         )
         return resp.is_success if resp else False
 
+    # NOTE: Why add host by ID here?
     def remove_host(
         self,
         network: str | Network,
