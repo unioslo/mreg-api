@@ -2179,7 +2179,7 @@ class NetworkManager(WriteResourceManager[Network]):
             raise EntityNotFound(f"Excluded range {start} - {end} not found in {net.network!r}.")
         self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(net.network, exrange.id))
 
-    def with_policy(self, policy: int | NetworkPolicy) -> list[Network]:
+    def list_by_policy(self, policy: int | NetworkPolicy) -> list[Network]:
         """List networks that share the same policy as the given network.
 
         Alias for `policy.networks()`
