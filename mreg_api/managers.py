@@ -2305,6 +2305,15 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         """
         return self._fetch_list_by_field("ipaddress", str(ip))
 
+    def list_by_mac(self, mac: str | MacAddress) -> list[IPAddress]:
+        """List all IP address records with a given MAC address.
+
+        Args:
+            mac (str | MacAddress): The MAC address to filter by.
+        """
+        addr = MacAddress.parse_or_raise(mac)
+        return self._fetch_list_by_field("macaddress", str(addr))
+
 
 class CNAMEManager(NamedResourceManager[CNAME]):
     """Operations on :class:`~mreg_api.models.CNAME` resources."""
