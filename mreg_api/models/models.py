@@ -612,6 +612,20 @@ class Network(MregModelWithTimestamps):
             other = NetworkOrIP.parse_or_raise(other, mode="network")
         return self.ip_network.overlaps(other)
 
+    def get_community(self, name: str) -> Community | None:
+        """Get a community by name.
+
+        Args:
+            name: The name of the community to search for.
+
+        Returns:
+            The community if found, None otherwise.
+        """
+        for community in self.communities:
+            if community.name == name:
+                return community
+        return None
+
 
 class NetworkPolicyAttribute(MregModelWithTimestamps):
     """The definition of a network policy attribute.
@@ -958,11 +972,101 @@ class Host(MregModelWithTimestamps):
         """
         return next((ip for ip in self.ipaddresses if ip.ipaddress == arg_ip), None)
 
+    def get_ip_by_id(self, ip_id: int) -> IPAddress | None:
+        """Get the IP address object for the given ID."""
+        return next((ip for ip in self.ipaddresses if ip.id == ip_id), None)
+
+    def get_ptr_override(self, ip: IP_AddressT) -> PTR_override | None:
+        """Get the PTR override for the given IP address."""
+        return next((ptr for ptr in self.ptr_overrides if ptr.ipaddress == ip), None)
+
+    def has_ip(self, arg_ip: IP_AddressT) -> bool:
+        """Return True if the host has the given IP address."""
+        return any(ip.ipaddress == arg_ip for ip in self.ipaddresses)
+
+    def has_ip_with_mac(self, arg_mac: MacAddress) -> IPAddress | None:
+        """Return the IPAddress with the given MAC, or None if not found."""
+        return next((ip for ip in self.ipaddresses if ip.macaddress == arg_mac), None)
+
+    def ips_with_macaddresses(self) -> list[IPAddress]:
+        """Return all IP addresses that have a MAC address set."""
+        return [ip for ip in self.ipaddresses if ip.macaddress]
+
+    def has_ptr_override(self, arg_ip: IP_AddressT) -> bool:
+        """Return True if the host has a PTR override for the given IP."""
+        return any(ptr.ipaddress == arg_ip for ptr in self.ptr_overrides)
+
+    def has_txt(self, arg_txt: str) -> bool:
+        """Return True if the host has the given TXT record."""
+        return any(txt.txt == arg_txt for txt in self.txts)
+
+    def ipv4_addresses(self) -> list[IPAddress]:
+        """Return all IPv4 addresses."""
+        return [ip for ip in self.ipaddresses if ip.is_ipv4()]
+
+    def ipv6_addresses(self) -> list[IPAddress]:
+        """Return all IPv6 addresses."""
+        return [ip for ip in self.ipaddresses if ip.is_ipv6()]
+
+    def has_mx_with_priority(self, mx_arg: str, priority: int) -> MX | None:
+        """Return the MX record matching mx and priority, or None."""
+        return next((mx for mx in self.mxs if mx.has_mx_with_priority(mx_arg, priority)), None)
+
+    def get_community(self, name: str, ip: IPAddress | None = None) -> Community | None:
+        """Get a community by name, optionally filtered by IP address.
+
+        Args:
+            name: The name of the community to search for.
+            ip: If given, only match communities associated with this IP.
+
+        Returns:
+            The community if found, None otherwise.
+        """
+        for host_community in self.communities:
+            if host_community.community.name != name:
+                continue
+            if ip and host_community.ipaddress != ip.id:
+                continue
+            return host_community.community
+        return None
+
+    def __str__(self) -> str:
+        """Return the host name."""
+        return self.name
+
+    def __hash__(self) -> int:
+        """Hash by ID and name."""
+        return hash((self.id, self.name))
+
 
 class HostList(MregModel):
     """Model for a list of hosts."""
 
     results: list[Host]
+
+    def __len__(self) -> int:
+        """Return the number of results."""
+        return len(self.results)
+
+    def __getitem__(self, key: int) -> Host:
+        """Get a result by index."""
+        return self.results[key]
+
+    def __str__(self) -> str:
+        """Return a string representation of the results."""
+        return str(self.results)
+
+    def __repr__(self) -> str:
+        """Return a repr of the results."""
+        return repr(self.results)
+
+    def hostnames(self) -> list[str]:
+        """Return a list of hostnames."""
+        return [host.name for host in self.results]
+
+    def count(self) -> int:
+        """Return the number of results."""
+        return len(self.results)
 
 
 class DhcpHost(MregModel, ABC):
