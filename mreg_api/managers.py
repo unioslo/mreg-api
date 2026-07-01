@@ -242,9 +242,10 @@ class ResourceManager(Generic[T], ABC):
     def _fetch_by_field(self, field: str, value: str | int) -> T | None:
         """Fetch a single object, querying by a field."""
         endpoint = self.endpoint
+        field = field.casefold()
 
         # Field is the ID used in the URL path. i.e. /hosts/example.com, /sshfps/123, etc.
-        if self._url_identifier != "id" and field == self._url_identifier:
+        if field == self._url_identifier.casefold():
             resp = self._client.get(endpoint.with_id(value), ok404=True)
             if not resp:
                 return None
