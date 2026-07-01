@@ -603,6 +603,15 @@ class Network(MregModelWithTimestamps):
             updated_at=datetime.fromtimestamp(0),
         )
 
+    def overlaps(self, other: Network | str | IP_NetworkT) -> bool:
+        """Check if the network overlaps with another network."""
+        # Network -> str -> ipaddress.IPv{4,6}Network
+        if isinstance(other, Network):
+            other = other.network
+        if isinstance(other, str):
+            other = NetworkOrIP.parse_or_raise(other, mode="network")
+        return self.ip_network.overlaps(other)
+
 
 class NetworkPolicyAttribute(MregModelWithTimestamps):
     """The definition of a network policy attribute.
@@ -915,12 +924,8 @@ class Host(MregModelWithTimestamps):
                 if self.contact:
                     # HACK: The field itself is immutable, but it always contains
                     #       a list object that we can append to.
-                    dt = datetime(
-                        1970, 1, 1, 0, 0, 0, tzinfo=self.created_at.tzinfo
-                    )  # tz-aware epoch time
-                    self.contacts.append(
-                        ContactEmail(id=0, email=self.contact, created_at=dt, updated_at=dt)
-                    )
+                    dt = datetime(1970, 1, 1, 0, 0, 0, tzinfo=self.created_at.tzinfo)  # tz-aware epoch time
+                    self.contacts.append(ContactEmail(id=0, email=self.contact, created_at=dt, updated_at=dt))
         return self
 
     @property
