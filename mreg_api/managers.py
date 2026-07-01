@@ -3145,11 +3145,26 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
     errors: list[str] = []
     verified: list[str] = []  # NOTE: should be list[HostName], but invariant, etc.. cba.
     for nameserver in nameservers:
-        host = client.host.get_by_name(nameserver, required=False)
         # HACK: bypass checks if force is enabled, return name as-is, expanded and validated
         if force:
             verified.append(client.fqdn(nameserver))  # HACK
             continue
+
+        host = client.host.get_by_name(nameserver, required=False)
+        if host is None:
+            cname = client.cname.get_by_name(nameserver, required=False)
+            if cname is not None:
+                host = client.host.get_by_id(cname.host, required=False)
+                if host is not None:
+                    client.events.record(
+                        Event(
+                            kind=EventKind.RESOLUTION,
+                            message=f"{nameserver} is a CNAME for {host.name}",
+                            subject=ObjectRef.new(host),
+                            related=(ObjectRef.new(cname),),
+                            correlation_id=client.get_correlation_id(),
+                        )
+                    )
 
         if host is None:
             if not force:
