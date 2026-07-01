@@ -947,6 +947,17 @@ class Host(MregModelWithTimestamps):
             return v.get("id")  # pyright: ignore[reportUnknownVariableType, reportUnknownMemberType]
         return None
 
+    def get_ip(self, arg_ip: IP_AddressT) -> IPAddress | None:
+        """Get the IP address object for the given IP address.
+
+        Args:
+            arg_ip (IP_AddressT): IP address to search for
+
+        Returns:
+            IPAddress | None: IP address object if found, None otherwise
+        """
+        return next((ip for ip in self.ipaddresses if ip.ipaddress == arg_ip), None)
+
 
 class HostList(MregModel):
     """Model for a list of hosts."""
