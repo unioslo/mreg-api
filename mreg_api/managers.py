@@ -1770,35 +1770,69 @@ class CommunityManager:
     reference (address string or :class:`~mreg_api.models.Network` instance).
     """
 
-    def __init__(self, client: MregClient) -> None:
+    def __init__(self, client: MregClient, network_manager: NetworkManager) -> None:
         """Bind the manager to the client."""
         self._client = client
+        self._network_manager = network_manager
 
-    @staticmethod
-    def _net_addr(ref: str | Network) -> str:
-        """Return the network address string from a string or Network instance."""
-        return ref.network if isinstance(ref, Network) else ref
+    def _resolve_network_address(self, network: str | int | Network) -> str:
+        if isinstance(network, str):
+            return network
+        elif isinstance(network, Network):
+            return network.network
+        else:
+            return self._network_manager.get(network, required=True).network
 
-    def list(self, network: str | Network) -> list[Community]:
+    def list(self, network: str | int | Network) -> list[Community]:
         """List all communities for a network.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
         """
-        addr = self._net_addr(network)
+        addr = self._resolve_network_address(network)
         return self._client.get_typed(Endpoint.NetworkCommunities.with_params(addr), list[Community])
 
-    @overload
-    def get_by_name(self, network: str | Network, name: str, *, required: Literal[True]) -> Community: ...
+    def update(
+        self,
+        network: str | int | Network,
+        community: int | Community,
+        *,
+        name: str | Unset = UNSET,
+        description: str | Unset = UNSET,
+    ) -> Community:
+        """Update a community's mutable fields.
+
+        Args:
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            community (int | Community): Community reference (ID or Community instance).
+            name (str | Unset): New name. Omit to leave unchanged.
+            description (str | Unset): New description. Omit to leave unchanged.
+        """
+        addr = self._resolve_network_address(network)
+        community_id = community.id if isinstance(community, Community) else community
+        data: dict[str, Any] = {}
+        if name is not UNSET:
+            data["name"] = name
+        if description is not UNSET:
+            data["description"] = description
+        resp = self._client.patch(Endpoint.NetworkCommunity.with_params(addr, community_id), json=data)
+        return Community.model_validate_json(resp.text)
+
     @overload
     def get_by_name(
-        self, network: str | Network, name: str, *, required: Literal[False] = ...
+        self, network: str | int | Network, name: str, *, required: Literal[True]
+    ) -> Community: ...
+    @overload
+    def get_by_name(
+        self, network: str | int | Network, name: str, *, required: Literal[False] = ...
     ) -> Community | None: ...
-    def get_by_name(self, network: str | Network, name: str, *, required: bool = False) -> Community | None:
+    def get_by_name(
+        self, network: str | int | Network, name: str, *, required: bool = False
+    ) -> Community | None:
         """Get a community by name within a network.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             name (str): The community name to look up.
             required (bool): When True, raise EntityNotFound if not found.
 
@@ -1810,40 +1844,40 @@ class CommunityManager:
             raise EntityNotFound(f"Community {name!r} not found in network {network!r}.")
         return community
 
-    def create(self, network: str | Network, *, name: str, description: str) -> bool:
+    def create(self, network: str | int | Network, *, name: str, description: str) -> bool:
         """Create a community in a network.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             name (str): Name of the community.
             description (str): Description of the community.
         """
-        addr = self._net_addr(network)
+        addr = self._resolve_network_address(network)
         resp = self._client.post(
             Endpoint.NetworkCommunities.with_params(addr),
             json={"name": name, "description": description},
         )
         return resp.is_success if resp else False
 
-    def delete(self, network: str | Network, community: int | Community) -> None:
+    def delete(self, network: str | int | Network, community: int | Community) -> None:
         """Delete a community from a network.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | Community): Community reference (ID or Community instance).
         """
-        addr = self._net_addr(network)
+        addr = self._resolve_network_address(network)
         community_id = community.id if isinstance(community, Community) else community
         self._client.delete(Endpoint.NetworkCommunity.with_params(addr, community_id))
 
-    def get_hosts(self, network: str | Network, community: int | Community) -> list[Host]:
+    def get_hosts(self, network: str | int | Network, community: int | Community) -> list[Host]:
         """List all hosts in a community.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | Community): Community reference (ID or Community instance).
         """
-        addr = self._net_addr(network)
+        addr = self._resolve_network_address(network)
         community_id = community.id if isinstance(community, Community) else community
         return self._client.get_typed(
             Endpoint.NetworkCommunityHosts.with_params(addr, community_id), list[Host]
@@ -1852,7 +1886,7 @@ class CommunityManager:
     # NOTE: Why add host by ID here?
     def add_host(
         self,
-        network: str | Network,
+        network: str | int | Network,
         community: int | Community,
         host: int | Host,
         *,
@@ -1861,13 +1895,13 @@ class CommunityManager:
         """Add a host to a community.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | Community): Community reference (ID or Community instance).
             host (int | Host): Host reference (ID or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to associate with the host
                 in this community. Pass None to omit.
         """
-        addr = self._net_addr(network)
+        addr = self._resolve_network_address(network)
         community_id = community.id if isinstance(community, Community) else community
         host_id = host.id if isinstance(host, Host) else host
         data: dict[str, Any] = {"id": host_id}
@@ -1879,18 +1913,18 @@ class CommunityManager:
     # NOTE: Why add host by ID here?
     def remove_host(
         self,
-        network: str | Network,
+        network: str | int | Network,
         community: int | Community,
         host: int | Host,
     ) -> None:
         """Remove a host from a community.
 
         Args:
-            network (str | Network): Network reference (address string or Network instance).
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | Community): Community reference (ID or Community instance).
             host (int | Host): Host reference (ID or Host instance).
         """
-        addr = self._net_addr(network)
+        addr = self._resolve_network_address(network)
         community_id = community.id if isinstance(community, Community) else community
         host_id = host.id if isinstance(host, Host) else host
         self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id))
@@ -1920,7 +1954,7 @@ class NetworkManager(WriteResourceManager[Network]):
     @functools.cached_property
     def communities(self) -> CommunityManager:
         """Manager for network communities (``client.network.communities``)."""
-        return CommunityManager(self._client)
+        return CommunityManager(self._client, self)
 
     def _resolve_net(self, ref: str | int | Network) -> Network:
         """Resolve a network reference (address string, numeric id, or instance)."""
