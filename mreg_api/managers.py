@@ -1787,6 +1787,12 @@ class CommunityManager:
         addr = self._net_addr(network)
         return self._client.get_typed(Endpoint.NetworkCommunities.with_params(addr), list[Community])
 
+    @overload
+    def get_by_name(self, network: str | Network, name: str, *, required: Literal[True]) -> Community: ...
+    @overload
+    def get_by_name(
+        self, network: str | Network, name: str, *, required: Literal[False] = ...
+    ) -> Community | None: ...
     def get_by_name(self, network: str | Network, name: str, *, required: bool = False) -> Community | None:
         """Get a community by name within a network.
 
