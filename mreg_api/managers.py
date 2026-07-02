@@ -2334,8 +2334,8 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
     def create(
         self,
         *,
-        host: int | str | Host,
         ipaddress: IP_AddressT | str,
+        host: int | str | Host | None = None,
         macaddress: str | MacAddress | None = None,
         fetch_after_create: bool = True,
     ) -> IPAddress | None:
@@ -2347,10 +2347,11 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             macaddress (str | MacAddress | None): Optional MAC address to associate. Pass None to omit.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host, self._client)
-        data: dict[str, Any] = {"host": host_id, "ipaddress": str(ipaddress)}
+        data: dict[str, Any] = {"ipaddress": str(ipaddress)}
         if macaddress is not None:
             data["macaddress"] = str(macaddress)
+        if host is not None:
+            data["host"] = resolve_host_id(host, self._client)
         return self._create(data, fetch_after_create=fetch_after_create)
 
     def update(
