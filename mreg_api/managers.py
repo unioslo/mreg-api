@@ -2359,6 +2359,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         *,
         ipaddress: IP_AddressT | str | Unset = UNSET,
         macaddress: str | MacAddress | None | Unset = UNSET,
+        host: int | str | Host | Unset | None = UNSET,
     ) -> IPAddress:
         """Update an IP address record's mutable fields.
 
@@ -2367,6 +2368,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             ipaddress (IP_AddressT | str | Unset): New IP address. Omit to leave unchanged.
             macaddress (str | MacAddress | None | Unset): New MAC address. Pass None to unset,
                 omit to leave unchanged.
+            host (int | str | Host | Unset): Host to (dis)associate with IP. Omit to leave unchanged.
         """
         ip = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2374,6 +2376,14 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             data["ipaddress"] = str(ipaddress)
         if macaddress is not UNSET:
             data["macaddress"] = str(macaddress) if macaddress is not None else ""
+        if host is not UNSET:
+            # TODO: decide if we can modify resolve_host_id to return int | None
+            # on a general basis, or if it's only applicable here
+            if host is not None:
+                host_id = resolve_host_id(host, self._client)  # pyright: ignore[reportArgumentType]
+            else:
+                host_id = host
+            data["host"] = host_id
         return self._patch(ip, data)
 
     def associate_mac(self, ref: int | IPAddress, mac: str | MacAddress, *, force: bool = False) -> IPAddress:
