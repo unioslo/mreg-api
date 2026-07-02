@@ -1270,8 +1270,12 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         _ = AtomManager(self._client).get_by_name(atom_name, required=True)
         if atom_name in role.atoms:
             raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}")
-        self._client.post(Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name})
-        return self._refetch(role)
+        # TODO: need a better abstraction for endpoints that
+        # return the new version of the resource after modification
+        resp = self._client.post(
+            Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name}
+        )
+        return self._validate_json(resp.json())
 
     def remove_atom(self, ref: int | Role, atom: str | Atom) -> Role:
         """Remove an atom from the role.
@@ -1287,8 +1291,8 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         atom_name = self._resolve_atom_name(atom)
         if atom_name not in role.atoms:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
-        self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
-        return self._refetch(role)
+        resp = self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
+        return self._validate_json(resp.json())
 
     def add_host(self, ref: int | Role, host: str | Host) -> Role:
         """Add a host to the role by name.
@@ -1299,8 +1303,10 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(ref)
         hostname = resolve_host_name(host, self._client)
-        self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
-        return self._refetch(role)
+        resp = self._client.post(
+            Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname}
+        )
+        return self._validate_json(resp.json())
 
     def remove_host(self, ref: int | Role, host: str | Host) -> Role:
         """Remove a host from the role by name.
@@ -1311,8 +1317,8 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(ref)
         hostname = resolve_host_name(host, self._client)
-        self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
-        return self._refetch(role)
+        resp = self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
+        return self._validate_json(resp.json())
 
     def get_labels(self, ref: int | Role) -> list[Label]:
         """Get the labels associated with the role.
