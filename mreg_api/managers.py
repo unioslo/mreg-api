@@ -126,6 +126,61 @@ UNSET = Unset()
 T = TypeVar("T", bound=MregModel)
 
 
+def resolve_host_id(host: int | str | Host, client: MregClient) -> int:
+    """Resolve a host reference to its numeric ID.
+
+    Args:
+        host (int | str | Host): Host instance or numeric ID.
+            Passing a hostname performs an API call to fetch the host.
+        client (MregClient): API client instance. Used to fetch host by name.
+
+    Returns:
+        int: The numeric ID of the host.
+    """
+    if isinstance(host, Host):
+        return host.id
+    elif isinstance(host, int):
+        return host
+    return HostManager(client).get_by_name(host, required=True).id
+
+
+def resolve_host_name(host: Host | str | HostName, client: MregClient) -> str:
+    """Resolve a host reference to its fully qualified name.
+
+    Performs no API calls.
+
+    Args:
+        host (Host | str | HostName): Host instance, name string, or HostName instance.
+        client (MregClient): API client instance. Used to determine FQDN.
+
+    Returns:
+        str: The fully qualified domain name of the host.
+    """
+    if isinstance(host, Host):
+        return host.name
+    return client.fqdn(str(host))
+
+
+def resolve_host(host: int | str | Host, client: MregClient) -> Host:
+    """Resolve a host ID, name or Host to a Host object.
+
+    Performs API call to fetch host if argument is ID or name
+
+    Args:
+        host (int | str | Host): Host ID, name or object.
+        client (MregClient): Client to fetch with.
+
+    Returns:
+        Host: Resolved host object.
+    """
+    if isinstance(host, Host):
+        return host
+    elif isinstance(host, int):
+        return HostManager(client).get_by_id(host, required=True)
+    else:
+        return HostManager(client).get_by_name(host, required=True)
+
+
 class ResourceManager(Generic[T], ABC):
     """Basic manager for performing read operations on an API resource type."""
 
@@ -164,6 +219,9 @@ class ResourceManager(Generic[T], ABC):
         """Return the API endpoint for this manager's resource type."""
         ...
 
+    # NOTE: this won't work for hosts!
+    # We need to define ref as `int | str | T`, and determine the endpoint
+    # to hit OR field to search for based on the URL identifier
     def _resolve(self, ref: int | T) -> T:
         """Resolve an object reference (instance or numeric id) to an instance of the model.
 
@@ -195,9 +253,7 @@ class ResourceManager(Generic[T], ABC):
         Returns:
             The fully qualified name of the host as a string.
         """
-        if isinstance(host, Host):
-            return host.name
-        return self._client.fqdn(str(host))
+        return resolve_host_name(host, self._client)
 
     def _resolve_label_id(self, label: int | str | Label) -> int:
         """Resolve a label reference to its numeric ID."""
@@ -586,15 +642,6 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     def _normalize_history_name(self, name: str) -> str:
         return self._client.fqdn(name)
 
-    def _resolve(self, ref: int | Host) -> Host:
-        """Resolve a host reference (instance or numeric id) to a Host."""
-        if isinstance(ref, Host):
-            return ref
-        host = self._fetch_by_field("id", ref)
-        if host is None:
-            raise EntityNotFound(f"Host with id {ref!r} not found.")
-        return host
-
     def _record_ptr_event(self, host: Host, ip: str) -> None:
         """Record that ``ip`` resolved to ``host`` via a PTR override."""
         self._client.events.record(
@@ -744,7 +791,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
     def update(
         self,
-        ref: int | Host,
+        ref: int | str | Host,
         *,
         name: str | HostName | Unset = UNSET,
         comment: str | None | Unset = UNSET,
@@ -754,13 +801,13 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         """Update a host's mutable fields.
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
             name (str | HostName | Unset): New name for the host. Omit to leave unchanged.
             comment (str | None | Unset): New comment. Pass None to unset, omit to leave unchanged.
             contacts (list[str] | Unset): New contacts list. Omit to leave unchanged.
             ttl (int | None | Unset): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
-        host = self._resolve(ref)
+        host = resolve_host(ref, self._client)
         data: dict[str, Any] = {}
         if name is not UNSET:
             data["name"] = self._client.fqdn(str(name))
@@ -772,48 +819,48 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             data["ttl"] = ttl
         return self._patch(host, data)
 
-    def add_contacts(self, ref: int | Host, contacts: list[str]) -> HostContactModification:
+    def add_contacts(self, ref: int | str | Host, contacts: list[str]) -> HostContactModification:
         """Add contacts to a host (atomic; POST to /hosts/{name}/contacts/).
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
             contacts (list[str]): Email addresses to add as contacts.
         """
-        host = self._resolve(ref)
+        host = resolve_host(ref, self._client)
         resp = self._client.post(Endpoint.HostsContacts.with_params(host.name), json={"emails": contacts})
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
-    def clear_contacts(self, ref: int | Host) -> HostContactModification:
+    def clear_contacts(self, ref: int | str | Host) -> HostContactModification:
         """Remove all contacts from a host (atomic; DELETE /hosts/{name}/contacts/).
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
         """
-        host = self._resolve(ref)
+        host = resolve_host(ref, self._client)
         resp = self._client.delete(Endpoint.HostsContacts.with_params(host.name))
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
-    def remove_contacts(self, ref: int | Host, contacts: list[str]) -> HostContactModification:
+    def remove_contacts(self, ref: int | str | Host, contacts: list[str]) -> HostContactModification:
         """Remove specific contacts from a host (atomic; DELETE /hosts/{name}/contacts/).
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
             contacts (list[str]): Email addresses to remove from contacts.
         """
-        host = self._resolve(ref)
+        host = resolve_host(ref, self._client)
         resp = self._client.delete(Endpoint.HostsContacts.with_params(host.name), json={"emails": contacts})
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
-    def networks(self, ref: int | Host) -> dict[Network, list[IPAddress]]:
+    def networks(self, ref: int | str | Host) -> dict[Network, list[IPAddress]]:
         """Return a dict mapping each network to the host's IP addresses on that network.
 
         Networks not registered in MREG produce a placeholder via
         :meth:`~mreg_api.models.Network.dummy_network_from_ip`.
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
         """
-        host = self._resolve(ref)
+        host = resolve_host(ref, self._client)
         net_manager = NetworkManager(self._client)
         result: dict[Network, list[IPAddress]] = {}
         for ip in host.ipaddresses:
@@ -825,11 +872,11 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             result[network].append(ip)
         return result
 
-    def vlans(self, ref: int | Host) -> dict[int, list[IPAddress]]:
+    def vlans(self, ref: int | str | Host) -> dict[int, list[IPAddress]]:
         """Return a dict mapping VLAN ID to host IPs on that VLAN. IPs with no VLAN map to 0.
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
         """
         result: dict[int, list[IPAddress]] = {}
         for network, ips in self.networks(ref).items():
@@ -839,11 +886,11 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             result[vlan].extend(ips)
         return result
 
-    def all_ips_on_same_vlan(self, ref: int | Host) -> bool:
+    def all_ips_on_same_vlan(self, ref: int | str | Host) -> bool:
         """Return True if all host IPs share a single VLAN (or there are no IPs).
 
         Args:
-            ref (int | Host): Host instance or numeric ID.
+            ref (int | str | Host): Host instance or numeric ID.
         """
         return len(self.vlans(ref)) <= 1
 
@@ -961,7 +1008,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             host (str | Host): Host reference (name string or Host instance).
         """
         group = self._resolve(group)
-        hostname = self._resolve_hostname(host)
+        hostname = resolve_host_name(host, self._client)
 
         self._client.post(
             Endpoint.HostGroupsAddHosts.with_params(group.name),
@@ -977,7 +1024,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             host (str | Host): Host reference (name string or Host instance).
         """
         group = self._resolve(group)
-        hostname = self._resolve_hostname(host)
+        hostname = resolve_host_name(host, self._client)
 
         self._client.delete(
             Endpoint.HostGroupsRemoveHosts.with_params(group.name, hostname),
@@ -1031,14 +1078,14 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
                 parents.extend(self.list_parents(pobj))
         return parents
 
-    def list_by_host(self, host: int | Host, *, traverse: bool = False) -> list[HostGroup]:
+    def list_by_host(self, host: int | str | Host, *, traverse: bool = False) -> list[HostGroup]:
         """List all hostgroups that include the given host.
 
         Args:
             host: Host instance or numeric host ID.
             traverse: If True, also include all parent groups recursively.
         """
-        host_id = host.id if isinstance(host, Host) else host
+        host_id = resolve_host_id(host, self._client)
         direct = self._fetch_list_by_field("hosts", host_id)
         if not traverse:
             return sorted(direct, key=lambda g: g.name)
@@ -1251,7 +1298,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             host (str | Host): Host reference (name string or Host instance).
         """
         role = self._resolve(ref)
-        hostname = self._resolve_hostname(host)
+        hostname = resolve_host_name(host, self._client)
         self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
         return self._refetch(role)
 
@@ -1263,7 +1310,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             host (str | Host): Host reference (name string or Host instance).
         """
         role = self._resolve(ref)
-        hostname = self._resolve_hostname(host)
+        hostname = resolve_host_name(host, self._client)
         self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
         return self._refetch(role)
 
@@ -1311,13 +1358,13 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label!r}")
         return self._patch(role, {"labels": [lid for lid in role.labels if lid != label_id]})
 
-    def list_by_host(self, host: int | Host) -> list[Role]:
+    def list_by_host(self, host: int | str | Host) -> list[Role]:
         """List all roles that include the given host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = host.id if isinstance(host, Host) else host
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("hosts", host_id)
 
 
@@ -1903,7 +1950,7 @@ class CommunityManager:
         self,
         community: int | str | Community,
         network: str | int | Network,
-        host: int | Host,
+        host: int | str | Host,
         *,
         ipaddress: IP_AddressT | str | None = None,
     ) -> bool:
@@ -1913,13 +1960,13 @@ class CommunityManager:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
-            host (int | Host): Host reference (ID or Host instance).
+            host (int | str | Host): Host reference (ID or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to associate with the host
                 in this community. Pass None to omit.
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
-        host_id = host.id if isinstance(host, Host) else host
+        host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {"id": host_id}
         if ipaddress is not None:
             data["ipaddress"] = str(ipaddress)
@@ -1931,7 +1978,7 @@ class CommunityManager:
         self,
         community: int | str | Community,
         network: str | int | Network,
-        host: int | Host,
+        host: int | str | Host,
     ) -> None:
         """Remove a host from a community.
 
@@ -1939,11 +1986,11 @@ class CommunityManager:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
-            host (int | Host): Host reference (ID or Host instance).
+            host (int | str | Host): Host reference (ID or Host instance).
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
-        host_id = host.id if isinstance(host, Host) else host
+        host_id = resolve_host_id(host, self._client)
         self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id))
 
 
@@ -2249,20 +2296,6 @@ class NetworkManager(WriteResourceManager[Network]):
         return self.policy.networks(policy)
 
 
-def resolve_host_id(host: Host | int) -> int:
-    """Resolve a host reference to its numeric ID."""
-    if isinstance(host, Host):
-        return host.id
-    return host
-
-
-def resolve_host_name(host: Host | str | HostName, client: MregClient) -> str:
-    """Resolve a host reference to its fully qualified name."""
-    if isinstance(host, Host):
-        return host.name
-    return client.fqdn(str(host))
-
-
 class IPAddressManager(WriteResourceManager[IPAddress]):
     """Operations on :class:`~mreg_api.models.IPAddress` resources."""
 
@@ -2279,7 +2312,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         ipaddress: IP_AddressT | str,
         macaddress: str | MacAddress | None = None,
         fetch_after_create: bool = True,
@@ -2287,12 +2320,12 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         """Create an IP address record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             ipaddress (IP_AddressT | str): The IP address to assign.
             macaddress (str | MacAddress | None): Optional MAC address to associate. Pass None to omit.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {"host": host_id, "ipaddress": str(ipaddress)}
         if macaddress is not None:
             data["macaddress"] = str(macaddress)
@@ -2346,13 +2379,13 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         ip = self._resolve(ref)
         return self.update(ip, macaddress=None)
 
-    def list_by_host(self, host: int | Host) -> list[IPAddress]:
+    def list_by_host(self, host: int | str | Host) -> list[IPAddress]:
         """List all IP address records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
     def list_by_ip(self, ip: IP_AddressT | str) -> list[IPAddress]:
@@ -2394,18 +2427,18 @@ class CNAMEManager(NamedResourceManager[CNAME]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         name: str | HostName,
         fetch_after_create: bool = True,
     ) -> CNAME | None:
         """Create a CNAME record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             name (str | HostName): The alias name for the CNAME.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create(
             {"host": str(host_id), "name": self._client.fqdn(name)},
             fetch_after_create=fetch_after_create,
@@ -2415,7 +2448,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         self,
         ref: int | CNAME,
         *,
-        host: int | Host | Unset = UNSET,
+        host: int | str | Host | Unset = UNSET,
         name: str | HostName | Unset = UNSET,
         ttl: int | None | Unset = UNSET,
     ) -> CNAME:
@@ -2423,14 +2456,14 @@ class CNAMEManager(NamedResourceManager[CNAME]):
 
         Args:
             ref (int | CNAME): CNAME instance or numeric ID.
-            host (int | Host | Unset): New host reference. Omit to leave unchanged.
+            host (int | str | Host | Unset): New host reference. Omit to leave unchanged.
             name (str | HostName | Unset): New alias name. Omit to leave unchanged.
             ttl (int | None | Unset): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
         cname = self._resolve(ref)
         data: dict[str, Any] = {}
         if not isinstance(host, Unset):
-            data["host"] = resolve_host_id(host)
+            data["host"] = resolve_host_id(host, self._client)
         if name is not UNSET:
             data["name"] = self._client.fqdn(str(name))
         if ttl is not UNSET:
@@ -2456,18 +2489,20 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             raise EntityNotFound(f"CNAME {name!r} not found.")
         return obj
 
-    def get_by_host_and_name(self, host: int | Host, name: str, *, required: bool = False) -> CNAME | None:
+    def get_by_host_and_name(
+        self, host: int | str | Host, name: str, *, required: bool = False
+    ) -> CNAME | None:
         """Get a CNAME record matching both the host and alias name.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             name (str): The alias name to look up.
             required (bool): When True, raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the CNAME is not found.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         fqdn = self._client.fqdn(name)
         cnamas = self._fetch_list_by_field("host", host_id)
         obj = next((c for c in cnamas if c.name == fqdn), None)
@@ -2475,13 +2510,13 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             raise EntityNotFound(f"CNAME {name!r} for host {host_id} not found.")
         return obj
 
-    def list_by_host(self, host: int | Host) -> list[CNAME]:
+    def list_by_host(self, host: int | str | Host) -> list[CNAME]:
         """List all CNAME records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
 
@@ -2506,7 +2541,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         cpu: str,
         os: str,
         fetch_after_create: bool = True,
@@ -2514,12 +2549,12 @@ class HInfoManager(WriteResourceManager[HInfo]):
         """Create an HInfo record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             cpu (str): CPU hardware type string.
             os (str): Operating system string.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "cpu": cpu, "os": os}, fetch_after_create=fetch_after_create)
 
     def update(
@@ -2544,17 +2579,17 @@ class HInfoManager(WriteResourceManager[HInfo]):
             data["os"] = os
         return self._patch(hinfo, data)
 
-    def get_by_host(self, host: int | Host, *, required: bool = False) -> HInfo | None:
+    def get_by_host(self, host: int | str | Host, *, required: bool = False) -> HInfo | None:
         """Get the HInfo record for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             required (bool): When True, raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no HInfo record is found.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         obj = self._fetch_by_field("host", host_id)
         if required and obj is None:
             raise EntityNotFound(f"HInfo for host id {host_id!r} not found.")
@@ -2577,18 +2612,18 @@ class TXTManager(WriteResourceManager[TXT]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         txt: str,
         fetch_after_create: bool = True,
     ) -> TXT | None:
         """Create a TXT record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             txt (str): The TXT record value.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "txt": txt}, fetch_after_create=fetch_after_create)
 
     def update(
@@ -2609,13 +2644,13 @@ class TXTManager(WriteResourceManager[TXT]):
             data["txt"] = txt
         return self._patch(txt_obj, data)
 
-    def list_by_host(self, host: int | Host) -> list[TXT]:
+    def list_by_host(self, host: int | str | Host) -> list[TXT]:
         """List all TXT records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
 
@@ -2635,7 +2670,7 @@ class MXManager(WriteResourceManager[MX]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         mx: str,
         priority: int,
         fetch_after_create: bool = True,
@@ -2643,12 +2678,12 @@ class MXManager(WriteResourceManager[MX]):
         """Create an MX record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             mx (str): The mail exchange hostname.
             priority (int): The MX priority value.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create(
             {"host": host_id, "mx": mx, "priority": priority},
             fetch_after_create=fetch_after_create,
@@ -2676,27 +2711,27 @@ class MXManager(WriteResourceManager[MX]):
             data["priority"] = priority
         return self._patch(mx_obj, data)
 
-    def list_by_host(self, host: int | Host) -> list[MX]:
+    def list_by_host(self, host: int | str | Host) -> list[MX]:
         """List all MX records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
-    def get_by_all(self, host: int | Host, mx: str, priority: int) -> MX:
+    def get_by_all(self, host: int | str | Host, mx: str, priority: int) -> MX:
         """Get an MX record matching host, mx value, and priority.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             mx (str): The mail exchange hostname.
             priority (int): The MX priority value.
 
         Raises:
             EntityNotFound: If no matching MX record exists.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         obj = self._client.get_list_unique(
             self.endpoint, params={"host": str(host_id), "mx": mx, "priority": str(priority)}
         )
@@ -2721,7 +2756,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         preference: int,
         order: int,
         flag: str = "",
@@ -2733,7 +2768,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
         """Create a NAPTR record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             preference (int): The NAPTR preference value.
             order (int): The NAPTR order value.
             flag (str): The NAPTR flag. Defaults to "".
@@ -2742,7 +2777,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             replacement (str): The NAPTR replacement string.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create(
             {
                 "host": host_id,
@@ -2794,13 +2829,13 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             data["replacement"] = replacement
         return self._patch(naptr, data)
 
-    def list_by_host(self, host: int | Host) -> list[NAPTR]:
+    def list_by_host(self, host: int | str | Host) -> list[NAPTR]:
         """List all NAPTR records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
 
@@ -2820,7 +2855,7 @@ class SrvManager(WriteResourceManager[Srv]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         name: str,
         priority: int,
         weight: int,
@@ -2831,7 +2866,7 @@ class SrvManager(WriteResourceManager[Srv]):
         """Create a SRV record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             name (str): The SRV service name.
             priority (int): The SRV priority value.
             weight (int): The SRV weight value.
@@ -2839,7 +2874,7 @@ class SrvManager(WriteResourceManager[Srv]):
             ttl (int | None | Unset): TTL. Pass None to use default, omit to leave unchanged.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {
             "host": host_id,
             "name": name,
@@ -2885,13 +2920,13 @@ class SrvManager(WriteResourceManager[Srv]):
             data["ttl"] = ttl
         return self._patch(srv, data)
 
-    def list_by_host(self, host: int | Host) -> list[Srv]:
+    def list_by_host(self, host: int | str | Host) -> list[Srv]:
         """List all SRV records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
 
@@ -2911,18 +2946,18 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         ipaddress: IP_AddressT | str,
         fetch_after_create: bool = True,
     ) -> PTR_override | None:
         """Create a PTR override record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             ipaddress (IP_AddressT | str): The IP address for the PTR override.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create(
             {"host": host_id, "ipaddress": str(ipaddress)},
             fetch_after_create=fetch_after_create,
@@ -2932,31 +2967,31 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         self,
         ref: int | PTR_override,
         *,
-        host: int | Host | Unset = UNSET,
+        host: int | str | Host | Unset = UNSET,
         ipaddress: IP_AddressT | str | Unset = UNSET,
     ) -> PTR_override:
         """Update a PTR override record's mutable fields.
 
         Args:
             ref (int | PTR_override): PTR_override instance or numeric ID.
-            host (int | Host | Unset): New host reference. Omit to leave unchanged.
+            host (int | str | Host | Unset): New host reference. Omit to leave unchanged.
             ipaddress (IP_AddressT | str | Unset): New IP address. Omit to leave unchanged.
         """
         ptr = self._resolve(ref)
         data: dict[str, Any] = {}
         if not isinstance(host, Unset):
-            data["host"] = resolve_host_id(host)
+            data["host"] = resolve_host_id(host, self._client)
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
         return self._patch(ptr, data)
 
-    def list_by_host(self, host: int | Host) -> list[PTR_override]:
+    def list_by_host(self, host: int | str | Host) -> list[PTR_override]:
         """List all PTR override records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
 
@@ -2976,7 +3011,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         algorithm: int,
         hash_type: int,
         fingerprint: str,
@@ -2986,14 +3021,14 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         """Create an SSHFP record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             algorithm (int): The SSHFP algorithm number.
             hash_type (int): The SSHFP hash type number.
             fingerprint (str): The SSH key fingerprint.
             ttl (int | None | Unset): TTL. Pass None to use default, omit to leave unchanged.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {
             "host": host_id,
             "algorithm": algorithm,
@@ -3034,13 +3069,13 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
             data["ttl"] = ttl
         return self._patch(sshfp, data)
 
-    def list_by_host(self, host: int | Host) -> list[SSHFP]:
+    def list_by_host(self, host: int | str | Host) -> list[SSHFP]:
         """List all SSHFP records for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
 
@@ -3072,7 +3107,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
             fetch_after_create: Whether to fetch and return the created object.
         """
         return self._create(
-            {"hostname": self._resolve_hostname(host), "id": id},
+            {"hostname": resolve_host_name(host, self._client), "id": id},
             fetch_after_create=fetch_after_create,
         )
 
@@ -3097,7 +3132,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
         Raises:
             EntityNotFound: If ``required`` is True and no BacnetID record is found.
         """
-        name = self._resolve_hostname(host)
+        name = resolve_host_name(host, self._client)
         obj = self._fetch_by_field("hostname", name)
         if required and obj is None:
             raise EntityNotFound(f"BacnetID record for host {name!r} not found.")
@@ -3122,18 +3157,18 @@ class LocationManager(WriteResourceManager[Location]):
     def create(
         self,
         *,
-        host: int | Host,
+        host: int | str | Host,
         loc: str,
         fetch_after_create: bool = True,
     ) -> Location | None:
         """Create a LOC record.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             loc (str): The LOC record value.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "loc": loc}, fetch_after_create=fetch_after_create)
 
     def update(
@@ -3154,17 +3189,17 @@ class LocationManager(WriteResourceManager[Location]):
             data["loc"] = loc
         return self._patch(loc_obj, data)
 
-    def get_by_host(self, host: int | Host, *, required: bool = False) -> Location | None:
+    def get_by_host(self, host: int | str | Host, *, required: bool = False) -> Location | None:
         """Get the LOC record for a host.
 
         Args:
-            host (int | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             required (bool): When True, raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no LOC record is found.
         """
-        host_id = resolve_host_id(host)
+        host_id = resolve_host_id(host, self._client)
         obj = self._fetch_by_field("host", host_id)
         if required and obj is None:
             raise EntityNotFound(f"Location for host id {host_id!r} not found.")
@@ -3392,7 +3427,7 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
         Args:
             host (str | HostName | Host): Host reference (name string or Host instance).
         """
-        name = self._resolve_hostname(host)
+        name = resolve_host_name(host, self._client)
         resp = self._client.get(Endpoint.ForwardZoneForHost.with_id(name), ok404=True)
         if not resp:
             return None
