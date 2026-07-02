@@ -1783,7 +1783,7 @@ class CommunityManager:
         else:
             return self._network_manager.get(network, required=True).network
 
-    def _resolve_community_id(self, network: str | int | Network, community: str | int | Community) -> int:
+    def _resolve_community_id(self, community: str | int | Community, network: str | int | Network) -> int:
         # Already an int or Community object - return ID
         if isinstance(community, int):
             return community
@@ -1792,7 +1792,7 @@ class CommunityManager:
 
         # Community is a name: fetch it by name within the given network
         network_addr = self._resolve_network_address(network)
-        com = self.get_by_name(network_addr, community, required=True)
+        com = self.get_by_name(community, network_addr, required=True)
         return com.id
 
     def list(self, network: str | int | Network) -> list[Community]:
@@ -1806,8 +1806,8 @@ class CommunityManager:
 
     def update(
         self,
-        network: str | int | Network,
         community: int | str | Community,
+        network: str | int | Network,
         *,
         name: str | Unset = UNSET,
         description: str | Unset = UNSET,
@@ -1815,14 +1815,14 @@ class CommunityManager:
         """Update a community's mutable fields.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             name (str | Unset): New name. Omit to leave unchanged.
             description (str | Unset): New description. Omit to leave unchanged.
         """
         addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(network, community)
+        community_id = self._resolve_community_id(community, network)
         data: dict[str, Any] = {}
         if name is not UNSET:
             data["name"] = name
@@ -1833,20 +1833,20 @@ class CommunityManager:
 
     @overload
     def get_by_name(
-        self, network: str | int | Network, name: str, *, required: Literal[True]
+        self, name: str, network: str | int | Network, *, required: Literal[True]
     ) -> Community: ...
     @overload
     def get_by_name(
-        self, network: str | int | Network, name: str, *, required: Literal[False] = ...
+        self, name: str, network: str | int | Network, *, required: Literal[False] = ...
     ) -> Community | None: ...
     def get_by_name(
-        self, network: str | int | Network, name: str, *, required: bool = False
+        self, name: str, network: str | int | Network, *, required: bool = False
     ) -> Community | None:
         """Get a community by name within a network.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
             name (str): The community name to look up.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             required (bool): When True, raise EntityNotFound if not found.
 
         Raises:
@@ -1872,28 +1872,28 @@ class CommunityManager:
         )
         return resp.is_success if resp else False
 
-    def delete(self, network: str | int | Network, community: int | str | Community) -> None:
+    def delete(self, community: int | str | Community, network: str | int | Network) -> None:
         """Delete a community from a network.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
         """
         addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(network, community)
+        community_id = self._resolve_community_id(community, network)
         self._client.delete(Endpoint.NetworkCommunity.with_params(addr, community_id))
 
-    def get_hosts(self, network: str | int | Network, community: int | str | Community) -> list[Host]:
+    def get_hosts(self, community: int | str | Community, network: str | int | Network) -> list[Host]:
         """List all hosts in a community.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
         """
         addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(network, community)
+        community_id = self._resolve_community_id(community, network)
         return self._client.get_typed(
             Endpoint.NetworkCommunityHosts.with_params(addr, community_id), list[Host]
         )
@@ -1901,8 +1901,8 @@ class CommunityManager:
     # NOTE: Why add host by ID here?
     def add_host(
         self,
-        network: str | int | Network,
         community: int | str | Community,
+        network: str | int | Network,
         host: int | Host,
         *,
         ipaddress: IP_AddressT | str | None = None,
@@ -1910,15 +1910,15 @@ class CommunityManager:
         """Add a host to a community.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             host (int | Host): Host reference (ID or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to associate with the host
                 in this community. Pass None to omit.
         """
         addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(network, community)
+        community_id = self._resolve_community_id(community, network)
         host_id = host.id if isinstance(host, Host) else host
         data: dict[str, Any] = {"id": host_id}
         if ipaddress is not None:
@@ -1929,20 +1929,20 @@ class CommunityManager:
     # NOTE: Why add host by ID here?
     def remove_host(
         self,
-        network: str | int | Network,
         community: int | str | Community,
+        network: str | int | Network,
         host: int | Host,
     ) -> None:
         """Remove a host from a community.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
             host (int | Host): Host reference (ID or Host instance).
         """
         addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(network, community)
+        community_id = self._resolve_community_id(community, network)
         host_id = host.id if isinstance(host, Host) else host
         self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id))
 
