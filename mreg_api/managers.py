@@ -1302,31 +1302,39 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
         return True
 
-    def add_host(self, ref: int | Role, host: str | Host) -> Role:
+    def add_host(self, ref: int | Role, host: str | Host) -> bool:
         """Add a host to the role by name.
 
         Args:
             ref (int | Role): Role instance or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
+
+        Returns:
+            bool: True if the host was successfully added.
+                DEPRECATED: Maintains parity with older library versions.
+                Will never return False on failure; an exception is raised instead.
         """
         role = self._resolve(ref)
         hostname = resolve_host_name(host, self._client)
-        resp = self._client.post(
-            Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname}
-        )
-        return self._validate_json(resp.json())
+        self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
+        return True
 
-    def remove_host(self, ref: int | Role, host: str | Host) -> Role:
+    def remove_host(self, ref: int | Role, host: str | Host) -> bool:
         """Remove a host from the role by name.
 
         Args:
             ref (int | Role): Role instance or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
+
+        Returns:
+            bool: True if the host was successfully removed.
+                DEPRECATED: Maintains parity with older library versions.
+                Will never return False on failure; an exception is raised instead.
         """
         role = self._resolve(ref)
         hostname = resolve_host_name(host, self._client)
-        resp = self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
-        return self._validate_json(resp.json())
+        self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
+        return True
 
     def get_labels(self, ref: int | Role) -> list[Label]:
         """Get the labels associated with the role.
