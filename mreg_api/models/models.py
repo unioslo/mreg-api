@@ -25,6 +25,7 @@ from pydantic import ValidationError as PydanticValidationError
 from pydantic import computed_field
 from pydantic import field_validator
 from pydantic import model_validator
+from typing_extensions import deprecated
 
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
@@ -984,7 +985,12 @@ class Host(MregModelWithTimestamps):
         """Return True if the host has the given IP address."""
         return any(ip.ipaddress == arg_ip for ip in self.ipaddresses)
 
+    @deprecated("Use 'get_ip_by_mac' instead.")
     def has_ip_with_mac(self, arg_mac: MacAddress) -> IPAddress | None:
+        """Return the IPAddress with the given MAC, or None if not found."""
+        return self.get_ip_by_mac(arg_mac)
+
+    def get_ip_by_mac(self, arg_mac: MacAddress) -> IPAddress | None:
         """Return the IPAddress with the given MAC, or None if not found."""
         return next((ip for ip in self.ipaddresses if ip.macaddress == arg_mac), None)
 
