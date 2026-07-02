@@ -415,6 +415,7 @@ class ResourceManager(Generic[T], ABC):
         res = self._client.get_first(self.endpoint, params)
         if res is None:
             if required:
+                # TODO: add query to error message if defined
                 raise EntityNotFound(f"No {self.model.__name__} found.")
             else:
                 return None
