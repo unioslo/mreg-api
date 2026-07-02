@@ -1254,12 +1254,17 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         atom_name = self._resolve_atom_name(atom)
         return self._fetch_list_by_field("atoms__name__exact", atom_name)
 
-    def add_atom(self, ref: int | Role, atom: str | Atom) -> Role:
+    def add_atom(self, ref: int | Role, atom: str | Atom) -> bool:
         """Add an atom to the role.
 
         Args:
             ref (int | Role): Role instance or numeric ID.
             atom (str | Atom): Atom instance or name string.
+
+        Returns:
+            bool: True if the atom was successfully removed.
+                DEPRECATED: Maintains parity with older library versions.
+                Will never return False on failure; an exception is raised instead.
 
         Raises:
             EntityNotFound: If the atom does not exist.
@@ -1272,17 +1277,20 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}")
         # TODO: need a better abstraction for endpoints that
         # return the new version of the resource after modification
-        resp = self._client.post(
-            Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name}
-        )
-        return self._validate_json(resp.json())
+        self._client.post(Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name})
+        return True
 
-    def remove_atom(self, ref: int | Role, atom: str | Atom) -> Role:
+    def remove_atom(self, ref: int | Role, atom: str | Atom) -> bool:
         """Remove an atom from the role.
 
         Args:
             ref (int | Role): Role instance or numeric ID.
             atom (str | Atom): Atom instance or name string.
+
+        Returns:
+            bool: True if the atom was successfully removed.
+                DEPRECATED: Maintains parity with older library versions.
+                Will never return False on failure; an exception is raised instead.
 
         Raises:
             EntityOwnershipMismatch: If the atom is not a member of the role.
@@ -1291,8 +1299,8 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         atom_name = self._resolve_atom_name(atom)
         if atom_name not in role.atoms:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
-        resp = self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
-        return self._validate_json(resp.json())
+        self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
+        return True
 
     def add_host(self, ref: int | Role, host: str | Host) -> Role:
         """Add a host to the role by name.
