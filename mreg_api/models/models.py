@@ -985,7 +985,7 @@ class Host(MregModelWithTimestamps):
         """Return True if the host has the given IP address."""
         return any(ip.ipaddress == arg_ip for ip in self.ipaddresses)
 
-    @deprecated("Use 'get_ip_by_mac' instead.")
+    @deprecated('Use "get_ip_by_mac" instead.')
     def has_ip_with_mac(self, arg_mac: MacAddress) -> IPAddress | None:
         """Return the IPAddress with the given MAC, or None if not found."""
         return self.get_ip_by_mac(arg_mac)
