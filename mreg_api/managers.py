@@ -2537,8 +2537,9 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         """
         host_id = resolve_host_id(host, self._client)
         fqdn = self._client.fqdn(name)
-        cnamas = self._fetch_list_by_field("host", host_id)
-        obj = next((c for c in cnamas if c.name == fqdn), None)
+
+        cnames = self.list(name=fqdn, host=host_id)
+        obj = next((c for c in cnames), None)
         if required and obj is None:
             raise EntityNotFound(f"CNAME {name!r} for host {host_id} not found.")
         return obj
