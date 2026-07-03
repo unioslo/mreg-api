@@ -520,17 +520,17 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     @overload
     def get_by_name(self, name: str, *, required: Literal[False] = ...) -> T | None: ...
     def get_by_name(self, name: str, *, required: bool = False) -> T | None:
-        """Get a resource by name (searches the name field).
-
-        For the "must not exist" guard use :meth:`ensure_absent` (for named resources
-        the external id-field is the name, so it covers name absence).
+        """Get a resource by its name.
 
         Args:
-            name (str): The name to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            name (str): Name field for the resource to look up.
+            required (bool, optional): Raise if the resource is not found. Defaults to False.
 
         Raises:
             EntityNotFound: If ``required`` is True and the resource is not found.
+
+        Returns:
+            T | None: The resource object if found, else None.
         """
         name = self._normalize_name(name)
         obj = self._fetch_by_field(self.name_field, name)
@@ -1917,14 +1917,86 @@ class CommunityManager:
         Args:
             name (str): The community name to look up.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
+                Attempts to perform a direct lookup if a string is provided.
             required (bool): When True, raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the community is not found.
         """
+        # If network is a string, try to perform lookup directly
+        if isinstance(network, str):
+            resp = self._client.get_list_unique(
+                Endpoint.NetworkCommunities.with_params(network), params={"name": name}
+            )
+            if resp is not None:
+                return Community.model_validate(resp)
+            if required:
+                raise EntityNotFound(f"Community {name!r} not found in network {network!r}.")
+            return None
+
         community = next((c for c in self.list(network) if c.name == name), None)
         if required and community is None:
             raise EntityNotFound(f"Community {name!r} not found.")
+        return community
+
+    @overload
+    def get_by_id(
+        self, community_id: int, network: str | int | Network, *, required: Literal[True]
+    ) -> Community: ...
+    @overload
+    def get_by_id(
+        self, community_id: int, network: str | int | Network, *, required: Literal[False] = ...
+    ) -> Community | None: ...
+    def get_by_id(
+        self, community_id: int, network: str | int | Network, *, required: bool = False
+    ) -> Community | None:
+        """Get a community by ID within a network.
+
+        Args:
+            community_id (int): The community ID to look up.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            required (bool): When True, raise EntityNotFound if not found.
+
+        Raises:
+            EntityNotFound: If ``required`` is True and the community is not found.
+        """
+        community: Community | None = None
+        nw_addr = self._resolve_network_address(network)
+        try:
+            # Attempt to directly fetch the community
+            community = self._client.get_typed(
+                Endpoint.NetworkCommunity.with_params(nw_addr, community_id), Community
+            )
+        except EntityNotFound:
+            if required:
+                raise EntityNotFound(f"Community {community_id!r} not found.") from None
+        return community
+
+    @overload
+    def get(self, ref: int | str, network: str | int | Network, *, required: Literal[True]) -> Community: ...
+    @overload
+    def get(
+        self, ref: int | str, network: str | int | Network, *, required: Literal[False] = ...
+    ) -> Community | None: ...
+    def get(
+        self, ref: int | str, network: str | int | Network, *, required: bool = False
+    ) -> Community | None:
+        """Get a community by ID or name within a network.
+
+        Args:
+            ref (int | str): Community ID or name.
+            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            required (bool): When True, raise EntityNotFound if not found.
+
+        Raises:
+            EntityNotFound: If ``required`` is True and the community is not found.
+        """
+        if isinstance(ref, int):
+            community = next((c for c in self.list(network) if c.id == ref), None)
+        else:
+            community = self.get_by_name(ref, network, required=False)
+        if required and community is None:
+            raise EntityNotFound(f"Community {ref!r} not found in network {network!r}.")
         return community
 
     def create(self, network: str | int | Network, *, name: str, description: str) -> bool:
@@ -1990,6 +2062,7 @@ class CommunityManager:
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
         host_id = resolve_host_id(host, self._client)
+
         data: dict[str, Any] = {"id": host_id}
         if ipaddress is not None:
             data["ipaddress"] = str(ipaddress)
@@ -2039,7 +2112,7 @@ class NetworkManager(WriteResourceManager[Network]):
         return NetworkPolicyManager(self._client)
 
     @functools.cached_property
-    def communities(self) -> CommunityManager:
+    def community(self) -> CommunityManager:
         """Manager for network communities (``client.network.communities``)."""
         return CommunityManager(self._client, self)
 
