@@ -48,7 +48,6 @@ from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
-from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models import CNAME
@@ -184,14 +183,13 @@ def resolve_host(host: int | str | Host, client: MregClient) -> Host:
 class ResourceManager(Generic[T], ABC):
     """Basic manager for performing read operations on an API resource type."""
 
-    # TODO: rename var to indicate more clearly that it is the field used in the URL path
-    _url_identifier: ClassVar[str] = "id"
-    """The name of the field that is used to identify the resource in the URL path.
+    _path_field: ClassVar[str] = "id"
+    """The name of the field whose value forms the URL path for a single resource.
 
-    I.e. for most resources the URL ID field is the numeric ID field:
+    For most resources this is the numeric ``id`` field:
         GET /api/sshfps/123 # 200
 
-    But for other resources, the URL ID field is a different field (e.g. name, network, host):
+    But for other resources it is a different field (e.g. name, network, host):
         GET /api/hosts/example.com # 200
         GET /api/hosts/123 # 404
 
@@ -219,29 +217,29 @@ class ResourceManager(Generic[T], ABC):
         """Return the API endpoint for this manager's resource type."""
         ...
 
-    # NOTE: this won't work for hosts!
-    # We need to define ref as `int | str | T`, and determine the endpoint
-    # to hit OR field to search for based on the URL identifier
-    def _resolve(self, ref: int | T) -> T:
-        """Resolve an object reference (instance or numeric id) to an instance of the model.
+    def _fetch(self, ref: str | int) -> T | None:
+        """Fetch by a user-facing reference: the path identifier, or the numeric row id.
 
-        Fetches the object from the server if only an ID is provided.
+        An ``int`` is only path-fetchable when ``id`` is the path field; otherwise it is
+        the numeric row id (not the path identifier) and must be searched for.
+        """
+        if isinstance(ref, int) and self._path_field != "id":
+            return self._search_one("id", ref)
+        return self._fetch_by_path(ref)
+
+    def _resolve(self, ref: int | str | T) -> T:
+        """Resolve an object reference (instance, path identifier, or numeric id) to a model.
+
+        Fetches the object from the server if only an identifier is provided.
 
         Raises:
-            EntityNotFound: If the object cannot be found by its ID.
+            EntityNotFound: If the object cannot be found.
         """
         if isinstance(ref, self.model):
             return ref
-
-        # TODO: use url identifier to resolve?
-        # I.e. `_resolve("testhost.example.com")` would use `_url_identifier`
-        # in the _fetch_by_field call. Requires us to support str args, as well
-        # as ensuring all other methods that call this method are calling it
-        # with the primary identifier in mind. Should potentially also
-        # always coerce `ref` arg to `str` here.
-        obj = self._fetch_by_field("id", ref)  # TODO: resolve type narrowing!
+        obj = self._fetch(ref)
         if obj is None:
-            raise EntityNotFound(f"{self.model.__name__} with id {ref!r} not found.")
+            raise EntityNotFound(f"{self.model.__name__} with {self._path_field} {ref!r} not found.")
         return obj
 
     def _resolve_hostname(self, host: str | HostName | Host) -> str:
@@ -287,35 +285,44 @@ class ResourceManager(Generic[T], ABC):
         """
         return get_type_adapter(self.model).validate_python(data)
 
+    # TODO. rename to path_field_value, and make private?
     def id_field_value(self, obj: T) -> str | int:
-        """Get the value of the field that is used as the URL ID for ``obj``."""
-        return getattr(obj, self._url_identifier)
+        """Get the value of the field that forms the URL path for ``obj``."""
+        return getattr(obj, self._path_field)
 
     # TODO: test for all model types/managers! getattr is not great!
     def _endpoint_with_id(self, obj: T) -> str:
         return self.endpoint.with_id(self.id_field_value(obj))
 
-    def _fetch_by_field(self, field: str, value: str | int) -> T | None:
-        """Fetch a single object, querying by a field."""
-        endpoint = self.endpoint
-        field = field.casefold()
+    def _fetch_by_path(self, value: str | int) -> T | None:
+        """Fetch one object via its detail URL: ``GET /endpoint/{value}``.
 
-        # Field is the ID used in the URL path. i.e. /hosts/example.com, /sshfps/123, etc.
-        if field == self._url_identifier.casefold():
-            resp = self._client.get(endpoint.with_id(value), ok404=True)
-            if not resp:
-                return None
-            return self._validate_json(resp.text)
-
-        # Lookup by non-ID field, i.e. `/hosts?ipaddress=foo` instead of `/hosts/{id}`.
-        data = self._client.get_item_by_key_value(endpoint, field, value, ok404=True)
-        if not data:
+        ``value`` must be the URL path identifier (e.g. a hostname, network, or id).
+        """
+        resp = self._client.get(self.endpoint.with_id(value), ok404=True)
+        if not resp:
             return None
+        return self._validate_json(resp.text)
+
+    def _search_one(self, field: str, value: str | int) -> T | None:
+        """Fetch one object via a unique search: ``GET /endpoint?field=value``.
+
+        Used for any field that is not the URL path identifier (e.g. ``/hosts?ipaddress=foo``).
+        """
         # TODO: refactor the get_list/get_item_by_key_value methods to return a response
         # OR JSON strings, so we can pass everything through _validate_json().
         # Pydantic's JSON parser is faster than passing everything through the stdlib
         # JSON parser, and then through _validate().
+        data = self._client.get_item_by_key_value(self.endpoint, field, value, ok404=True)
+        if not data:
+            return None
         return self._validate(data)
+
+    def _fetch_by_field(self, field: str, value: str | int) -> T | None:
+        """Fetch one object by any field, path-fetching when it is the URL identifier."""
+        if field.casefold() == self._path_field.casefold():
+            return self._fetch_by_path(value)
+        return self._search_one(field, value)
 
     def _fetch_list_by_field(self, field: str, value: str | int) -> list[T]:
         """Fetch all objects matching a field, mirroring old APIMixin.get_list_by_field."""
@@ -324,13 +331,18 @@ class ResourceManager(Generic[T], ABC):
 
     # NOTE: add toggleable _refetch behavior? Return None if refetching is disabled?
     def _refetch(self, obj: T) -> T:
-        """Fetch a fresh copy of ``obj`` from the server."""
-        lookup = getattr(obj, "id", None) if hasattr(obj, "id") else getattr(obj, self._url_identifier, None)
-        if not lookup:
-            raise InternalError(f"Could not determine identifier for {self.model.__name__}.")
-        fresh = self._fetch_by_field("id" if hasattr(obj, "id") else self._url_identifier, lookup)
-        if not fresh:
-            raise GetError(f"Could not refetch {self.model.__name__} ({lookup!r}).")
+        """Fetch a fresh copy of ``obj`` from the server.
+
+        Prefers the immutable ``id`` when the model has one, so a preceding rename (which
+        leaves the path field on ``obj`` stale) does not break the lookup. Models without an
+        ``id`` field (HInfo, Location — keyed by ``host``) fall back to the path identifier.
+        """
+        if (obj_id := getattr(obj, "id", None)) is not None:
+            fresh = self._fetch_by_field("id", obj_id)
+        else:
+            fresh = self._fetch_by_path(self.id_field_value(obj))
+        if fresh is None:
+            raise GetError(f"Could not refetch {self.model.__name__}.")
         return fresh
 
     @overload
@@ -338,7 +350,7 @@ class ResourceManager(Generic[T], ABC):
     @overload
     def get(self, ident: str | int, *, required: Literal[True] = ...) -> T: ...
     def get(self, ident: str | int, *, required: bool = True) -> T | None:
-        """Get a resource by its natural identifier.
+        """Get a resource by its endpoint identifier (str) or its ID (int).
 
         Args:
             ident: The URL identifier (id / name / network, per resource).
@@ -352,9 +364,12 @@ class ResourceManager(Generic[T], ABC):
             The resource, or ``None`` when `required` is False.
         """
         ident = self._normalize_id(ident)
-        obj = self._fetch_by_field(self._url_identifier, ident)
-        if required and obj is None:
-            raise EntityNotFound(f"{self.model.__name__} {ident!r} not found.")
+        obj: T | None = None
+        try:
+            obj = self._resolve(ident)
+        except EntityNotFound:
+            if required:
+                raise
         return obj
 
     def ensure_absent(self, ident: str | int) -> None:
@@ -370,7 +385,7 @@ class ResourceManager(Generic[T], ABC):
             EntityAlreadyExists: If a resource with `ident` exists.
         """
         ident = self._normalize_id(ident)
-        if self._fetch_by_field(self._url_identifier, ident) is not None:
+        if self._fetch_by_field(self._path_field, ident) is not None:
             raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
     def list(
@@ -476,7 +491,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     # NOTE: write methods are inherited even for managers where the underlying
     # API endpoint may not support writes (e.g. NameServerManager).
 
-    # TODO: should override _url_identifier instead?!
+    # TODO: should override _path_field instead?!
     name_field: ClassVar[str] = "name"
     name_lowercase: ClassVar[bool] = False
 
@@ -614,7 +629,7 @@ class HistoryManager(ResourceManager[T], ABC):
 class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     """Operations on :class:`~mreg_api.models.Host` resources."""
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -898,7 +913,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
     """Operations on :class:`~mreg_api.models.HostGroup` resources."""
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -1101,7 +1116,7 @@ class LabelManager(NamedResourceManager[Label]):
     # NOTE: the regular labels endpoint uses IDs for lookups, but it is possible
     # to fetch by name when using the /labels/name endpoint.
     # This makes no sense, of course, but that's how it is.
-    _url_identifier: ClassVar[str] = "id"
+    _path_field: ClassVar[str] = "id"
 
     @property
     @override
@@ -1164,7 +1179,7 @@ class LabelManager(NamedResourceManager[Label]):
 class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     """Operations on :class:`~mreg_api.models.Role` resources."""
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -1393,7 +1408,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
 class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
     """Operations on :class:`~mreg_api.models.Atom` resources."""
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -2092,7 +2107,7 @@ class CommunityManager:
 class NetworkManager(WriteResourceManager[Network]):
     """Operations on :class:`~mreg_api.models.Network` resources."""
 
-    _url_identifier: ClassVar[str] = "network"
+    _path_field: ClassVar[str] = "network"
 
     @property
     @override
@@ -2114,17 +2129,6 @@ class NetworkManager(WriteResourceManager[Network]):
     def community(self) -> CommunityManager:
         """Manager for network communities (``client.network.communities``)."""
         return CommunityManager(self._client, self)
-
-    def _resolve_net(self, ref: str | int | Network) -> Network:
-        """Resolve a network reference (address string, numeric id, or instance)."""
-        if isinstance(ref, Network):
-            return ref
-        if isinstance(ref, int):
-            obj = self._fetch_by_field("id", ref)
-            if obj is None:
-                raise EntityNotFound(f"Network {ref!r} not found.")
-            return obj
-        return self.get(ref)
 
     @overload
     def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False]) -> Network | None: ...
@@ -2219,7 +2223,7 @@ class NetworkManager(WriteResourceManager[Network]):
             policy (int | None | Unset): Network policy ID. Pass None to unset, omit to leave unchanged.
             max_communities (int | None | Unset): Max communities. Pass None to unset, omit to leave unchanged.
         """  # noqa: E501
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
@@ -2247,7 +2251,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return ipaddress.ip_address(
             self._client.get_typed(Endpoint.NetworksFirstUnused.with_params(net.network), str)
         )
@@ -2258,7 +2262,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return ipaddress.ip_address(
             self._client.get_typed(Endpoint.NetworksRandomUnused.with_params(net.network), str)
         )
@@ -2269,7 +2273,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(Endpoint.NetworksUsedCount.with_params(net.network), int)
 
     def get_unused_count(self, ref: str | int | Network) -> int:
@@ -2278,7 +2282,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(Endpoint.NetworksUnusedCount.with_params(net.network), int)
 
     def get_used_list(self, ref: str | int | Network) -> list[IP_AddressT]:
@@ -2287,7 +2291,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(Endpoint.NetworksUsedList.with_params(net.network), list[IP_AddressT])
 
     def get_unused_list(self, ref: str | int | Network) -> list[IP_AddressT]:
@@ -2296,7 +2300,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(Endpoint.NetworksUnusedList.with_params(net.network), list[IP_AddressT])
 
     def get_reserved_ips(self, ref: str | int | Network) -> list[IP_AddressT]:
@@ -2305,7 +2309,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(
             Endpoint.NetworksReservedList.with_params(net.network), list[IP_AddressT]
         )
@@ -2316,7 +2320,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(
             Endpoint.NetworksUsedHostList.with_params(net.network), dict[str, list[str]]
         )
@@ -2327,7 +2331,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(
             Endpoint.NetworksPTROverrideHostList.with_params(net.network), dict[str, str]
         )
@@ -2338,7 +2342,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         return self._client.get_typed(
             Endpoint.NetworksPTROverrideList.with_params(net.network), list[IP_AddressT]
         )
@@ -2351,7 +2355,7 @@ class NetworkManager(WriteResourceManager[Network]):
             start (str): The start IP address of the excluded range.
             end (str): The end IP address of the excluded range.
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
         end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
         if start_ip.version != end_ip.version:
@@ -2369,7 +2373,7 @@ class NetworkManager(WriteResourceManager[Network]):
             start (str): The start IP address of the excluded range.
             end (str): The end IP address of the excluded range.
         """
-        net = self._resolve_net(ref)
+        net = self._resolve(ref)
         exrange = next(
             (r for r in net.excluded_ranges if str(r.start_ip) == start and str(r.end_ip) == end),
             None,
@@ -2514,7 +2518,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
 class CNAMEManager(NamedResourceManager[CNAME]):
     """Operations on :class:`~mreg_api.models.CNAME` resources."""
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -2632,7 +2636,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
     HInfo is a 1-per-host record; the URL identifier is the host ID (not a numeric row id).
     """
 
-    _url_identifier: ClassVar[str] = "host"
+    _path_field: ClassVar[str] = "host"
 
     @property
     @override
@@ -3248,7 +3252,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
 class LocationManager(WriteResourceManager[Location]):
     """Operations on :class:`~mreg_api.models.Location` resources."""
 
-    _url_identifier: ClassVar[str] = "host"
+    _path_field: ClassVar[str] = "host"
 
     @property
     @override
@@ -3383,7 +3387,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
     which dispatches to these by zone-name shape.
     """
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
     nameservers_endpoint: ClassVar[Endpoint]
     """The per-type nameservers endpoint (forward/reverse differ)."""
 
@@ -3983,7 +3987,7 @@ class NameServerManager(NamedResourceManager[NameServer]):
     operations; this manager exposes listing and lookup.
     """
 
-    _url_identifier: ClassVar[str] = "name"
+    _path_field: ClassVar[str] = "name"
 
     @property
     @override
