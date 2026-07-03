@@ -334,16 +334,16 @@ class ResourceManager(Generic[T], ABC):
         return fresh
 
     @overload
-    def get(self, ident: str | int, *, required: Literal[True]) -> T: ...
+    def get(self, ident: str | int, *, required: Literal[False]) -> T | None: ...
     @overload
-    def get(self, ident: str | int, *, required: Literal[False] = ...) -> T | None: ...
-    def get(self, ident: str | int, *, required: bool = False) -> T | None:
+    def get(self, ident: str | int, *, required: Literal[True] = ...) -> T: ...
+    def get(self, ident: str | int, *, required: bool = True) -> T | None:
         """Get a resource by its natural identifier.
 
         Args:
             ident: The URL identifier (id / name / network, per resource).
-            required: When ``True``, raise if the resource is missing (returns ``T``).
-                When ``False`` (default), return ``T | None``.
+            required: When ``True`` (default), raise ``EntityNotFound`` if missing.
+                Pass ``False`` to return ``T | None`` instead.
 
         Raises:
             EntityNotFound: If `required` is True and the resource is not found.
@@ -391,13 +391,11 @@ class ResourceManager(Generic[T], ABC):
     # TODO: add warning or similar when used on non-paginated endpoints somehow.
     # Manually? Use contextvar? Who knows.
     @overload
-    def first(self, *, required: Literal[True], **query: str | int | float | bool | None) -> T: ...
+    def first(self, *, required: Literal[False], **query: str | int | float | bool | None) -> T | None: ...
     @overload
-    def first(
-        self, *, required: Literal[False] = ..., **query: str | int | float | bool | None
-    ) -> T | None: ...
-    def first(self, *, required: bool = False, **query: str | int | float | bool | None) -> T | None:
-        """Return the first resource, or ``None`` when ``required`` is False.
+    def first(self, *, required: Literal[True] = ..., **query: str | int | float | bool | None) -> T: ...
+    def first(self, *, required: bool = True, **query: str | int | float | bool | None) -> T | None:
+        """Return the first resource, raising if not found by default.
 
         Passes ``page_size=1`` to avoid over-fetching.
 
@@ -405,7 +403,8 @@ class ResourceManager(Generic[T], ABC):
         such as `networks/{network}/unused_list`, `/dhcphosts`, and others.
 
         Args:
-            required: When ``True``, raise if no resource exists (returns ``T``).
+            required: When ``True`` (default), raise ``EntityNotFound`` if no resource
+                exists. Pass ``False`` to return ``None`` instead.
             **query: Optional filter parameters forwarded to the list endpoint.
 
         Raises:
@@ -516,15 +515,15 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     #       the URL identifier is "name" and it should normalize the name, then we don't need
     #       a separate get_by_name() method.
     @overload
-    def get_by_name(self, name: str, *, required: Literal[True]) -> T: ...
+    def get_by_name(self, name: str, *, required: Literal[False]) -> T | None: ...
     @overload
-    def get_by_name(self, name: str, *, required: Literal[False] = ...) -> T | None: ...
-    def get_by_name(self, name: str, *, required: bool = False) -> T | None:
+    def get_by_name(self, name: str, *, required: Literal[True] = ...) -> T: ...
+    def get_by_name(self, name: str, *, required: bool = True) -> T | None:
         """Get a resource by its name.
 
         Args:
             name (str): Name field for the resource to look up.
-            required (bool, optional): Raise if the resource is not found. Defaults to False.
+            required (bool): Raise if not found. Defaults to True.
 
         Raises:
             EntityNotFound: If ``required`` is True and the resource is not found.
@@ -656,10 +655,10 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         )
 
     @overload
-    def get_by_id(self, host_id: int, *, required: Literal[True]) -> Host: ...
+    def get_by_id(self, host_id: int, *, required: Literal[False]) -> Host | None: ...
     @overload
-    def get_by_id(self, host_id: int, *, required: Literal[False] = ...) -> Host | None: ...
-    def get_by_id(self, host_id: int, *, required: bool = False) -> Host | None:
+    def get_by_id(self, host_id: int, *, required: Literal[True] = ...) -> Host: ...
+    def get_by_id(self, host_id: int, *, required: bool = True) -> Host | None:
         """Get a host by its numeric id.
 
         Distinct from :meth:`get`: the Host endpoint id-field is the hostname, so
@@ -667,7 +666,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
         Args:
             host_id (int): The numeric id of the host.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the host is not found.
@@ -678,10 +677,10 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         return obj
 
     @overload
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True]) -> Host: ...
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False]) -> Host | None: ...
     @overload
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False] = ...) -> Host | None: ...
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = False) -> Host | None:
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True] = ...) -> Host: ...
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = True) -> Host | None:
         """Get a host by IP address (A/AAAA, falling back to PTR override).
 
         Falls back to a PTR override when no direct A/AAAA match exists; a PTR match
@@ -689,7 +688,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
         Args:
             ip (str | IP_AddressT): The IP address to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             MultipleEntitiesFound: If more than one host matches the IP address.
@@ -709,15 +708,15 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         return host
 
     @overload
-    def get_by_mac(self, mac: str | MacAddress, *, required: Literal[True]) -> Host: ...
+    def get_by_mac(self, mac: str | MacAddress, *, required: Literal[False]) -> Host | None: ...
     @overload
-    def get_by_mac(self, mac: str | MacAddress, *, required: Literal[False] = ...) -> Host | None: ...
-    def get_by_mac(self, mac: str | MacAddress, *, required: bool = False) -> Host | None:
+    def get_by_mac(self, mac: str | MacAddress, *, required: Literal[True] = ...) -> Host: ...
+    def get_by_mac(self, mac: str | MacAddress, *, required: bool = True) -> Host | None:
         """Get a host by MAC address.
 
         Args:
             mac (str | MacAddress): The MAC address to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no host is found.
@@ -865,7 +864,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         net_manager = NetworkManager(self._client)
         result: dict[Network, list[IPAddress]] = {}
         for ip in host.ipaddresses:
-            network = net_manager.get_by_ip(ip.ipaddress)
+            network = net_manager.get_by_ip(ip.ipaddress, required=False)
             if network is None:
                 network = Network.dummy_network_from_ip(ip)
             if network not in result:
@@ -1577,8 +1576,8 @@ class PermissionManager(WriteResourceManager[Permission]):
         range: str,  # noqa: A002
         regex: str,
         *,
-        required: Literal[True],
-    ) -> Permission: ...
+        required: Literal[False],
+    ) -> Permission | None: ...
     @overload
     def get_by_triplet(
         self,
@@ -1586,15 +1585,15 @@ class PermissionManager(WriteResourceManager[Permission]):
         range: str,  # noqa: A002
         regex: str,
         *,
-        required: Literal[False] = ...,
-    ) -> Permission | None: ...
+        required: Literal[True] = ...,
+    ) -> Permission: ...
     def get_by_triplet(
         self,
         group: str,
         range: str,  # noqa: A002
         regex: str,
         *,
-        required: bool = False,
+        required: bool = True,
     ) -> Permission | None:
         """Get a permission by the (group, range, regex) triplet.
 
@@ -1604,7 +1603,7 @@ class PermissionManager(WriteResourceManager[Permission]):
             group (str): The netgroup name.
             range (str): The network range (CIDR).
             regex (str): The host regex pattern.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             MultipleEntitiesFound: If more than one permission matches the triplet.
@@ -1903,14 +1902,14 @@ class CommunityManager:
 
     @overload
     def get_by_name(
-        self, name: str, network: str | int | Network, *, required: Literal[True]
-    ) -> Community: ...
+        self, name: str, network: str | int | Network, *, required: Literal[False]
+    ) -> Community | None: ...
     @overload
     def get_by_name(
-        self, name: str, network: str | int | Network, *, required: Literal[False] = ...
-    ) -> Community | None: ...
+        self, name: str, network: str | int | Network, *, required: Literal[True] = ...
+    ) -> Community: ...
     def get_by_name(
-        self, name: str, network: str | int | Network, *, required: bool = False
+        self, name: str, network: str | int | Network, *, required: bool = True
     ) -> Community | None:
         """Get a community by name within a network.
 
@@ -1918,7 +1917,7 @@ class CommunityManager:
             name (str): The community name to look up.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
                 Attempts to perform a direct lookup if a string is provided.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the community is not found.
@@ -1941,21 +1940,21 @@ class CommunityManager:
 
     @overload
     def get_by_id(
-        self, community_id: int, network: str | int | Network, *, required: Literal[True]
-    ) -> Community: ...
+        self, community_id: int, network: str | int | Network, *, required: Literal[False]
+    ) -> Community | None: ...
     @overload
     def get_by_id(
-        self, community_id: int, network: str | int | Network, *, required: Literal[False] = ...
-    ) -> Community | None: ...
+        self, community_id: int, network: str | int | Network, *, required: Literal[True] = ...
+    ) -> Community: ...
     def get_by_id(
-        self, community_id: int, network: str | int | Network, *, required: bool = False
+        self, community_id: int, network: str | int | Network, *, required: bool = True
     ) -> Community | None:
         """Get a community by ID within a network.
 
         Args:
             community_id (int): The community ID to look up.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the community is not found.
@@ -1973,20 +1972,20 @@ class CommunityManager:
         return community
 
     @overload
-    def get(self, ref: int | str, network: str | int | Network, *, required: Literal[True]) -> Community: ...
+    def get(
+        self, ref: int | str, network: str | int | Network, *, required: Literal[False]
+    ) -> Community | None: ...
     @overload
     def get(
-        self, ref: int | str, network: str | int | Network, *, required: Literal[False] = ...
-    ) -> Community | None: ...
-    def get(
-        self, ref: int | str, network: str | int | Network, *, required: bool = False
-    ) -> Community | None:
+        self, ref: int | str, network: str | int | Network, *, required: Literal[True] = ...
+    ) -> Community: ...
+    def get(self, ref: int | str, network: str | int | Network, *, required: bool = True) -> Community | None:
         """Get a community by ID or name within a network.
 
         Args:
             ref (int | str): Community ID or name.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the community is not found.
@@ -2122,22 +2121,21 @@ class NetworkManager(WriteResourceManager[Network]):
             return ref
         if isinstance(ref, int):
             obj = self._fetch_by_field("id", ref)
-        else:
-            obj = self.get(ref)
-        if obj is None:
-            raise EntityNotFound(f"Network {ref!r} not found.")
-        return obj
+            if obj is None:
+                raise EntityNotFound(f"Network {ref!r} not found.")
+            return obj
+        return self.get(ref)
 
     @overload
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True]) -> Network: ...
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False]) -> Network | None: ...
     @overload
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False] = ...) -> Network | None: ...
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = False) -> Network | None:
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True] = ...) -> Network: ...
+    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = True) -> Network | None:
         """Get the network containing an IP address.
 
         Args:
             ip (str | IP_AddressT): The IP address to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no network is found.
@@ -2578,15 +2576,15 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         return self._patch(cname, data)
 
     @overload
-    def get_by_name(self, name: str, *, required: Literal[True]) -> CNAME: ...
+    def get_by_name(self, name: str, *, required: Literal[False]) -> CNAME | None: ...
     @overload
-    def get_by_name(self, name: str, *, required: Literal[False] = ...) -> CNAME | None: ...
-    def get_by_name(self, name: str, *, required: bool = False) -> CNAME | None:
+    def get_by_name(self, name: str, *, required: Literal[True] = ...) -> CNAME: ...
+    def get_by_name(self, name: str, *, required: bool = True) -> CNAME | None:
         """Get a CNAME record by alias name.
 
         Args:
             name (str): The alias name to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the CNAME is not found.
@@ -2597,14 +2595,14 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         return obj
 
     def get_by_host_and_name(
-        self, host: int | str | Host, name: str, *, required: bool = False
+        self, host: int | str | Host, name: str, *, required: bool = True
     ) -> CNAME | None:
         """Get a CNAME record matching both the host and alias name.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             name (str): The alias name to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the CNAME is not found.
@@ -2687,12 +2685,12 @@ class HInfoManager(WriteResourceManager[HInfo]):
             data["os"] = os
         return self._patch(hinfo, data)
 
-    def get_by_host(self, host: int | str | Host, *, required: bool = False) -> HInfo | None:
+    def get_by_host(self, host: int | str | Host, *, required: bool = True) -> HInfo | None:
         """Get the HInfo record for a host.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no HInfo record is found.
@@ -3230,12 +3228,12 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
         """
         return self._client.get_typed(self.endpoint, list[BacnetID], params={"id__range": f"{start},{end}"})
 
-    def get_by_host(self, host: str | HostName | Host, *, required: bool = False) -> BacnetID | None:
+    def get_by_host(self, host: str | HostName | Host, *, required: bool = True) -> BacnetID | None:
         """Get the BacnetID record for a host by its FQDN.
 
         Args:
             host (str | HostName | Host): Host reference (name string or Host instance).
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no BacnetID record is found.
@@ -3297,12 +3295,12 @@ class LocationManager(WriteResourceManager[Location]):
             data["loc"] = loc
         return self._patch(loc_obj, data)
 
-    def get_by_host(self, host: int | str | Host, *, required: bool = False) -> Location | None:
+    def get_by_host(self, host: int | str | Host, *, required: bool = True) -> Location | None:
         """Get the LOC record for a host.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and no LOC record is found.
@@ -3600,17 +3598,15 @@ class ZoneManager:
         return _verify_nameservers(self._client, nameservers, force=force)
 
     @overload
-    def get_by_name(self, name: str, *, required: Literal[True]) -> ForwardZone | ReverseZone: ...
+    def get_by_name(self, name: str, *, required: Literal[False]) -> ForwardZone | ReverseZone | None: ...
     @overload
-    def get_by_name(
-        self, name: str, *, required: Literal[False] = ...
-    ) -> ForwardZone | ReverseZone | None: ...
-    def get_by_name(self, name: str, *, required: bool = False) -> ForwardZone | ReverseZone | None:
+    def get_by_name(self, name: str, *, required: Literal[True] = ...) -> ForwardZone | ReverseZone: ...
+    def get_by_name(self, name: str, *, required: bool = True) -> ForwardZone | ReverseZone | None:
         """Get a zone by name; forward/reverse chosen by name shape.
 
         Args:
             name (str): The zone name to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the zone is not found.
@@ -3805,21 +3801,21 @@ class DelegationManager:
 
     @overload
     def get(
-        self, zone: Zone, name: str, *, required: Literal[True]
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation: ...
+        self, zone: Zone, name: str, *, required: Literal[False]
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None: ...
     @overload
     def get(
-        self, zone: Zone, name: str, *, required: Literal[False] = ...
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None: ...
+        self, zone: Zone, name: str, *, required: Literal[True] = ...
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation: ...
     def get(
-        self, zone: Zone, name: str, *, required: bool = False
+        self, zone: Zone, name: str, *, required: bool = True
     ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
         """Get a delegation in ``zone`` by name.
 
         Args:
             zone (Zone): The parent zone to search in.
             name (str): The delegation name to look up.
-            required (bool): When True, raise EntityNotFound if not found.
+            required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the delegation is not found.
@@ -3870,13 +3866,13 @@ class DelegationManager:
         nameservers = _verify_nameservers(self._client, nameservers, force=force)
 
         if not force:
-            delegated = self._client.zone.get_by_name(name)
+            delegated = self._client.zone.get_by_name(name, required=False)
             if not delegated:
                 raise InputFailure(f"Zone {name!r} does not exist. Must force.")
             if delegated.is_reverse() != zone.is_reverse():
                 raise InputFailure(f"Delegation {name!r} is not a {type(zone).__name__} zone")
 
-        if self.get(zone, name) is not None:
+        if self.get(zone, name, required=False) is not None:
             raise EntityAlreadyExists(f"Zone {zone.name!r} already has a delegation named {name!r}")
 
         self._client.post(

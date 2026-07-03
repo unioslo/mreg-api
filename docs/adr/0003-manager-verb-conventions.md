@@ -9,16 +9,21 @@ Replaces the old `get_x` / `get_x_or_raise` trio with one method:
 
 ```python
 @overload
-def get(self, ident, *, required: Literal[True]) -> T: ...
+def get(self, ident, *, required: Literal[False]) -> T | None: ...
 @overload
-def get(self, ident, *, required: Literal[False] = False) -> T | None: ...
+def get(self, ident, *, required: Literal[True] = ...) -> T: ...
+def get(self, ident, *, required: bool = True) -> T | None: ...
 ```
 
-- `required=False` (default) → `T | None`.
-- `required=True` → `T`, raises `EntityNotFound` if missing.
+- `required=True` (default) → `T`, raises `EntityNotFound` if missing.
+- `required=False` → `T | None`.
 - Kwarg is `required`, not `should_exist` (reads cleaner; `should_exist` was awkward).
 - Same shape for `get_by_name` on `NamedResourceManager`, and for the explicit Host
   getters (`get_by_id`/`get_by_ip`/…), see ADR-0001.
+
+Rationale for raise-by-default: the overwhelming majority of call sites know the
+resource must exist and want an immediate `EntityNotFound` on miss. Opt-in
+`required=False` is the narrow exception, not the rule.
 
 ## ensure_absent — the "must not exist" guard
 
