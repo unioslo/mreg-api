@@ -32,6 +32,12 @@ HostName = NewType("HostName", str)
 
 _HOSTNAME_RE = re.compile(r"^(\*\.)?([a-z0-9_][a-z0-9\-]*\.?)+$")
 
+VerifiedNS = NewType("VerifiedNS", HostName)
+"""A nameserver that is a (best-effort) FQDN and has been verified to exist in mreg and have an A-record/glue.
+
+Acts like a string on runtime.
+"""
+
 
 def parse_hostname(value: str, domain: str | None = None) -> HostName:
     """Normalise and optionally expand a hostname.

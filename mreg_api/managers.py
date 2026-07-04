@@ -96,6 +96,7 @@ from mreg_api.models import ZoneFile
 from mreg_api.models.abstracts import MregModel
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
+from mreg_api.models.fields import VerifiedNS
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.models.models import is_reverse_zone_name
@@ -3327,7 +3328,7 @@ def _valid_zone_ttl(ttl: int) -> int:
     return ttl
 
 
-def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> list[str]:
+def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> list[VerifiedNS]:
     """Verify nameservers exist in mreg and have an A-record / glue.
 
     Utility function shared by various managers that interact with nameservers.
@@ -3340,23 +3341,25 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
         raise InputFailure("At least one nameserver is required")
 
     errors: list[str] = []
-    verified: list[str] = []  # NOTE: should be list[HostName], but invariant, etc.. cba.
+    verified: list[VerifiedNS] = []
+
     for nameserver in nameservers:
         # HACK: bypass checks if force is enabled, return name as-is, expanded and validated
+        ns = client.fqdn(nameserver)
         if force:
-            verified.append(client.fqdn(nameserver))  # HACK
+            verified.append(VerifiedNS(ns))
             continue
 
-        host = client.host.get_by_name(nameserver, required=False)
+        host = client.host.get_by_name(ns, required=False)
         if host is None:
-            cname = client.cname.get_by_name(nameserver, required=False)
+            cname = client.cname.get_by_name(ns, required=False)
             if cname is not None:
                 host = client.host.get_by_id(cname.host, required=False)
                 if host is not None:
                     client.events.record(
                         Event(
                             kind=EventKind.RESOLUTION,
-                            message=f"{nameserver} is a CNAME for {host.name}",
+                            message=f"{ns} is a CNAME for {host.name}",
                             subject=ObjectRef.new(host),
                             related=(ObjectRef.new(cname),),
                             correlation_id=client.get_correlation_id(),
@@ -3365,10 +3368,13 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
 
         if host is None:
             if not force:
-                errors.append(f"{nameserver} is not in mreg, must force")
+                errors.append(f"{ns} is not in mreg, must force")
         else:
             if host.zone is None and not host.ipaddresses and not force:
-                errors.append(f"{nameserver} has no A-record/glue, must force")
+                errors.append(f"{ns} has no A-record/glue, must force")
+
+        # All checks passed, consider it verified
+        verified.append(VerifiedNS(ns))
 
     if errors:
         raise ForceMissing("\n".join(errors))
@@ -3396,7 +3402,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         *,
         name: str,
         email: str,
-        primary_ns: list[str],
+        primary_ns: list[VerifiedNS],
         fetch_after_create: bool = True,
     ) -> _ZoneT | None:
         """Create a zone of this manager's type. Caller verifies nameservers/absence.
@@ -3404,11 +3410,9 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         Args:
             name (str): The zone name.
             email (str): The zone admin email address.
-            primary_ns (list[str]): List of primary nameserver names.
+            primary_ns (list[VerifiedNS]): List of primary nameserver names.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
-        # FIXME: if called directly, name servers do not get passed through client.fqdn
-        # This could lead to bugs in the future.
         return self._create(
             {"name": name, "email": email, "primary_ns": primary_ns},
             fetch_after_create=fetch_after_create,
@@ -3418,7 +3422,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         self,
         zone: _ZoneT,
         *,
-        primary_ns: str | Unset = UNSET,
+        primary_ns: VerifiedNS | Unset = UNSET,
         email: str | Unset = UNSET,
         serialno: int | Unset = UNSET,
         refresh: int | Unset = UNSET,
@@ -3430,7 +3434,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
 
         Args:
             zone (_ZoneT): The zone to update.
-            primary_ns (str | Unset): New primary nameserver. Omit to leave unchanged.
+            primary_ns (VerifiedNS | Unset): New primary nameserver. Omit to leave unchanged.
             email (str | Unset): New zone admin email. Omit to leave unchanged.
             serialno (int | Unset): New serial number. Omit to leave unchanged.
             refresh (int | Unset): New refresh interval. Omit to leave unchanged.
@@ -3440,9 +3444,6 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         """
         data: dict[str, Any] = {}
         if primary_ns is not UNSET:
-            # FIXME: if called directly, name servers do not get passed through client.fqdn
-            # This could lead to bugs in the future. If called through ZoneManager,
-            # name servers are verified and validated/formatted.
             data["primary_ns"] = primary_ns
         if email is not UNSET:
             data["email"] = email
@@ -3469,15 +3470,13 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         """
         return self._patch(zone, {"default_ttl": _valid_zone_ttl(ttl)})
 
-    def set_nameservers(self, zone: _ZoneT, nameservers: list[str], *, force: bool = False) -> None:
+    def set_nameservers(self, zone: _ZoneT, nameservers: list[VerifiedNS]) -> None:
         """Replace the zone's nameservers (hits the per-type nameservers endpoint).
 
         Args:
             zone (_ZoneT): The zone to update.
-            nameservers (list[str]): The new list of nameserver names.
-            force (bool): When True, skip safety checks on nameserver existence.
+            nameservers (list[VerifiedNS]): The new list of nameserver names.
         """
-        nameservers = _verify_nameservers(self._client, nameservers, force=force)
         self._client.patch(self.nameservers_endpoint.with_params(zone.name), json={"primary_ns": nameservers})
 
     def list_subzones(self, zone: _ZoneT) -> list[_ZoneT]:
@@ -3500,6 +3499,8 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
             names = ", ".join(z.name for z in subzones)
             raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
 
+    # NOTE: force should not propagate to this method.
+    # Ideally, we resolve all safety issues in the ZoneManager itself.
     @override
     def delete(self, obj: _ZoneT, *, force: bool = False) -> None:
         """Delete the zone, guarding against non-empty zones unless ``force``.
@@ -3592,7 +3593,7 @@ class ZoneManager:
             return ref
         return self.get_by_name(ref, required=True)
 
-    def verify_nameservers(self, nameservers: list[str], force: bool = False) -> list[str]:
+    def verify_nameservers(self, nameservers: list[str], force: bool = False) -> list[VerifiedNS]:
         """Verify nameservers exist in mreg and have glue (raises otherwise).
 
         Args:
@@ -3702,6 +3703,7 @@ class ZoneManager:
             "expire": expire,
             "soa_ttl": soa_ttl,
         }
+        # NOTE: no verification here...?
         if isinstance(z, ReverseZone):
             return self._reverse.update_soa(z, **kwargs)
         return self._forward.update_soa(z, **kwargs)
@@ -3729,10 +3731,13 @@ class ZoneManager:
             force (bool): When True, skip safety checks on nameserver existence.
         """
         z = self._resolve_zone(zone)
+
+        verified_ns = _verify_nameservers(self._client, nameservers, force=force)
+
         if isinstance(z, ReverseZone):
-            self._reverse.set_nameservers(z, nameservers, force=force)
+            self._reverse.set_nameservers(z, verified_ns)
         else:
-            self._forward.set_nameservers(z, nameservers, force=force)
+            self._forward.set_nameservers(z, verified_ns)
 
     def list_subzones(self, zone: str | ForwardZone | ReverseZone) -> list[ForwardZone] | list[ReverseZone]:
         """List subzones of the zone (excluding the zone itself).
@@ -3785,7 +3790,7 @@ class DelegationManager:
     Delegations have no standalone endpoint; their type (forward/reverse) is derived
     from the parent zone, so every method takes the parent zone as its first argument.
     Kept separate from :class:`ZoneManager` to stay composition-ready (a future
-    ``client.zone.delegations``). See ADR-0007.
+    ``client.zone.delegations``).
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -3826,12 +3831,17 @@ class DelegationManager:
         """
         self._ensure_in_zone(zone, name)
         cls = self._model_for(zone)
-        resp = self._client.get(cls.endpoint_with_name(zone, name), ok404=True)
-        if not resp:
+        try:
+            return self._get(cls.endpoint_with_name(zone, name), cls)
+        except Exception as e:
             if required:
-                raise EntityNotFound(f"Could not find delegation {name!r} in zone {zone.name!r}")
-            return None
-        return cls.model_validate_json(resp.text)
+                raise EntityNotFound(f"Could not find delegation {name!r} in zone {zone.name!r}") from e
+        return None
+
+    def _get(
+        self, endpoint: str, model: type[ForwardZoneDelegation | ReverseZoneDelegation]
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+        return self._client.get_typed(endpoint, model)
 
     def list_by_zone(self, zone: Zone) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
         """List all delegations for a zone.
@@ -3867,7 +3877,7 @@ class DelegationManager:
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
         self._ensure_in_zone(zone, name)
-        nameservers = _verify_nameservers(self._client, nameservers, force=force)
+        verified_ns = _verify_nameservers(self._client, nameservers, force=force)
 
         if not force:
             delegated = self._client.zone.get_by_name(name, required=False)
@@ -3879,12 +3889,33 @@ class DelegationManager:
         if self.get(zone, name, required=False) is not None:
             raise EntityAlreadyExists(f"Zone {zone.name!r} already has a delegation named {name!r}")
 
-        self._client.post(
+        return self._create(
+            zone,
+            name=name,
+            nameservers=verified_ns,
+            comment=comment,
+            fetch_after_create=fetch_after_create,
+        )
+
+    # TODO: Inherit from WriteResourceManager and override _patch, _create, etc.
+    # to optionally override with endpoint and model, so we can call them in DelegationManager
+    # using _model_for and _endpoint_for
+    def _create(
+        self,
+        zone: Zone,
+        *,
+        name: str,
+        nameservers: list[VerifiedNS],  # ensure we have list of verified nameservers
+        comment: str = "",
+        fetch_after_create: bool = True,
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+        """Create a zone delegation (with FQDN nameservers)."""
+        response = self._client.post(
             self._endpoint_for(zone).with_params(zone.name),
             json={"name": name, "nameservers": nameservers, "comment": comment},
         )
-        if fetch_after_create:
-            return self.get(zone, name, required=True)
+        if fetch_after_create and (loc := response.headers.get("Location")):
+            return self._get(loc, self._model_for(zone))
         return None
 
     def delete(self, zone: Zone, name: str) -> None:
