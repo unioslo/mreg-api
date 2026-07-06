@@ -2072,7 +2072,7 @@ class CommunityManager:
             network (str | int | Network): Network reference (address string, ID, or Network instance).
             host (int | str | Host): Host reference (ID or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to associate with the host
-                in this community. Pass None to omit.
+                in this community. Required if host has multiple IP addresses in the network.
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
@@ -2090,6 +2090,8 @@ class CommunityManager:
         community: int | str | Community,
         network: str | int | Network,
         host: int | str | Host,
+        *,
+        ipaddress: IP_AddressT | str | None = None,
     ) -> None:
         """Remove a host from a community.
 
@@ -2098,11 +2100,16 @@ class CommunityManager:
                 Using a name performs an extra lookup to resolve the ID.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
             host (int | str | Host): Host reference (ID or Host instance).
+            ipaddress (IP_AddressT | str | None): Optional IP address to disassociate from the host
+                in this community. Required if the host has multiple IP addresses in the community.
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
         host_id = resolve_host_id(host, self._client)
-        self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id))
+        data: dict[str, Any] = {}
+        if ipaddress is not None:
+            data["ipaddress"] = str(ipaddress)
+        self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id), json=data)
 
 
 class NetworkManager(WriteResourceManager[Network]):
