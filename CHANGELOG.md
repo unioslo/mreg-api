@@ -7,9 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `Host.get_community_associations(name: str)` method to retrieve all ipaddress->community associations for the host with the given community name.
+- `Network.get_communities(name: str)` method to retrieve all communities with the given name.
+
 ### Changed
 
 - **BREAKING**: `MregClient` is no longer a singleton. Each instance is independent and maintains its own state. The `MregClient.get_instance()` method has been removed. Each instantiation of `MregClient` is now independent and maintains its own state, including history, events and cache.
+- `Network.get_community()` now ignores case when searching for communities by name. It returns the first community with the given name, or None if not found.
+
 
 ### Removed
 

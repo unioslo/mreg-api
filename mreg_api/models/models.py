@@ -616,16 +616,30 @@ class Network(MregModelWithTimestamps):
     def get_community(self, name: str) -> Community | None:
         """Get a community by name.
 
+        Returns the first community with the given name, or None if not found.
+
         Args:
             name: The name of the community to search for.
 
         Returns:
             The community if found, None otherwise.
         """
-        for community in self.communities:
-            if community.name == name:
-                return community
+        communities = self.get_communities(name)
+        if communities:
+            return communities[0]
         return None
+
+    def get_communities(self, name: str) -> list[Community]:
+        """Get all communities with the given name.
+
+        Args:
+            name: The name of the communities to search for.
+
+        Returns:
+            A list of communities with the given name.
+        """
+        # Community name is a LowerCaseCharField, so ignore case when searching
+        return [community for community in self.communities if community.name.casefold() == name.casefold()]
 
 
 class NetworkPolicyAttribute(MregModelWithTimestamps):
@@ -1035,6 +1049,30 @@ class Host(MregModelWithTimestamps):
                 continue
             return host_community.community
         return None
+
+    def get_community_associations(self, name: str) -> list[tuple[Community, IPAddress]]:
+        """Get all IPAddress->Community associations for a given community name.
+
+        Args:
+            name: The name of the community to search for.
+
+        Returns:
+            A list of tuples of (Community, IPAddress) for all associations with the given name
+        """
+        associations: list[tuple[Community, IPAddress]] = []
+        for host_community in self.communities:
+            if host_community.community.name.casefold() != name.casefold():
+                continue
+            ip = self.get_ip_by_id(host_community.ipaddress)
+            if not ip:  # should never happen, but just in case
+                logger.warning(
+                    "Host %s has a community association with IP ID %s, but found no matching IP address.",
+                    self.name,
+                    host_community.ipaddress,
+                )
+                continue
+            associations.append((host_community.community, ip))
+        return associations
 
     def __str__(self) -> str:
         """Return the host name."""
