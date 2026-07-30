@@ -244,6 +244,14 @@ class ResourceManager(Generic[T], ABC):
         """
         if isinstance(ref, self.model):
             return ref
+        elif isinstance(ref, MregModel):  # MregModel but not the manager's bound type
+            # Technically, type checker should prevent this class of errors, but
+            # but in cases where the wrong model type is passed to this method
+            # we have this runtime check to raise a more helpful error message than
+            # some arcane error stemming from passing a model instance to `_fetch()`
+            raise TypeError(f"{self.__class__.__name__} cannot resolve {ref.__class__.__name__} instances.")
+
+        # ref narrowed to int | str
         obj = self._fetch(ref)
         if obj is None:
             raise EntityNotFound(f"{self.model.__name__} with {self._path_field} {ref!r} not found.")
