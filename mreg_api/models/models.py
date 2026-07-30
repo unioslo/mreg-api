@@ -676,6 +676,8 @@ class NetworkPolicyAttributeValue(BaseModel):
 class NetworkPolicy(MregModelWithTimestamps):
     """Network policy used in a community."""
 
+    # TODO: remove __name_lowercase__ from models. Has no effect.
+
     __name_lowercase__ = True  # name is always lower case
 
     id: int
