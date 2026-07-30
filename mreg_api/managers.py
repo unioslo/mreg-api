@@ -268,6 +268,7 @@ class ResourceManager(Generic[T], ABC):
         """
         return resolve_host_name(host, self._client)
 
+    # NOTE: Refactor to function that takes in client obj?
     def _resolve_label_id(self, label: int | str | Label) -> int:
         """Resolve a label reference to its numeric ID."""
         if isinstance(label, int):
