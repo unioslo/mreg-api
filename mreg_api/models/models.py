@@ -713,8 +713,10 @@ class NetworkPolicy(MregModelWithTimestamps):
         Returns:
             The attribute if found, None otherwise.
         """
+        # NOTE: assuming names are case-insensitive
+        name = name.casefold()
         for attribute in self.attributes:
-            if attribute.name == name:
+            if attribute.name.casefold() == name:
                 return attribute
         return None
 
