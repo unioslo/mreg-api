@@ -35,6 +35,7 @@ from typing import Literal
 from typing import TypeVar
 from typing import overload
 
+from typing_extensions import Sentinel
 from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
@@ -111,16 +112,9 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-
-class Unset:
-    """Sentinel for "unchanged" parameters in update methods."""
-
-    def __repr__(self) -> str:
-        """Return a string representation of the Unset sentinel."""
-        return "UNSET"
-
-
-UNSET = Unset()
+# NOTE: Using the capitalized `Sentinel` name here (deprecated) instead of
+# `sentinel`, because not all type checkers recognize the lowercase version.
+UNSET = Sentinel("UNSET")
 
 
 T = TypeVar("T", bound=MregModel)
@@ -203,7 +197,11 @@ class ResourceManager(Generic[T], ABC):
         self._client: MregClient = client
 
     def _normalize_id(self, ident: str | int) -> str | int:
-        """Normalise an identifier before use in lookups. Override to add hostname expansion."""
+        """Normalise an identifier before use in lookups.
+
+        Can be overriden by subclasses to define custom normalization behavior
+        when passing resource identifiers to `get()`.
+        """
         return ident
 
     @property
@@ -375,9 +373,6 @@ class ResourceManager(Generic[T], ABC):
 
     def ensure_absent(self, ident: str | int) -> None:
         """Assert that no resource with ``ident`` exists.
-
-        The "must not exist" guard (replaces the old ``get_x_and_raise``); kept a
-        distinct verb rather than a return-typed-``None`` overload of :meth:`get`.
 
         Args:
             ident (str | int): The URL identifier to check (id / name / network, per resource).
@@ -809,19 +804,19 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         self,
         ref: int | str | Host,
         *,
-        name: str | HostName | Unset = UNSET,
-        comment: str | None | Unset = UNSET,
-        contacts: list[str] | Unset = UNSET,
-        ttl: int | None | Unset = UNSET,
+        name: str | HostName | UNSET = UNSET,
+        comment: str | None | UNSET = UNSET,
+        contacts: list[str] | UNSET = UNSET,
+        ttl: int | None | UNSET = UNSET,
     ) -> Host:
         """Update a host's mutable fields.
 
         Args:
             ref (int | str | Host): Host instance or numeric ID.
-            name (str | HostName | Unset): New name for the host. Omit to leave unchanged.
-            comment (str | None | Unset): New comment. Pass None to unset, omit to leave unchanged.
-            contacts (list[str] | Unset): New contacts list. Omit to leave unchanged.
-            ttl (int | None | Unset): New TTL. Pass None to reset to default, omit to leave unchanged.
+            name (str | HostName | UNSET): New name for the host. Omit to leave unchanged.
+            comment (str | None | UNSET): New comment. Pass None to unset, omit to leave unchanged.
+            contacts (list[str] | UNSET): New contacts list. Omit to leave unchanged.
+            ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
         host = resolve_host(ref, self._client)
         data: dict[str, Any] = {}
@@ -935,14 +930,14 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         self,
         *,
         name: str,
-        description: str | Unset = UNSET,
+        description: str | UNSET = UNSET,
         fetch_after_create: bool = True,
     ) -> HostGroup | None:
         """Create a host group.
 
         Args:
             name (str): Name of the host group.
-            description (str | Unset): Description of the group. Omit to leave unset.
+            description (str | UNSET): Description of the group. Omit to leave unset.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
         data: dict[str, Any] = {"name": name}
@@ -955,13 +950,13 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         self,
         ref: int | HostGroup,
         *,
-        description: str | Unset = UNSET,
+        description: str | UNSET = UNSET,
     ) -> HostGroup:
         """Update a host group's mutable fields.
 
         Args:
             ref (int | HostGroup): HostGroup instance or numeric ID.
-            description (str | Unset): New description. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
         """
         group = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -1152,13 +1147,13 @@ class LabelManager(NamedResourceManager[Label]):
         self,
         ref: int | Label,
         *,
-        description: str | Unset = UNSET,
+        description: str | UNSET = UNSET,
     ) -> Label:
         """Update a label's mutable fields.
 
         Args:
             ref (int | Label): Label instance or numeric ID.
-            description (str | Unset): New description. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
         """
         label = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -1223,13 +1218,13 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self,
         ref: int | Role,
         *,
-        description: str | Unset = UNSET,
+        description: str | UNSET = UNSET,
     ) -> Role:
         """Update a role's mutable fields.
 
         Args:
             ref (int | Role): Role instance or numeric ID.
-            description (str | Unset): New description. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
         """
         role = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -1446,13 +1441,13 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         self,
         ref: int | Atom,
         *,
-        description: str | Unset = UNSET,
+        description: str | UNSET = UNSET,
     ) -> Atom:
         """Update an atom's mutable fields.
 
         Args:
             ref (int | Atom): Atom instance or numeric ID.
-            description (str | Unset): New description. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
         """
         atom = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -1526,19 +1521,19 @@ class PermissionManager(WriteResourceManager[Permission]):
         self,
         ref: int | Permission,
         *,
-        group: str | Unset = UNSET,
-        range: str | Unset = UNSET,  # noqa: A002
-        regex: str | Unset = UNSET,
-        labels: list[int] | Unset = UNSET,
+        group: str | UNSET = UNSET,
+        range: str | UNSET = UNSET,  # noqa: A002
+        regex: str | UNSET = UNSET,
+        labels: list[int] | UNSET = UNSET,
     ) -> Permission:
         """Update a permission's mutable fields.
 
         Args:
             ref (int | Permission): Permission instance or numeric ID.
-            group (str | Unset): New netgroup name. Omit to leave unchanged.
-            range (str | Unset): New network range (CIDR). Omit to leave unchanged.
-            regex (str | Unset): New host regex pattern. Omit to leave unchanged.
-            labels (list[int] | Unset): New list of label IDs. Omit to leave unchanged.
+            group (str | UNSET): New netgroup name. Omit to leave unchanged.
+            range (str | UNSET): New network range (CIDR). Omit to leave unchanged.
+            regex (str | UNSET): New host regex pattern. Omit to leave unchanged.
+            labels (list[int] | UNSET): New list of label IDs. Omit to leave unchanged.
         """
         perm = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -1674,13 +1669,13 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         self,
         ref: int | NetworkPolicyAttribute,
         *,
-        description: str | Unset = UNSET,
+        description: str | UNSET = UNSET,
     ) -> NetworkPolicyAttribute:
         """Update a network policy attribute's mutable fields.
 
         Args:
             ref (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
-            description (str | Unset): New description. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
         """
         attr = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -1731,7 +1726,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         name: str,
         description: str = "",
         attributes: list[NetworkPolicyAttributeValue] | None = None,
-        community_template_pattern: str | None | Unset = UNSET,
+        community_template_pattern: str | None | UNSET = UNSET,
         fetch_after_create: bool = True,
     ) -> NetworkPolicy | None:
         """Create a network policy.
@@ -1754,8 +1749,8 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         self,
         ref: int | NetworkPolicy,
         *,
-        description: str | Unset = UNSET,
-        community_template_pattern: str | None | Unset = UNSET,
+        description: str | UNSET = UNSET,
+        community_template_pattern: str | None | UNSET = UNSET,
     ) -> NetworkPolicy:
         """Update a network policy's mutable fields.
 
@@ -1763,8 +1758,8 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
         Args:
             ref (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
-            description (str | Unset): New description. Omit to leave unchanged.
-            community_template_pattern (str | None | Unset): New community name template pattern.
+            description (str | UNSET): New description. Omit to leave unchanged.
+            community_template_pattern (str | None | UNSET): New community name template pattern.
                 Pass None to unset, omit to leave unchanged.
         """
         pol = self._resolve(ref)
@@ -1894,8 +1889,8 @@ class CommunityManager:
         community: int | str | Community,
         network: str | int | Network,
         *,
-        name: str | Unset = UNSET,
-        description: str | Unset = UNSET,
+        name: str | UNSET = UNSET,
+        description: str | UNSET = UNSET,
     ) -> Community:
         """Update a community's mutable fields.
 
@@ -1903,8 +1898,8 @@ class CommunityManager:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
             network (str | int | Network): Network reference (address string, ID, or Network instance).
-            name (str | Unset): New name. Omit to leave unchanged.
-            description (str | Unset): New description. Omit to leave unchanged.
+            name (str | UNSET): New name. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
@@ -2165,12 +2160,12 @@ class NetworkManager(WriteResourceManager[Network]):
         *,
         network: str,
         description: str = "",
-        vlan: int | None | Unset = UNSET,
-        dns_delegated: bool | Unset = UNSET,
-        category: str | Unset = UNSET,
-        location: str | Unset = UNSET,
-        frozen: bool | Unset = UNSET,
-        reserved: int | Unset = UNSET,
+        vlan: int | None | UNSET = UNSET,
+        dns_delegated: bool | UNSET = UNSET,
+        category: str | UNSET = UNSET,
+        location: str | UNSET = UNSET,
+        frozen: bool | UNSET = UNSET,
+        reserved: int | UNSET = UNSET,
         fetch_after_create: bool = True,
     ) -> Network | None:
         """Create a network.
@@ -2178,12 +2173,12 @@ class NetworkManager(WriteResourceManager[Network]):
         Args:
             network (str): The network address in CIDR notation.
             description (str): Description of the network. Defaults to "".
-            vlan (int | None | Unset): VLAN ID. Pass None to unset, omit to leave unchanged.
-            dns_delegated (bool | Unset): Whether DNS is delegated. Omit to leave unchanged.
-            category (str | Unset): Network category. Omit to leave unchanged.
-            location (str | Unset): Network location. Omit to leave unchanged.
-            frozen (bool | Unset): Whether the network is frozen. Omit to leave unchanged.
-            reserved (int | Unset): Number of reserved addresses. Omit to leave unchanged.
+            vlan (int | None | UNSET): VLAN ID. Pass None to unset, omit to leave unchanged.
+            dns_delegated (bool | UNSET): Whether DNS is delegated. Omit to leave unchanged.
+            category (str | UNSET): Network category. Omit to leave unchanged.
+            location (str | UNSET): Network location. Omit to leave unchanged.
+            frozen (bool | UNSET): Whether the network is frozen. Omit to leave unchanged.
+            reserved (int | UNSET): Number of reserved addresses. Omit to leave unchanged.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
         data: dict[str, Any] = {"network": network, "description": description}
@@ -2205,15 +2200,15 @@ class NetworkManager(WriteResourceManager[Network]):
         self,
         ref: str | int | Network,
         *,
-        description: str | Unset = UNSET,
-        vlan: int | None | Unset = UNSET,
-        dns_delegated: bool | Unset = UNSET,
-        category: str | Unset = UNSET,
-        location: str | Unset = UNSET,
-        frozen: bool | Unset = UNSET,
-        reserved: int | Unset = UNSET,
-        policy: int | None | Unset = UNSET,
-        max_communities: int | None | Unset = UNSET,
+        description: str | UNSET = UNSET,
+        vlan: int | None | UNSET = UNSET,
+        dns_delegated: bool | UNSET = UNSET,
+        category: str | UNSET = UNSET,
+        location: str | UNSET = UNSET,
+        frozen: bool | UNSET = UNSET,
+        reserved: int | UNSET = UNSET,
+        policy: int | None | UNSET = UNSET,
+        max_communities: int | None | UNSET = UNSET,
     ) -> Network:
         """Update a network's mutable fields.
 
@@ -2221,15 +2216,15 @@ class NetworkManager(WriteResourceManager[Network]):
 
         Args:
             ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
-            description (str | Unset): New description. Omit to leave unchanged.
-            vlan (int | None | Unset): New VLAN ID. Pass None to unset, omit to leave unchanged.
-            dns_delegated (bool | Unset): Whether DNS is delegated. Omit to leave unchanged.
-            category (str | Unset): New category. Omit to leave unchanged.
-            location (str | Unset): New location. Omit to leave unchanged.
-            frozen (bool | Unset): Whether the network is frozen. Omit to leave unchanged.
-            reserved (int | Unset): Number of reserved addresses. Omit to leave unchanged.
-            policy (int | None | Unset): Network policy ID. Pass None to unset, omit to leave unchanged.
-            max_communities (int | None | Unset): Max communities. Pass None to unset, omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
+            vlan (int | None | UNSET): New VLAN ID. Pass None to unset, omit to leave unchanged.
+            dns_delegated (bool | UNSET): Whether DNS is delegated. Omit to leave unchanged.
+            category (str | UNSET): New category. Omit to leave unchanged.
+            location (str | UNSET): New location. Omit to leave unchanged.
+            frozen (bool | UNSET): Whether the network is frozen. Omit to leave unchanged.
+            reserved (int | UNSET): Number of reserved addresses. Omit to leave unchanged.
+            policy (int | None | UNSET): Network policy ID. Pass None to unset, omit to leave unchanged.
+            max_communities (int | None | UNSET): Max communities. Pass None to unset, omit to leave unchanged.
         """  # noqa: E501
         net = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2442,18 +2437,18 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         self,
         ref: int | IPAddress,
         *,
-        ipaddress: IP_AddressT | str | Unset = UNSET,
-        macaddress: str | MacAddress | None | Unset = UNSET,
-        host: int | str | Host | Unset | None = UNSET,
+        ipaddress: IP_AddressT | str | UNSET = UNSET,
+        macaddress: str | MacAddress | None | UNSET = UNSET,
+        host: int | str | Host | UNSET | None = UNSET,
     ) -> IPAddress:
         """Update an IP address record's mutable fields.
 
         Args:
             ref (int | IPAddress): IPAddress instance or numeric ID.
-            ipaddress (IP_AddressT | str | Unset): New IP address. Omit to leave unchanged.
-            macaddress (str | MacAddress | None | Unset): New MAC address. Pass None to unset,
+            ipaddress (IP_AddressT | str | UNSET): New IP address. Omit to leave unchanged.
+            macaddress (str | MacAddress | None | UNSET): New MAC address. Pass None to unset,
                 omit to leave unchanged.
-            host (int | str | Host | Unset): Host to (dis)associate with IP. Omit to leave unchanged.
+            host (int | str | Host | UNSET): Host to (dis)associate with IP. Omit to leave unchanged.
         """
         ip = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2565,21 +2560,21 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         self,
         ref: int | CNAME,
         *,
-        host: int | str | Host | Unset = UNSET,
-        name: str | HostName | Unset = UNSET,
-        ttl: int | None | Unset = UNSET,
+        host: int | str | Host | UNSET = UNSET,
+        name: str | HostName | UNSET = UNSET,
+        ttl: int | None | UNSET = UNSET,
     ) -> CNAME:
         """Update a CNAME record's mutable fields. Pass ``ttl=None`` to reset to default.
 
         Args:
             ref (int | CNAME): CNAME instance or numeric ID.
-            host (int | str | Host | Unset): New host reference. Omit to leave unchanged.
-            name (str | HostName | Unset): New alias name. Omit to leave unchanged.
-            ttl (int | None | Unset): New TTL. Pass None to reset to default, omit to leave unchanged.
+            host (int | str | Host | UNSET): New host reference. Omit to leave unchanged.
+            name (str | HostName | UNSET): New alias name. Omit to leave unchanged.
+            ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
         cname = self._resolve(ref)
         data: dict[str, Any] = {}
-        if not isinstance(host, Unset):
+        if host is not UNSET:
             data["host"] = resolve_host_id(host, self._client)
         if name is not UNSET:
             data["name"] = self._client.fqdn(str(name))
@@ -2679,15 +2674,15 @@ class HInfoManager(WriteResourceManager[HInfo]):
         self,
         ref: int | HInfo,
         *,
-        cpu: str | Unset = UNSET,
-        os: str | Unset = UNSET,
+        cpu: str | UNSET = UNSET,
+        os: str | UNSET = UNSET,
     ) -> HInfo:
         """Update an HInfo record's mutable fields.
 
         Args:
             ref (int | HInfo): HInfo instance or numeric ID.
-            cpu (str | Unset): New CPU hardware type string. Omit to leave unchanged.
-            os (str | Unset): New operating system string. Omit to leave unchanged.
+            cpu (str | UNSET): New CPU hardware type string. Omit to leave unchanged.
+            os (str | UNSET): New operating system string. Omit to leave unchanged.
         """
         hinfo = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2748,13 +2743,13 @@ class TXTManager(WriteResourceManager[TXT]):
         self,
         ref: int | TXT,
         *,
-        txt: str | Unset = UNSET,
+        txt: str | UNSET = UNSET,
     ) -> TXT:
         """Update a TXT record's mutable fields.
 
         Args:
             ref (int | TXT): TXT instance or numeric ID.
-            txt (str | Unset): New TXT record value. Omit to leave unchanged.
+            txt (str | UNSET): New TXT record value. Omit to leave unchanged.
         """
         txt_obj = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2811,15 +2806,15 @@ class MXManager(WriteResourceManager[MX]):
         self,
         ref: int | MX,
         *,
-        mx: str | Unset = UNSET,
-        priority: int | Unset = UNSET,
+        mx: str | UNSET = UNSET,
+        priority: int | UNSET = UNSET,
     ) -> MX:
         """Update an MX record's mutable fields.
 
         Args:
             ref (int | MX): MX instance or numeric ID.
-            mx (str | Unset): New mail exchange hostname. Omit to leave unchanged.
-            priority (int | Unset): New priority value. Omit to leave unchanged.
+            mx (str | UNSET): New mail exchange hostname. Omit to leave unchanged.
+            priority (int | UNSET): New priority value. Omit to leave unchanged.
         """
         mx_obj = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2913,23 +2908,23 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
         self,
         ref: int | NAPTR,
         *,
-        preference: int | Unset = UNSET,
-        order: int | Unset = UNSET,
-        flag: str | Unset = UNSET,
-        service: str | Unset = UNSET,
-        regex: str | Unset = UNSET,
-        replacement: str | Unset = UNSET,
+        preference: int | UNSET = UNSET,
+        order: int | UNSET = UNSET,
+        flag: str | UNSET = UNSET,
+        service: str | UNSET = UNSET,
+        regex: str | UNSET = UNSET,
+        replacement: str | UNSET = UNSET,
     ) -> NAPTR:
         """Update a NAPTR record's mutable fields.
 
         Args:
             ref (int | NAPTR): NAPTR instance or numeric ID.
-            preference (int | Unset): New preference value. Omit to leave unchanged.
-            order (int | Unset): New order value. Omit to leave unchanged.
-            flag (str | Unset): New flag. Omit to leave unchanged.
-            service (str | Unset): New service. Omit to leave unchanged.
-            regex (str | Unset): New regular expression. Omit to leave unchanged.
-            replacement (str | Unset): New replacement string. Omit to leave unchanged.
+            preference (int | UNSET): New preference value. Omit to leave unchanged.
+            order (int | UNSET): New order value. Omit to leave unchanged.
+            flag (str | UNSET): New flag. Omit to leave unchanged.
+            service (str | UNSET): New service. Omit to leave unchanged.
+            regex (str | UNSET): New regular expression. Omit to leave unchanged.
+            replacement (str | UNSET): New replacement string. Omit to leave unchanged.
         """
         naptr = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -2978,7 +2973,7 @@ class SrvManager(WriteResourceManager[Srv]):
         priority: int,
         weight: int,
         port: int,
-        ttl: int | None | Unset = UNSET,
+        ttl: int | None | UNSET = UNSET,
         fetch_after_create: bool = True,
     ) -> Srv | None:
         """Create a SRV record.
@@ -2989,7 +2984,7 @@ class SrvManager(WriteResourceManager[Srv]):
             priority (int): The SRV priority value.
             weight (int): The SRV weight value.
             port (int): The SRV port number.
-            ttl (int | None | Unset): TTL. Pass None to use default, omit to leave unchanged.
+            ttl (int | None | UNSET): TTL. Pass None to use default, omit to leave unchanged.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
         host_id = resolve_host_id(host, self._client)
@@ -3008,21 +3003,21 @@ class SrvManager(WriteResourceManager[Srv]):
         self,
         ref: int | Srv,
         *,
-        name: str | Unset = UNSET,
-        priority: int | Unset = UNSET,
-        weight: int | Unset = UNSET,
-        port: int | Unset = UNSET,
-        ttl: int | None | Unset = UNSET,
+        name: str | UNSET = UNSET,
+        priority: int | UNSET = UNSET,
+        weight: int | UNSET = UNSET,
+        port: int | UNSET = UNSET,
+        ttl: int | None | UNSET = UNSET,
     ) -> Srv:
         """Update a SRV record's mutable fields. Pass ``ttl=None`` to reset to default.
 
         Args:
             ref (int | Srv): Srv instance or numeric ID.
-            name (str | Unset): New service name. Omit to leave unchanged.
-            priority (int | Unset): New priority value. Omit to leave unchanged.
-            weight (int | Unset): New weight value. Omit to leave unchanged.
-            port (int | Unset): New port number. Omit to leave unchanged.
-            ttl (int | None | Unset): New TTL. Pass None to reset to default, omit to leave unchanged.
+            name (str | UNSET): New service name. Omit to leave unchanged.
+            priority (int | UNSET): New priority value. Omit to leave unchanged.
+            weight (int | UNSET): New weight value. Omit to leave unchanged.
+            port (int | UNSET): New port number. Omit to leave unchanged.
+            ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
         srv = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -3085,19 +3080,19 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         self,
         ref: int | PTR_override,
         *,
-        host: int | str | Host | Unset = UNSET,
-        ipaddress: IP_AddressT | str | Unset = UNSET,
+        host: int | str | Host | UNSET = UNSET,
+        ipaddress: IP_AddressT | str | UNSET = UNSET,
     ) -> PTR_override:
         """Update a PTR override record's mutable fields.
 
         Args:
             ref (int | PTR_override): PTR_override instance or numeric ID.
-            host (int | str | Host | Unset): New host reference. Omit to leave unchanged.
-            ipaddress (IP_AddressT | str | Unset): New IP address. Omit to leave unchanged.
+            host (int | str | Host | UNSET): New host reference. Omit to leave unchanged.
+            ipaddress (IP_AddressT | str | UNSET): New IP address. Omit to leave unchanged.
         """
         ptr = self._resolve(ref)
         data: dict[str, Any] = {}
-        if not isinstance(host, Unset):
+        if host is not UNSET:
             data["host"] = resolve_host_id(host, self._client)
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
@@ -3133,7 +3128,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         algorithm: int,
         hash_type: int,
         fingerprint: str,
-        ttl: int | None | Unset = UNSET,
+        ttl: int | None | UNSET = UNSET,
         fetch_after_create: bool = True,
     ) -> SSHFP | None:
         """Create an SSHFP record.
@@ -3143,7 +3138,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
             algorithm (int): The SSHFP algorithm number.
             hash_type (int): The SSHFP hash type number.
             fingerprint (str): The SSH key fingerprint.
-            ttl (int | None | Unset): TTL. Pass None to use default, omit to leave unchanged.
+            ttl (int | None | UNSET): TTL. Pass None to use default, omit to leave unchanged.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
         host_id = resolve_host_id(host, self._client)
@@ -3161,19 +3156,19 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         self,
         ref: int | SSHFP,
         *,
-        algorithm: int | Unset = UNSET,
-        hash_type: int | Unset = UNSET,
-        fingerprint: str | Unset = UNSET,
-        ttl: int | None | Unset = UNSET,
+        algorithm: int | UNSET = UNSET,
+        hash_type: int | UNSET = UNSET,
+        fingerprint: str | UNSET = UNSET,
+        ttl: int | None | UNSET = UNSET,
     ) -> SSHFP:
         """Update an SSHFP record's mutable fields. Pass ``ttl=None`` to reset to default.
 
         Args:
             ref (int | SSHFP): SSHFP instance or numeric ID.
-            algorithm (int | Unset): New algorithm number. Omit to leave unchanged.
-            hash_type (int | Unset): New hash type number. Omit to leave unchanged.
-            fingerprint (str | Unset): New fingerprint. Omit to leave unchanged.
-            ttl (int | None | Unset): New TTL. Pass None to reset to default, omit to leave unchanged.
+            algorithm (int | UNSET): New algorithm number. Omit to leave unchanged.
+            hash_type (int | UNSET): New hash type number. Omit to leave unchanged.
+            fingerprint (str | UNSET): New fingerprint. Omit to leave unchanged.
+            ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
         sshfp = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -3293,13 +3288,13 @@ class LocationManager(WriteResourceManager[Location]):
         self,
         ref: int | Location,
         *,
-        loc: str | Unset = UNSET,
+        loc: str | UNSET = UNSET,
     ) -> Location:
         """Update a LOC record's mutable fields.
 
         Args:
             ref (int | Location): Location instance or numeric ID.
-            loc (str | Unset): New LOC record value. Omit to leave unchanged.
+            loc (str | UNSET): New LOC record value. Omit to leave unchanged.
         """
         loc_obj = self._resolve(ref)
         data: dict[str, Any] = {}
@@ -3429,25 +3424,25 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         self,
         zone: _ZoneT,
         *,
-        primary_ns: VerifiedNS | Unset = UNSET,
-        email: str | Unset = UNSET,
-        serialno: int | Unset = UNSET,
-        refresh: int | Unset = UNSET,
-        retry: int | Unset = UNSET,
-        expire: int | Unset = UNSET,
-        soa_ttl: int | Unset = UNSET,
+        primary_ns: VerifiedNS | UNSET = UNSET,
+        email: str | UNSET = UNSET,
+        serialno: int | UNSET = UNSET,
+        refresh: int | UNSET = UNSET,
+        retry: int | UNSET = UNSET,
+        expire: int | UNSET = UNSET,
+        soa_ttl: int | UNSET = UNSET,
     ) -> _ZoneT:
         """Update the zone's SOA fields. At least one field must be provided.
 
         Args:
             zone (_ZoneT): The zone to update.
-            primary_ns (VerifiedNS | Unset): New primary nameserver. Omit to leave unchanged.
-            email (str | Unset): New zone admin email. Omit to leave unchanged.
-            serialno (int | Unset): New serial number. Omit to leave unchanged.
-            refresh (int | Unset): New refresh interval. Omit to leave unchanged.
-            retry (int | Unset): New retry interval. Omit to leave unchanged.
-            expire (int | Unset): New expire interval. Omit to leave unchanged.
-            soa_ttl (int | Unset): New SOA TTL. Omit to leave unchanged.
+            primary_ns (VerifiedNS | UNSET): New primary nameserver. Omit to leave unchanged.
+            email (str | UNSET): New zone admin email. Omit to leave unchanged.
+            serialno (int | UNSET): New serial number. Omit to leave unchanged.
+            refresh (int | UNSET): New refresh interval. Omit to leave unchanged.
+            retry (int | UNSET): New retry interval. Omit to leave unchanged.
+            expire (int | UNSET): New expire interval. Omit to leave unchanged.
+            soa_ttl (int | UNSET): New SOA TTL. Omit to leave unchanged.
         """
         data: dict[str, Any] = {}
         if primary_ns is not UNSET:
@@ -3680,25 +3675,25 @@ class ZoneManager:
         self,
         zone: str | ForwardZone | ReverseZone,
         *,
-        primary_ns: str | Unset = UNSET,
-        email: str | Unset = UNSET,
-        serialno: int | Unset = UNSET,
-        refresh: int | Unset = UNSET,
-        retry: int | Unset = UNSET,
-        expire: int | Unset = UNSET,
-        soa_ttl: int | Unset = UNSET,
+        primary_ns: str | UNSET = UNSET,
+        email: str | UNSET = UNSET,
+        serialno: int | UNSET = UNSET,
+        refresh: int | UNSET = UNSET,
+        retry: int | UNSET = UNSET,
+        expire: int | UNSET = UNSET,
+        soa_ttl: int | UNSET = UNSET,
     ) -> ForwardZone | ReverseZone:
         """Update the zone's SOA fields.
 
         Args:
             zone (str | ForwardZone | ReverseZone): Zone reference (name string or instance).
-            primary_ns (str | Unset): New primary nameserver. Omit to leave unchanged.
-            email (str | Unset): New zone admin email. Omit to leave unchanged.
-            serialno (int | Unset): New serial number. Omit to leave unchanged.
-            refresh (int | Unset): New refresh interval. Omit to leave unchanged.
-            retry (int | Unset): New retry interval. Omit to leave unchanged.
-            expire (int | Unset): New expire interval. Omit to leave unchanged.
-            soa_ttl (int | Unset): New SOA TTL. Omit to leave unchanged.
+            primary_ns (str | UNSET): New primary nameserver. Omit to leave unchanged.
+            email (str | UNSET): New zone admin email. Omit to leave unchanged.
+            serialno (int | UNSET): New serial number. Omit to leave unchanged.
+            refresh (int | UNSET): New refresh interval. Omit to leave unchanged.
+            retry (int | UNSET): New retry interval. Omit to leave unchanged.
+            expire (int | UNSET): New expire interval. Omit to leave unchanged.
+            soa_ttl (int | UNSET): New SOA TTL. Omit to leave unchanged.
         """
         z = self._resolve_zone(zone)
         kwargs: dict[str, Any] = {
