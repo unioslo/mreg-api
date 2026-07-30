@@ -217,10 +217,18 @@ class ResourceManager(Generic[T], ABC):
         ...
 
     def _fetch(self, ref: str | int) -> T | None:
-        """Fetch by a user-facing reference: the path identifier, or the numeric row id.
+        """Fetch by a resource reference (ID or string identifier).
 
-        An ``int`` is only path-fetchable when ``id`` is the path field; otherwise it is
-        the numeric row id (not the path identifier) and must be searched for.
+        Depending on the endpoint, the reference may be a numeric ID, or a string
+        such as name, network, and more.
+
+        A resource is only directly fetchable by an integer value if its path resource
+        identifier is named `id`, otherwise it must be searched for.
+
+        Strings are always treated as the path resource identifier, and uses the manager's
+        endpoint to construct the direct lookup, i.e.:
+
+        `_fetch("myhost")` -> `/hosts/{name}` -> `/hosts/myhost`
         """
         if isinstance(ref, int) and self._path_field != "id":
             return self._search_one("id", ref)
@@ -456,6 +464,9 @@ class WriteResourceManager(ResourceManager[T], ABC):
         _ = self._client.patch(self._endpoint_with_id(obj), json=data, params=params)
         return self._refetch(obj)
 
+    # TODO: rename to _delete so subclass implementations of `delete` can use
+    # appropriately named parameters + add new parameters if required. This public
+    # method is too inflexible.
     def delete(self, obj: T) -> None:
         """Delete a resource.
 
@@ -802,7 +813,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
     def update(
         self,
-        ref: int | str | Host,
+        host: int | str | Host,
         *,
         name: str | HostName | UNSET = UNSET,
         comment: str | None | UNSET = UNSET,
@@ -812,13 +823,13 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         """Update a host's mutable fields.
 
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             name (str | HostName | UNSET): New name for the host. Omit to leave unchanged.
             comment (str | None | UNSET): New comment. Pass None to unset, omit to leave unchanged.
             contacts (list[str] | UNSET): New contacts list. Omit to leave unchanged.
             ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
-        host = resolve_host(ref, self._client)
+        host = resolve_host(host, self._client)
         data: dict[str, Any] = {}
         if name is not UNSET:
             data["name"] = self._client.fqdn(str(name))
@@ -830,48 +841,48 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             data["ttl"] = ttl
         return self._patch(host, data)
 
-    def add_contacts(self, ref: int | str | Host, contacts: list[str]) -> HostContactModification:
+    def add_contacts(self, host: int | str | Host, contacts: list[str]) -> HostContactModification:
         """Add contacts to a host (atomic; POST to /hosts/{name}/contacts/).
 
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             contacts (list[str]): Email addresses to add as contacts.
         """
-        host = resolve_host(ref, self._client)
+        host = resolve_host(host, self._client)
         resp = self._client.post(Endpoint.HostsContacts.with_params(host.name), json={"emails": contacts})
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
-    def clear_contacts(self, ref: int | str | Host) -> HostContactModification:
+    def clear_contacts(self, host: int | str | Host) -> HostContactModification:
         """Remove all contacts from a host (atomic; DELETE /hosts/{name}/contacts/).
 
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host = resolve_host(ref, self._client)
+        host = resolve_host(host, self._client)
         resp = self._client.delete(Endpoint.HostsContacts.with_params(host.name))
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
-    def remove_contacts(self, ref: int | str | Host, contacts: list[str]) -> HostContactModification:
+    def remove_contacts(self, host: int | str | Host, contacts: list[str]) -> HostContactModification:
         """Remove specific contacts from a host (atomic; DELETE /hosts/{name}/contacts/).
 
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
             contacts (list[str]): Email addresses to remove from contacts.
         """
-        host = resolve_host(ref, self._client)
+        host = resolve_host(host, self._client)
         resp = self._client.delete(Endpoint.HostsContacts.with_params(host.name), json={"emails": contacts})
         return get_type_adapter(HostContactModification).validate_json(resp.text)
 
-    def networks(self, ref: int | str | Host) -> dict[Network, list[IPAddress]]:
+    def networks(self, host: int | str | Host) -> dict[Network, list[IPAddress]]:
         """Return a dict mapping each network to the host's IP addresses on that network.
 
         Networks not registered in MREG produce a placeholder via
         :meth:`~mreg_api.models.Network.dummy_network_from_ip`.
 
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        host = resolve_host(ref, self._client)
+        host = resolve_host(host, self._client)
         net_manager = NetworkManager(self._client)
         result: dict[Network, list[IPAddress]] = {}
         for ip in host.ipaddresses:
@@ -883,27 +894,29 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             result[network].append(ip)
         return result
 
-    def vlans(self, ref: int | str | Host) -> dict[int, list[IPAddress]]:
+    def vlans(self, host: int | str | Host) -> dict[int, list[IPAddress]]:
         """Return a dict mapping VLAN ID to host IPs on that VLAN. IPs with no VLAN map to 0.
 
+        Performs API lookups to fetch all networks the host is associated with.
+
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
         result: dict[int, list[IPAddress]] = {}
-        for network, ips in self.networks(ref).items():
+        for network, ips in self.networks(host).items():
             vlan = network.vlan or 0
             if vlan not in result:
                 result[vlan] = []
             result[vlan].extend(ips)
         return result
 
-    def all_ips_on_same_vlan(self, ref: int | str | Host) -> bool:
+    def all_ips_on_same_vlan(self, host: int | str | Host) -> bool:
         """Return True if all host IPs share a single VLAN (or there are no IPs).
 
         Args:
-            ref (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance or numeric ID.
         """
-        return len(self.vlans(ref)) <= 1
+        return len(self.vlans(host)) <= 1
 
 
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
@@ -946,33 +959,34 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         return self._create(data, fetch_after_create=fetch_after_create)
 
     # Not much to update here, but we implement update for future expansion + consistent interface
+    # TODO: add hostgroup by str (name) support
     def update(
         self,
-        ref: int | HostGroup,
+        hostgroup: int | HostGroup,
         *,
         description: str | UNSET = UNSET,
     ) -> HostGroup:
         """Update a host group's mutable fields.
 
         Args:
-            ref (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
-        group = self._resolve(ref)
+        group = self._resolve(hostgroup)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
         return self._patch(group, data)
 
-    def set_description(self, group: int | HostGroup, description: str) -> HostGroup:
+    def set_description(self, hostgroup: int | HostGroup, description: str) -> HostGroup:
         """Set the description for the host group.
 
         Args:
-            group (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
             description (str): New description to set.
         """
-        group = self._resolve(group)
-        return self.update(group, description=description)
+        hostgroup = self._resolve(hostgroup)
+        return self.update(hostgroup, description=description)
 
     def _resolve_hostgroup_name(self, hostgroup: str | HostGroup) -> str:
         """Resolve a host group reference (instance or name) to a string name."""
@@ -980,109 +994,109 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             return hostgroup.name
         return str(hostgroup)
 
-    def add_group(self, group: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
+    def add_group(self, hostgroup: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
         """Add a group to a host group.
 
         Args:
-            group (int | HostGroup): The parent HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): The parent HostGroup instance or numeric ID.
             subgroup (str | HostGroup): HostGroup instance or name string to add as a subgroup.
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
         subgroup_name = self._resolve_hostgroup_name(subgroup)
 
         self._client.post(
-            Endpoint.HostGroupsAddHostGroups.with_params(group.name),
+            Endpoint.HostGroupsAddHostGroups.with_params(hostgroup.name),
             json={"name": subgroup_name},
         )
-        return self._refetch(group)
+        return self._refetch(hostgroup)
 
-    def remove_group(self, group: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
+    def remove_group(self, hostgroup: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
         """Remove a group from a host group.
 
         Args:
-            group (int | HostGroup): The parent HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): The parent HostGroup instance or numeric ID.
             subgroup (str | HostGroup): HostGroup instance or name string to remove.
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
         subgroup_name = self._resolve_hostgroup_name(subgroup)
 
         self._client.delete(
-            Endpoint.HostGroupsRemoveHostGroups.with_params(group.name, subgroup_name),
+            Endpoint.HostGroupsRemoveHostGroups.with_params(hostgroup.name, subgroup_name),
         )
-        return self._refetch(group)
+        return self._refetch(hostgroup)
 
-    def add_host(self, group: int | HostGroup, host: str | Host) -> HostGroup:
+    def add_host(self, hostgroup: int | HostGroup, host: str | Host) -> HostGroup:
         """Add a host to a host group.
 
         Args:
-            group (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
         hostname = resolve_host_name(host, self._client)
 
         self._client.post(
-            Endpoint.HostGroupsAddHosts.with_params(group.name),
+            Endpoint.HostGroupsAddHosts.with_params(hostgroup.name),
             json={"name": hostname},
         )
-        return self._refetch(group)
+        return self._refetch(hostgroup)
 
-    def remove_host(self, group: int | HostGroup, host: str | Host) -> HostGroup:
+    def remove_host(self, hostgroup: int | HostGroup, host: str | Host) -> HostGroup:
         """Remove a host from a host group.
 
         Args:
-            group (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
         hostname = resolve_host_name(host, self._client)
 
         self._client.delete(
-            Endpoint.HostGroupsRemoveHosts.with_params(group.name, hostname),
+            Endpoint.HostGroupsRemoveHosts.with_params(hostgroup.name, hostname),
         )
-        return self._refetch(group)
+        return self._refetch(hostgroup)
 
-    def add_owner(self, group: int | HostGroup, name: str) -> HostGroup:
+    def add_owner(self, hostgroup: int | HostGroup, name: str) -> HostGroup:
         """Add an owner to a host group.
 
         Args:
-            group (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
             name (str): Name of the owner to add.
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
 
         self._client.post(
-            Endpoint.HostGroupsAddOwner.with_params(group.name),
+            Endpoint.HostGroupsAddOwner.with_params(hostgroup.name),
             json={"name": name},
         )
-        return self._refetch(group)
+        return self._refetch(hostgroup)
 
-    def remove_owner(self, group: int | HostGroup, name: str) -> HostGroup:
+    def remove_owner(self, hostgroup: int | HostGroup, name: str) -> HostGroup:
         """Remove an owner from a host group.
 
         Args:
-            group (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
             name (str): Name of the owner to remove.
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
 
         self._client.delete(
-            Endpoint.HostGroupsRemoveOwner.with_params(group.name, name),
+            Endpoint.HostGroupsRemoveOwner.with_params(hostgroup.name, name),
         )
-        return self._refetch(group)
+        return self._refetch(hostgroup)
 
     # RENAMED: get_all_parents -> list_parents
-    def list_parents(self, group: int | HostGroup) -> list[HostGroup]:
+    def list_parents(self, hostgroup: int | HostGroup) -> list[HostGroup]:
         """Get all parent groups of a host group.
 
         Renamed from `get_all_parents` to `list_parents`
 
         Args:
-            group (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
         """
-        group = self._resolve(group)
+        hostgroup = self._resolve(hostgroup)
         parents: list[HostGroup] = []
-        for parent in group.parent:  # why singular name?
+        for parent in hostgroup.parent:  # why singular name?
             pobj = self._fetch_by_field("name", parent)
             if pobj:
                 parents.append(pobj)
@@ -1093,16 +1107,16 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         """List all hostgroups that include the given host.
 
         Args:
-            host: Host instance or numeric host ID.
-            traverse: If True, also include all parent groups recursively.
+            host (int | str | Host): Host instance, numeric ID, or name string.
+            traverse (bool): If True, recursively include parent groups of the direct groups.
         """
         host_id = resolve_host_id(host, self._client)
         direct = self._fetch_list_by_field("hosts", host_id)
         if not traverse:
             return sorted(direct, key=lambda g: g.name)
         groups: list[HostGroup] = list(direct)
-        for group in direct:
-            groups.extend(self.list_parents(group))
+        for hostgroup in direct:
+            groups.extend(self.list_parents(hostgroup))
         return sorted(groups, key=lambda g: g.name)
 
 
@@ -1143,19 +1157,20 @@ class LabelManager(NamedResourceManager[Label]):
         """
         return self._create({"name": name, "description": description}, fetch_after_create=False)
 
+    # TODO: add label by name (str) support!
     def update(
         self,
-        ref: int | Label,
+        label: int | Label,
         *,
         description: str | UNSET = UNSET,
     ) -> Label:
         """Update a label's mutable fields.
 
         Args:
-            ref (int | Label): Label instance or numeric ID.
+            label (int | Label): Label instance or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
-        label = self._resolve(ref)
+        label = self._resolve(label)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
@@ -1214,32 +1229,33 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
 
+    # TODO: add role by name (str) support!
     def update(
         self,
-        ref: int | Role,
+        role: int | Role,
         *,
         description: str | UNSET = UNSET,
     ) -> Role:
         """Update a role's mutable fields.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
         return self._patch(role, data)
 
-    def set_description(self, ref: int | Role, description: str) -> Role:
+    def set_description(self, role: int | Role, description: str) -> Role:
         """Set the description for the role.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             description (str): New description to set.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         return self.update(role, description=description)
 
     @override
@@ -1265,11 +1281,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         atom_name = self._resolve_atom_name(atom)
         return self._fetch_list_by_field("atoms__name__exact", atom_name)
 
-    def add_atom(self, ref: int | Role, atom: str | Atom) -> bool:
+    def add_atom(self, role: int | Role, atom: str | Atom) -> bool:
         """Add an atom to the role.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             atom (str | Atom): Atom instance or name string.
 
         Returns:
@@ -1281,7 +1297,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             EntityNotFound: If the atom does not exist.
             EntityAlreadyExists: If the atom is already a member of the role.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
         _ = AtomManager(self._client).get_by_name(atom_name, required=True)
         if atom_name in role.atoms:
@@ -1291,11 +1307,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self._client.post(Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name})
         return True
 
-    def remove_atom(self, ref: int | Role, atom: str | Atom) -> bool:
+    def remove_atom(self, role: int | Role, atom: str | Atom) -> bool:
         """Remove an atom from the role.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             atom (str | Atom): Atom instance or name string.
 
         Returns:
@@ -1306,18 +1322,18 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         Raises:
             EntityOwnershipMismatch: If the atom is not a member of the role.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
         if atom_name not in role.atoms:
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
         self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
         return True
 
-    def add_host(self, ref: int | Role, host: str | Host) -> bool:
+    def add_host(self, role: int | Role, host: str | Host) -> bool:
         """Add a host to the role by name.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
 
         Returns:
@@ -1325,16 +1341,16 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
                 DEPRECATED: Maintains parity with older library versions.
                 Will never return False on failure; an exception is raised instead.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         hostname = resolve_host_name(host, self._client)
         self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
         return True
 
-    def remove_host(self, ref: int | Role, host: str | Host) -> bool:
+    def remove_host(self, role: int | Role, host: str | Host) -> bool:
         """Remove a host from the role by name.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
 
         Returns:
@@ -1342,50 +1358,50 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
                 DEPRECATED: Maintains parity with older library versions.
                 Will never return False on failure; an exception is raised instead.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         hostname = resolve_host_name(host, self._client)
         self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
         return True
 
-    def get_labels(self, ref: int | Role) -> list[Label]:
+    def get_labels(self, role: int | Role) -> list[Label]:
         """Get the labels associated with the role.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         labels = LabelManager(self._client)
         return [labels.get(lid, required=True) for lid in role.labels]
 
-    def add_label(self, ref: int | Role, label: int | str | Label) -> Role:
+    def add_label(self, role: int | Role, label: int | str | Label) -> Role:
         """Add a label to the role.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             label (int | str | Label): Label instance, name, or numeric ID.
 
         Raises:
             EntityNotFound: If the label does not exist.
             EntityAlreadyExists: If the role already has the label.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         label_id = self._resolve_label_id(label)
         if label_id in role.labels:
             raise EntityAlreadyExists(f"Role {role.name!r} already has label {label!r}")
         return self._patch(role, {"labels": [*role.labels, label_id]})
 
-    def remove_label(self, ref: int | Role, label: int | str | Label) -> Role:
+    def remove_label(self, role: int | Role, label: int | str | Label) -> Role:
         """Remove a label from the role.
 
         Args:
-            ref (int | Role): Role instance or numeric ID.
+            role (int | Role): Role instance or numeric ID.
             label (int | str | Label): Label instance, name, or numeric ID.
 
         Raises:
             EntityNotFound: If the label does not exist.
             EntityOwnershipMismatch: If the role does not have the label.
         """
-        role = self._resolve(ref)
+        role = self._resolve(role)
         label_id = self._resolve_label_id(label)
         if label_id not in role.labels:
             raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label!r}")
@@ -1437,32 +1453,33 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         """
         return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
 
+    # TODO: add atom by name (str) support!
     def update(
         self,
-        ref: int | Atom,
+        atom: int | Atom,
         *,
         description: str | UNSET = UNSET,
     ) -> Atom:
         """Update an atom's mutable fields.
 
         Args:
-            ref (int | Atom): Atom instance or numeric ID.
+            atom (int | Atom): Atom instance or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
-        atom = self._resolve(ref)
+        atom = self._resolve(atom)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
         return self._patch(atom, data)
 
-    def set_description(self, ref: int | Atom, description: str) -> Atom:
+    def set_description(self, atom: int | Atom, description: str) -> Atom:
         """Set the description for the atom.
 
         Args:
-            ref (int | Atom): Atom instance or numeric ID.
+            atom (int | Atom): Atom instance or numeric ID.
             description (str): New description to set.
         """
-        atom = self._resolve(ref)
+        atom = self._resolve(atom)
         return self.update(atom, description=description)
 
     @override
@@ -1519,7 +1536,7 @@ class PermissionManager(WriteResourceManager[Permission]):
 
     def update(
         self,
-        ref: int | Permission,
+        permission: int | Permission,
         *,
         group: str | UNSET = UNSET,
         range: str | UNSET = UNSET,  # noqa: A002
@@ -1529,13 +1546,13 @@ class PermissionManager(WriteResourceManager[Permission]):
         """Update a permission's mutable fields.
 
         Args:
-            ref (int | Permission): Permission instance or numeric ID.
+            permission (int | Permission): Permission instance or numeric ID.
             group (str | UNSET): New netgroup name. Omit to leave unchanged.
             range (str | UNSET): New network range (CIDR). Omit to leave unchanged.
             regex (str | UNSET): New host regex pattern. Omit to leave unchanged.
             labels (list[int] | UNSET): New list of label IDs. Omit to leave unchanged.
         """
-        perm = self._resolve(ref)
+        permission = self._resolve(permission)
         data: dict[str, Any] = {}
         if group is not UNSET:
             data["group"] = group
@@ -1545,40 +1562,40 @@ class PermissionManager(WriteResourceManager[Permission]):
             data["regex"] = regex
         if labels is not UNSET:
             data["labels"] = labels
-        return self._patch(perm, data)
+        return self._patch(permission, data)
 
-    def add_label(self, ref: int | Permission, label: int | str | Label) -> Permission:
+    def add_label(self, permission: int | Permission, label: int | str | Label) -> Permission:
         """Add a label to the permission.
 
         Args:
-            ref: The permission (instance or numeric id).
+            permission: The permission (instance or numeric id).
             label: The label to add (instance, name, or numeric id).
 
         Raises:
             EntityNotFound: If the label does not exist.
             EntityAlreadyExists: If the permission already has this label.
         """
-        perm = self._resolve(ref)
+        permission = self._resolve(permission)
         label_id = self._resolve_label_id(label)
-        if label_id in perm.labels:
+        if label_id in permission.labels:
             raise EntityAlreadyExists(f"Permission already has label {label!r}.")
-        return self.update(perm, labels=[*perm.labels, label_id])
+        return self.update(permission, labels=[*permission.labels, label_id])
 
-    def remove_label(self, ref: int | Permission, label: int | str | Label) -> Permission:
+    def remove_label(self, permission: int | Permission, label: int | str | Label) -> Permission:
         """Remove a label from the permission.
 
         Args:
-            ref: The permission (instance or numeric id).
+            permission: The permission (instance or numeric id).
             label: The label to remove (instance, name, or numeric id).
 
         Raises:
             EntityNotFound: If the label does not exist or the permission lacks it.
         """
-        perm = self._resolve(ref)
+        permission = self._resolve(permission)
         label_id = self._resolve_label_id(label)
-        if label_id not in perm.labels:
+        if label_id not in permission.labels:
             raise EntityNotFound(f"Permission does not have label {label!r}.")
-        return self.update(perm, labels=[lid for lid in perm.labels if lid != label_id])
+        return self.update(permission, labels=[lid for lid in permission.labels if lid != label_id])
 
     @overload
     def get_by_triplet(
@@ -1665,41 +1682,42 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         """
         return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
 
+    # NOTE/TODO: can we add attribute by name support? They are globally unique, right?
     def update(
         self,
-        ref: int | NetworkPolicyAttribute,
+        attr: int | NetworkPolicyAttribute,
         *,
         description: str | UNSET = UNSET,
     ) -> NetworkPolicyAttribute:
         """Update a network policy attribute's mutable fields.
 
         Args:
-            ref (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
+            attr (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
-        attr = self._resolve(ref)
+        attr = self._resolve(attr)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
         return self._patch(attr, data)
 
-    def set_description(self, ref: int | NetworkPolicyAttribute, description: str) -> NetworkPolicyAttribute:
+    def set_description(self, attr: int | NetworkPolicyAttribute, description: str) -> NetworkPolicyAttribute:
         """Set the description for the attribute.
 
         Args:
-            ref (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
+            attr (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
             description (str): New description to set.
         """
-        attr = self._resolve(ref)
+        attr = self._resolve(attr)
         return self.update(attr, description=description)
 
-    def get_policies(self, ref: int | NetworkPolicyAttribute) -> list[NetworkPolicy]:
+    def get_policies(self, attr: int | NetworkPolicyAttribute) -> list[NetworkPolicy]:
         """Get all network policies that use this attribute.
 
         Args:
-            ref (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
+            attr (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
         """
-        attr = self._resolve(ref)
+        attr = self._resolve(attr)
         return self._client.get_typed(
             Endpoint.NetworkPolicies, list[NetworkPolicy], params={"attributes": attr.id}
         )
@@ -1745,9 +1763,10 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             data["community_template_pattern"] = community_template_pattern
         return self._create(data, fetch_after_create=fetch_after_create)
 
+    # TODO: add policy by name (str) support
     def update(
         self,
-        ref: int | NetworkPolicy,
+        policy: int | NetworkPolicy,
         *,
         description: str | UNSET = UNSET,
         community_template_pattern: str | None | UNSET = UNSET,
@@ -1757,50 +1776,52 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         Pass ``community_template_pattern=None`` to unset it.
 
         Args:
-            ref (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
             community_template_pattern (str | None | UNSET): New community name template pattern.
                 Pass None to unset, omit to leave unchanged.
         """
-        pol = self._resolve(ref)
+        policy = self._resolve(policy)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
         if community_template_pattern is not UNSET:
             data["community_template_pattern"] = community_template_pattern
-        return self._patch(pol, data)
+        return self._patch(policy, data)
 
-    def set_description(self, ref: int | NetworkPolicy, description: str) -> NetworkPolicy:
+    def set_description(self, policy: int | NetworkPolicy, description: str) -> NetworkPolicy:
         """Set the description for the policy.
 
         Args:
-            ref (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
             description (str): New description to set.
         """
-        pol = self._resolve(ref)
-        return self.update(pol, description=description)
+        policy = self._resolve(policy)
+        return self.update(policy, description=description)
 
     def add_attribute(
         self,
-        ref: int | NetworkPolicy,
+        policy: int | NetworkPolicy,
         attr: NetworkPolicyAttribute,
         value: bool = True,
     ) -> NetworkPolicy:
         """Add an attribute to a policy.
 
         Args:
-            ref (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
             attr (NetworkPolicyAttribute): The attribute to add.
             value (bool): The boolean value to set for the attribute. Defaults to True.
 
         Raises:
             EntityAlreadyExists: If the policy already has this attribute.
         """
-        pol = self._resolve(ref)
-        if pol.get_attribute(attr.name):
-            raise EntityAlreadyExists(f"Policy {pol.name!r} already has attribute {attr.name!r}.")
-        attrs = [*pol.attributes, NetworkPolicyAttributeValue(name=attr.name, value=value)]
-        return self._patch(pol, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
+        policy = self._resolve(policy)
+
+        # NOTE: potential for mistakes to happen here! Can we rely on name matching via model method?
+        if policy.get_attribute(attr.name):
+            raise EntityAlreadyExists(f"Policy {policy.name!r} already has attribute {attr.name!r}.")
+        attrs = [*policy.attributes, NetworkPolicyAttributeValue(name=attr.name, value=value)]
+        return self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
     def _resolve_attribute_name(self, attribute: str | NetworkPolicyAttribute) -> str:
         """Resolve an attribute reference (instance or name) to a string name."""
@@ -1809,32 +1830,32 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         return str(attribute)
 
     def remove_attribute(
-        self, ref: int | NetworkPolicy, attribute: str | NetworkPolicyAttribute
+        self, policy: int | NetworkPolicy, attribute: str | NetworkPolicyAttribute
     ) -> NetworkPolicy:
         """Remove an attribute from a policy.
 
         Args:
-            ref (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
             attribute (str | NetworkPolicyAttribute): NetworkPolicyAttribute instance or name string.
 
         Raises:
             EntityNotFound: If the policy does not have this attribute.
         """
-        pol = self._resolve(ref)
+        policy = self._resolve(policy)
         attribute_name = self._resolve_attribute_name(attribute)
-        if not pol.get_attribute(attribute_name):
-            raise EntityNotFound(f"Policy {pol.name!r} does not have attribute {attribute_name!r}.")
-        attrs = [a for a in pol.attributes if a.name != attribute_name]
-        return self._patch(pol, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
+        if not policy.get_attribute(attribute_name):
+            raise EntityNotFound(f"Policy {policy.name!r} does not have attribute {attribute_name!r}.")
+        attrs = [a for a in policy.attributes if a.name != attribute_name]
+        return self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
-    def networks(self, ref: int | NetworkPolicy) -> list[Network]:
+    def networks(self, policy: int | NetworkPolicy) -> list[Network]:
         """Get all networks that use this policy.
 
         Args:
-            ref (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
         """
-        pol = self._resolve(ref)
-        return self._client.get_typed(Endpoint.Networks, list[Network], params={"policy": pol.id})
+        policy = self._resolve(policy)
+        return self._client.get_typed(Endpoint.Networks, list[Network], params={"policy": policy.id})
 
     @functools.cached_property
     def attribute(self) -> NetworkPolicyAttributeManager:
@@ -1879,7 +1900,7 @@ class CommunityManager:
         """List all communities for a network.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
         """
         addr = self._resolve_network_address(network)
         return self._client.get_typed(Endpoint.NetworkCommunities.with_params(addr), list[Community])
@@ -1897,7 +1918,7 @@ class CommunityManager:
         Args:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
             name (str | UNSET): New name. Omit to leave unchanged.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
@@ -1926,7 +1947,7 @@ class CommunityManager:
 
         Args:
             name (str): The community name to look up.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
                 Attempts to perform a direct lookup if a string is provided.
             required (bool): When True (default), raise EntityNotFound if not found.
 
@@ -1964,7 +1985,7 @@ class CommunityManager:
 
         Args:
             community_id (int): The community ID to look up.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
@@ -1984,36 +2005,40 @@ class CommunityManager:
 
     @overload
     def get(
-        self, ref: int | str, network: str | int | Network, *, required: Literal[False]
+        self, community: int | str, network: str | int | Network, *, required: Literal[False]
     ) -> Community | None: ...
     @overload
     def get(
-        self, ref: int | str, network: str | int | Network, *, required: Literal[True] = ...
+        self, community: int | str, network: str | int | Network, *, required: Literal[True] = ...
     ) -> Community: ...
-    def get(self, ref: int | str, network: str | int | Network, *, required: bool = True) -> Community | None:
+    def get(
+        self, community: int | str, network: str | int | Network, *, required: bool = True
+    ) -> Community | None:
         """Get a community by ID or name within a network.
 
         Args:
-            ref (int | str): Community ID or name.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            community (int | str): Community ID or name.
+            network (str | int | Network): Network reference (address, ID, or Network instance).
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
             EntityNotFound: If ``required`` is True and the community is not found.
         """
-        if isinstance(ref, int):
-            community = next((c for c in self.list(network) if c.id == ref), None)
+        if isinstance(community, int):
+            com = next((c for c in self.list(network) if c.id == community), None)
         else:
-            community = self.get_by_name(ref, network, required=False)
-        if required and community is None:
-            raise EntityNotFound(f"Community {ref!r} not found in network {network!r}.")
-        return community
+            com = self.get_by_name(community, network, required=False)
+        if required and com is None:
+            raise EntityNotFound(f"Community {community!r} not found in network {network!r}.")
+        return com
 
+    # NOTE: this API should change! `network` is the last param in other methods,
+    # but here it comes first.
     def create(self, network: str | int | Network, *, name: str, description: str) -> bool:
         """Create a community in a network.
 
         Args:
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
             name (str): Name of the community.
             description (str): Description of the community.
         """
@@ -2030,7 +2055,7 @@ class CommunityManager:
         Args:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
@@ -2042,7 +2067,7 @@ class CommunityManager:
         Args:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
         """
         addr = self._resolve_network_address(network)
         community_id = self._resolve_community_id(community, network)
@@ -2064,7 +2089,7 @@ class CommunityManager:
         Args:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
             host (int | str | Host): Host reference (ID or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to associate with the host
                 in this community. Required if host has multiple IP addresses in the network.
@@ -2093,7 +2118,7 @@ class CommunityManager:
         Args:
             community (int | str | Community): Community ID, name or object.
                 Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address string, ID, or Network instance).
+            network (str | int | Network): Network reference (address, ID, or Network instance).
             host (int | str | Host): Host reference (ID or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to disassociate from the host
                 in this community. Required if the host has multiple IP addresses in the community.
@@ -2198,7 +2223,7 @@ class NetworkManager(WriteResourceManager[Network]):
 
     def update(
         self,
-        ref: str | int | Network,
+        network: str | int | Network,
         *,
         description: str | UNSET = UNSET,
         vlan: int | None | UNSET = UNSET,
@@ -2215,7 +2240,7 @@ class NetworkManager(WriteResourceManager[Network]):
         Pass ``policy=None`` or ``max_communities=None`` to unset; omit to leave unchanged.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
             description (str | UNSET): New description. Omit to leave unchanged.
             vlan (int | None | UNSET): New VLAN ID. Pass None to unset, omit to leave unchanged.
             dns_delegated (bool | UNSET): Whether DNS is delegated. Omit to leave unchanged.
@@ -2226,7 +2251,7 @@ class NetworkManager(WriteResourceManager[Network]):
             policy (int | None | UNSET): Network policy ID. Pass None to unset, omit to leave unchanged.
             max_communities (int | None | UNSET): Max communities. Pass None to unset, omit to leave unchanged.
         """  # noqa: E501
-        net = self._resolve(ref)
+        network = self._resolve(network)
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
@@ -2246,144 +2271,148 @@ class NetworkManager(WriteResourceManager[Network]):
             data["policy"] = policy
         if max_communities is not UNSET:
             data["max_communities"] = max_communities
-        return self._patch(net, data)
+        return self._patch(network, data)
 
-    def get_first_available_ip(self, ref: str | int | Network) -> IP_AddressT:
+    def get_first_available_ip(self, network: str | int | Network) -> IP_AddressT:
         """Return the first available IP address in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         return ipaddress.ip_address(
-            self._client.get_typed(Endpoint.NetworksFirstUnused.with_params(net.network), str)
+            self._client.get_typed(Endpoint.NetworksFirstUnused.with_params(network.network), str)
         )
 
-    def get_random_available_ip(self, ref: str | int | Network) -> IP_AddressT:
+    def get_random_available_ip(self, network: str | int | Network) -> IP_AddressT:
         """Return a random available IP address in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         return ipaddress.ip_address(
-            self._client.get_typed(Endpoint.NetworksRandomUnused.with_params(net.network), str)
+            self._client.get_typed(Endpoint.NetworksRandomUnused.with_params(network.network), str)
         )
 
-    def get_used_count(self, ref: str | int | Network) -> int:
+    def get_used_count(self, network: str | int | Network) -> int:
         """Return the number of used IP addresses in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
-        return self._client.get_typed(Endpoint.NetworksUsedCount.with_params(net.network), int)
+        network = self._resolve(network)
+        return self._client.get_typed(Endpoint.NetworksUsedCount.with_params(network.network), int)
 
-    def get_unused_count(self, ref: str | int | Network) -> int:
+    def get_unused_count(self, network: str | int | Network) -> int:
         """Return the number of unused IP addresses in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
-        return self._client.get_typed(Endpoint.NetworksUnusedCount.with_params(net.network), int)
+        network = self._resolve(network)
+        return self._client.get_typed(Endpoint.NetworksUnusedCount.with_params(network.network), int)
 
-    def get_used_list(self, ref: str | int | Network) -> list[IP_AddressT]:
+    def get_used_list(self, network: str | int | Network) -> list[IP_AddressT]:
         """Return the used IP addresses in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
-        return self._client.get_typed(Endpoint.NetworksUsedList.with_params(net.network), list[IP_AddressT])
+        network = self._resolve(network)
+        return self._client.get_typed(
+            Endpoint.NetworksUsedList.with_params(network.network), list[IP_AddressT]
+        )
 
-    def get_unused_list(self, ref: str | int | Network) -> list[IP_AddressT]:
+    def get_unused_list(self, network: str | int | Network) -> list[IP_AddressT]:
         """Return the unused IP addresses in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
-        return self._client.get_typed(Endpoint.NetworksUnusedList.with_params(net.network), list[IP_AddressT])
+        network = self._resolve(network)
+        return self._client.get_typed(
+            Endpoint.NetworksUnusedList.with_params(network.network), list[IP_AddressT]
+        )
 
-    def get_reserved_ips(self, ref: str | int | Network) -> list[IP_AddressT]:
+    def get_reserved_ips(self, network: str | int | Network) -> list[IP_AddressT]:
         """Return the reserved IP addresses of the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         return self._client.get_typed(
-            Endpoint.NetworksReservedList.with_params(net.network), list[IP_AddressT]
+            Endpoint.NetworksReservedList.with_params(network.network), list[IP_AddressT]
         )
 
-    def get_used_host_list(self, ref: str | int | Network) -> dict[str, list[str]]:
+    def get_used_host_list(self, network: str | int | Network) -> dict[str, list[str]]:
         """Return a dict of used IP addresses to their associated hostnames.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         return self._client.get_typed(
-            Endpoint.NetworksUsedHostList.with_params(net.network), dict[str, list[str]]
+            Endpoint.NetworksUsedHostList.with_params(network.network), dict[str, list[str]]
         )
 
-    def get_ptroverride_host_list(self, ref: str | int | Network) -> dict[str, str]:
+    def get_ptroverride_host_list(self, network: str | int | Network) -> dict[str, str]:
         """Return a dict of PTR override IPs to their associated hostnames.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         return self._client.get_typed(
-            Endpoint.NetworksPTROverrideHostList.with_params(net.network), dict[str, str]
+            Endpoint.NetworksPTROverrideHostList.with_params(network.network), dict[str, str]
         )
 
-    def get_ptr_overrides(self, ref: str | int | Network) -> list[IP_AddressT]:
+    def get_ptr_overrides(self, network: str | int | Network) -> list[IP_AddressT]:
         """Return IP addresses that have PTR overrides in the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         return self._client.get_typed(
-            Endpoint.NetworksPTROverrideList.with_params(net.network), list[IP_AddressT]
+            Endpoint.NetworksPTROverrideList.with_params(network.network), list[IP_AddressT]
         )
 
-    def add_excluded_range(self, ref: str | int | Network, start: str, end: str) -> None:
+    def add_excluded_range(self, network: str | int | Network, start: str, end: str) -> None:
         """Add an excluded IP range to the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
             start (str): The start IP address of the excluded range.
             end (str): The end IP address of the excluded range.
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
         end_ip = NetworkOrIP.parse_or_raise(end, mode="ip")
         if start_ip.version != end_ip.version:
             raise InputFailure("Start and end IP addresses must be of the same version.")
         self._client.post(
-            Endpoint.NetworksAddExcludedRanges.with_params(net.network),
-            json={"network": net.id, "start_ip": str(start_ip), "end_ip": str(end_ip)},
+            Endpoint.NetworksAddExcludedRanges.with_params(network.network),
+            json={"network": network.id, "start_ip": str(start_ip), "end_ip": str(end_ip)},
         )
 
-    def remove_excluded_range(self, ref: str | int | Network, start: str, end: str) -> None:
+    def remove_excluded_range(self, network: str | int | Network, start: str, end: str) -> None:
         """Remove an excluded IP range from the network.
 
         Args:
-            ref (str | int | Network): Network reference (address string, numeric ID, or Network instance).
+            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
             start (str): The start IP address of the excluded range.
             end (str): The end IP address of the excluded range.
         """
-        net = self._resolve(ref)
+        network = self._resolve(network)
         exrange = next(
-            (r for r in net.excluded_ranges if str(r.start_ip) == start and str(r.end_ip) == end),
+            (r for r in network.excluded_ranges if str(r.start_ip) == start and str(r.end_ip) == end),
             None,
         )
         if exrange is None:
-            raise EntityNotFound(f"Excluded range {start} - {end} not found in {net.network!r}.")
-        self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(net.network, exrange.id))
+            raise EntityNotFound(f"Excluded range {start} - {end} not found in {network.network!r}.")
+        self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(network.network, exrange.id))
 
     def list_by_policy(self, policy: int | NetworkPolicy) -> list[Network]:
         """List networks that share the same policy as the given network.
@@ -2433,9 +2462,10 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             data["host"] = resolve_host_id(host, self._client)
         return self._create(data, fetch_after_create=fetch_after_create)
 
+    # TODO: add support for ip by str and IP_AddressT objects!
     def update(
         self,
-        ref: int | IPAddress,
+        ip: int | IPAddress,
         *,
         ipaddress: IP_AddressT | str | UNSET = UNSET,
         macaddress: str | MacAddress | None | UNSET = UNSET,
@@ -2444,13 +2474,13 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         """Update an IP address record's mutable fields.
 
         Args:
-            ref (int | IPAddress): IPAddress instance or numeric ID.
+            ip (int | IPAddress): IPAddress instance or numeric ID.
             ipaddress (IP_AddressT | str | UNSET): New IP address. Omit to leave unchanged.
             macaddress (str | MacAddress | None | UNSET): New MAC address. Pass None to unset,
                 omit to leave unchanged.
             host (int | str | Host | UNSET): Host to (dis)associate with IP. Omit to leave unchanged.
         """
-        ip = self._resolve(ref)
+        ip = self._resolve(ip)
         data: dict[str, Any] = {}
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
@@ -2466,29 +2496,29 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             data["host"] = host_id
         return self._patch(ip, data)
 
-    def associate_mac(self, ref: int | IPAddress, mac: str | MacAddress, *, force: bool = False) -> IPAddress:
+    def associate_mac(self, ip: int | IPAddress, mac: str | MacAddress, *, force: bool = False) -> IPAddress:
         """Associate a MAC address with an IP address.
 
         Args:
-            ref (int | IPAddress): IPAddress instance or numeric ID.
+            ip (int | IPAddress): IPAddress instance or numeric ID.
             mac (str | MacAddress): The MAC address to associate.
             force (bool): When True, skip safety checks and overwrite an existing MAC.
 
         Raises:
             EntityAlreadyExists: If the IP already has a MAC and ``force`` is False.
         """
-        ip = self._resolve(ref)
+        ip = self._resolve(ip)
         if ip.macaddress and not force:
             raise EntityAlreadyExists(f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.")
         return self.update(ip, macaddress=mac)
 
-    def disassociate_mac(self, ref: int | IPAddress) -> IPAddress:
+    def disassociate_mac(self, ip: int | IPAddress) -> IPAddress:
         """Remove the MAC address from an IP address.
 
         Args:
-            ref (int | IPAddress): IPAddress instance or numeric ID.
+            ip (int | IPAddress): IPAddress instance or numeric ID.
         """
-        ip = self._resolve(ref)
+        ip = self._resolve(ip)
         return self.update(ip, macaddress=None)
 
     def list_by_host(self, host: int | str | Host) -> list[IPAddress]:
@@ -2556,9 +2586,11 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             fetch_after_create=fetch_after_create,
         )
 
+    # TODO: add support for cname by name (str) args!
+
     def update(
         self,
-        ref: int | CNAME,
+        cname: int | CNAME,
         *,
         host: int | str | Host | UNSET = UNSET,
         name: str | HostName | UNSET = UNSET,
@@ -2567,12 +2599,12 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         """Update a CNAME record's mutable fields. Pass ``ttl=None`` to reset to default.
 
         Args:
-            ref (int | CNAME): CNAME instance or numeric ID.
+            cname (int | CNAME): CNAME instance or numeric ID.
             host (int | str | Host | UNSET): New host reference. Omit to leave unchanged.
             name (str | HostName | UNSET): New alias name. Omit to leave unchanged.
             ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
-        cname = self._resolve(ref)
+        cname = self._resolve(cname)
         data: dict[str, Any] = {}
         if host is not UNSET:
             data["host"] = resolve_host_id(host, self._client)
@@ -2602,13 +2634,13 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         return obj
 
     def get_by_host_and_name(
-        self, host: int | str | Host, name: str, *, required: bool = True
+        self, host: int | str | Host, name: str | HostName, *, required: bool = True
     ) -> CNAME | None:
         """Get a CNAME record matching both the host and alias name.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
-            name (str): The alias name to look up.
+            name (str | HostName): The alias name to look up.
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
@@ -2662,7 +2694,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
         """Create an HInfo record.
 
         Args:
-            host (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host ID, name or instance.
             cpu (str): CPU hardware type string.
             os (str): Operating system string.
             fetch_after_create (bool): Whether to fetch and return the created object.
@@ -2672,7 +2704,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
 
     def update(
         self,
-        ref: int | HInfo,
+        hinfo: int | HInfo,
         *,
         cpu: str | UNSET = UNSET,
         os: str | UNSET = UNSET,
@@ -2680,11 +2712,11 @@ class HInfoManager(WriteResourceManager[HInfo]):
         """Update an HInfo record's mutable fields.
 
         Args:
-            ref (int | HInfo): HInfo instance or numeric ID.
+            hinfo (int | HInfo): HInfo instance or numeric ID.
             cpu (str | UNSET): New CPU hardware type string. Omit to leave unchanged.
             os (str | UNSET): New operating system string. Omit to leave unchanged.
         """
-        hinfo = self._resolve(ref)
+        hinfo = self._resolve(hinfo)
         data: dict[str, Any] = {}
         if cpu is not UNSET:
             data["cpu"] = cpu
@@ -2739,6 +2771,12 @@ class TXTManager(WriteResourceManager[TXT]):
         host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "txt": txt}, fetch_after_create=fetch_after_create)
 
+    # NOTE: This method does not follow the naming convention of other manager methods
+    # due to name collision with own field. The first positional arg is usually
+    # named after the resource type, but in this case one of the fields has
+    # the same name as the resource itself (txt) and can't be shortened further.
+    # This applies to many resource record types, since they often have
+    # fields named after themselves.
     def update(
         self,
         ref: int | TXT,
@@ -2906,7 +2944,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
 
     def update(
         self,
-        ref: int | NAPTR,
+        naptr: int | NAPTR,
         *,
         preference: int | UNSET = UNSET,
         order: int | UNSET = UNSET,
@@ -2918,7 +2956,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
         """Update a NAPTR record's mutable fields.
 
         Args:
-            ref (int | NAPTR): NAPTR instance or numeric ID.
+            naptr (int | NAPTR): NAPTR instance or numeric ID.
             preference (int | UNSET): New preference value. Omit to leave unchanged.
             order (int | UNSET): New order value. Omit to leave unchanged.
             flag (str | UNSET): New flag. Omit to leave unchanged.
@@ -2926,7 +2964,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             regex (str | UNSET): New regular expression. Omit to leave unchanged.
             replacement (str | UNSET): New replacement string. Omit to leave unchanged.
         """
-        naptr = self._resolve(ref)
+        naptr = self._resolve(naptr)
         data: dict[str, Any] = {}
         if preference is not UNSET:
             data["preference"] = preference
@@ -3001,7 +3039,7 @@ class SrvManager(WriteResourceManager[Srv]):
 
     def update(
         self,
-        ref: int | Srv,
+        srv: int | Srv,
         *,
         name: str | UNSET = UNSET,
         priority: int | UNSET = UNSET,
@@ -3012,14 +3050,14 @@ class SrvManager(WriteResourceManager[Srv]):
         """Update a SRV record's mutable fields. Pass ``ttl=None`` to reset to default.
 
         Args:
-            ref (int | Srv): Srv instance or numeric ID.
+            srv (int | Srv): Srv instance or numeric ID.
             name (str | UNSET): New service name. Omit to leave unchanged.
             priority (int | UNSET): New priority value. Omit to leave unchanged.
             weight (int | UNSET): New weight value. Omit to leave unchanged.
             port (int | UNSET): New port number. Omit to leave unchanged.
             ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
-        srv = self._resolve(ref)
+        srv = self._resolve(srv)
         data: dict[str, Any] = {}
         if name is not UNSET:
             data["name"] = name
@@ -3078,7 +3116,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
 
     def update(
         self,
-        ref: int | PTR_override,
+        ptr: int | PTR_override,
         *,
         host: int | str | Host | UNSET = UNSET,
         ipaddress: IP_AddressT | str | UNSET = UNSET,
@@ -3086,11 +3124,11 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         """Update a PTR override record's mutable fields.
 
         Args:
-            ref (int | PTR_override): PTR_override instance or numeric ID.
+            ptr (int | PTR_override): PTR_override instance or numeric ID.
             host (int | str | Host | UNSET): New host reference. Omit to leave unchanged.
             ipaddress (IP_AddressT | str | UNSET): New IP address. Omit to leave unchanged.
         """
-        ptr = self._resolve(ref)
+        ptr = self._resolve(ptr)
         data: dict[str, Any] = {}
         if host is not UNSET:
             data["host"] = resolve_host_id(host, self._client)
@@ -3154,7 +3192,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
 
     def update(
         self,
-        ref: int | SSHFP,
+        sshfp: int | SSHFP,
         *,
         algorithm: int | UNSET = UNSET,
         hash_type: int | UNSET = UNSET,
@@ -3164,13 +3202,13 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         """Update an SSHFP record's mutable fields. Pass ``ttl=None`` to reset to default.
 
         Args:
-            ref (int | SSHFP): SSHFP instance or numeric ID.
+            sshfp (int | SSHFP): SSHFP instance or numeric ID.
             algorithm (int | UNSET): New algorithm number. Omit to leave unchanged.
             hash_type (int | UNSET): New hash type number. Omit to leave unchanged.
             fingerprint (str | UNSET): New fingerprint. Omit to leave unchanged.
             ttl (int | None | UNSET): New TTL. Pass None to reset to default, omit to leave unchanged.
         """
-        sshfp = self._resolve(ref)
+        sshfp = self._resolve(sshfp)
         data: dict[str, Any] = {}
         if algorithm is not UNSET:
             data["algorithm"] = algorithm
@@ -3286,21 +3324,21 @@ class LocationManager(WriteResourceManager[Location]):
 
     def update(
         self,
-        ref: int | Location,
+        location: int | Location,
         *,
         loc: str | UNSET = UNSET,
     ) -> Location:
         """Update a LOC record's mutable fields.
 
         Args:
-            ref (int | Location): Location instance or numeric ID.
+            location (int | Location): Location instance or numeric ID.
             loc (str | UNSET): New LOC record value. Omit to leave unchanged.
         """
-        loc_obj = self._resolve(ref)
+        location = self._resolve(location)
         data: dict[str, Any] = {}
         if loc is not UNSET:
             data["loc"] = loc
-        return self._patch(loc_obj, data)
+        return self._patch(location, data)
 
     def get_by_host(self, host: int | str | Host, *, required: bool = True) -> Location | None:
         """Get the LOC record for a host.
@@ -3492,7 +3530,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
 
     def _ensure_deletable(self, zone: _ZoneT) -> None:
         """Raise if the zone has registered entries or subzones."""
-        # XXX: Not foolproof (e.g. SRVs are not hosts), parity with old Zone.ensure_deletable.
+        # XXX: Not foolproof (e.g. SRVs are not hosts), but added for parity with old Zone.ensure_deletable.
         hosts = self._client.host.list(zone=zone.id)
         if hosts:
             raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
@@ -3570,15 +3608,19 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
         return Endpoint.ReverseZones
 
 
+# NOTE: If we need to support resolving zones by ID, we must expose the sub managers
+# as public (standalone?) managers. Currently, we can't just make the existing
+# sub managers public, because their methods expect verified nameserver arguments (`VeriifedNS`),
+# which we only produce through a private function (_verify_nameservers).
 class ZoneManager:
     """Public facade over the forward/reverse zone managers (``client.zone``).
 
-    Zones split into forward/reverse only because their endpoints differ; the
-    distinction is an endpoint artifact, not a domain one. This facade dispatches by
-    zone-name shape and keeps the per-type managers private. See ADR-0007.
+    Zones split into forward/reverse, but are otherwise very similar in their APIs.
+    This manager delegates to the correct forward/reverse manager based on the name
+    or object types passed in to methods.
 
-    Methods that take an existing zone accept either an instance or a name (resolved
-    by name shape).
+    Similar to other managers, methods take names or instances, but crucially NOT IDs,
+    since we cannot distinguish between forward/reverse zones by ID alone.
     """
 
     def __init__(self, client: MregClient) -> None:
