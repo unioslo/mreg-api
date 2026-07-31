@@ -36,6 +36,7 @@ from typing import TypeVar
 from typing import overload
 
 from typing_extensions import Sentinel
+from typing_extensions import deprecated
 from typing_extensions import override
 
 from mreg_api.endpoints import Endpoint
@@ -313,8 +314,9 @@ class ResourceManager(Generic[T], ABC):
     def _fetch_by_path(self, value: str | int) -> T | None:
         """Fetch one object via its detail URL: ``GET /endpoint/{value}``.
 
-        ``value`` must be the URL path identifier (e.g. a hostname, network, or id).
+        ``value`` must be the URL path identifier (e.g. hostname, network, id, etc.).
         """
+        value = self._normalize_id(value)
         resp = self._client.get(self.endpoint.with_id(value), ok404=True)
         if not resp:
             return None
@@ -379,7 +381,6 @@ class ResourceManager(Generic[T], ABC):
         Returns:
             The resource, or ``None`` when `required` is False.
         """
-        ident = self._normalize_id(ident)
         obj: T | None = None
         try:
             obj = self._resolve(ident)
@@ -519,17 +520,23 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         return self._case_name(name)
 
     @override
-    def ensure_absent(self, ident: str | int) -> None:
-        """Assert that no resource with ``name`` exists.
+    def _resolve(self, ref: int | str | T) -> T:
+        # Resolve by name search if we have a str arg and the API resource path
+        # does not identify the resource by name, e.g.:
+        # `/labels/{id}` -> must search by name -> `/labels?name={name}`
+        if isinstance(ref, str) and self._path_field != self.name_field:
+            return self.get_by_name(ref)
+        return super()._resolve(ref)
 
-        The "must not exist" guard (replaces the old ``get_x_and_raise``); kept a
-        distinct verb rather than a return-typed-``None`` overload of :meth:`get`.
+    @override
+    def ensure_absent(self, ident: str | int) -> None:
+        """Assert that a given resource does not exist.
 
         Args:
             ident (str | int): The URL identifier or name to check.
 
         Raises:
-            EntityAlreadyExists: If a resource with `name` exists.
+            EntityAlreadyExists: If a resource with the given identifier exists.
         """
         if isinstance(ident, int):
             # If the identifier is an integer, we assume it's an ID and not a name.
@@ -540,11 +547,18 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         if self.get_by_name(ident, required=False) is not None:
             raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
-    # FIXME: Do we actually need an explicit name based lookup? Can we just use get_by_field() instead?
-    #       get() should IDEALLY handle the "primary" path i.e. the URL identifier.
-    #       So if we could do `client.host.get("ExAMple.com")` and it know that
-    #       the URL identifier is "name" and it should normalize the name, then we don't need
-    #       a separate get_by_name() method.
+    # FIXME: Do we actually need an explicit name based lookup?
+    #       Can we just override `get()` and use `fetch_by_field()` there?
+    #       There is some common abstraction for resolving name-based models that
+    #       that is waiting to be found. See: `_NamedResourceManager._resolve`, which
+    #       uses some basic heuristics to determine if it should fetch by name (using this method ironically),
+    #       or if it should fall back on the path-identifier based approach.
+    #
+    #       get() should IDEALLY handle the "primary" path i.e. the URL path identifier.
+    #       So if we could do `client.host.get("ExAMple.com")`, with the knowledge
+    #       that the class is aware that string arguments are names, which then normalizes
+    #       them like we do here, then we can remove this method entirely.
+    #       However, maybe it's fine to keep it to have an explicit name-only lookup?
     @overload
     def get_by_name(self, name: str, *, required: Literal[False]) -> T | None: ...
     @overload
@@ -568,6 +582,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
             raise EntityNotFound(f"{self.model.__name__} {name!r} not found.")
         return obj
 
+    # TODO: add str | int support for obj?
     def rename(self, obj: T, new_name: str) -> T:
         """Rename the resource.
 
@@ -968,17 +983,16 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         return self._create(data, fetch_after_create=fetch_after_create)
 
     # Not much to update here, but we implement update for future expansion + consistent interface
-    # TODO: add hostgroup by str (name) support
     def update(
         self,
-        hostgroup: int | HostGroup,
+        hostgroup: int | str | HostGroup,
         *,
         description: str | UNSET = UNSET,
     ) -> HostGroup:
         """Update a host group's mutable fields.
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
         group = self._resolve(hostgroup)
@@ -987,11 +1001,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             data["description"] = description
         return self._patch(group, data)
 
-    def set_description(self, hostgroup: int | HostGroup, description: str) -> HostGroup:
+    def set_description(self, hostgroup: int | str | HostGroup, description: str) -> HostGroup:
         """Set the description for the host group.
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
             description (str): New description to set.
         """
         hostgroup = self._resolve(hostgroup)
@@ -1003,11 +1017,16 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             return hostgroup.name
         return str(hostgroup)
 
-    def add_group(self, hostgroup: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
+    # TODO: Add int ID support for `subgroup` and `host` arguments in methods.
+    #       requires refactoring `_resolve_hostgroup_name` and `resolve_host_name`
+    #       to use `resolve_hostgroup` and `resolve_host` respectively, or
+    #       some other clever solution. Very low priority to fix that right now.
+
+    def add_group(self, hostgroup: int | str | HostGroup, subgroup: str | HostGroup) -> HostGroup:
         """Add a group to a host group.
 
         Args:
-            hostgroup (int | HostGroup): The parent HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): The parent HostGroup instance, name string, or numeric ID.
             subgroup (str | HostGroup): HostGroup instance or name string to add as a subgroup.
         """
         hostgroup = self._resolve(hostgroup)
@@ -1019,11 +1038,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         )
         return self._refetch(hostgroup)
 
-    def remove_group(self, hostgroup: int | HostGroup, subgroup: str | HostGroup) -> HostGroup:
+    def remove_group(self, hostgroup: int | str | HostGroup, subgroup: str | HostGroup) -> HostGroup:
         """Remove a group from a host group.
 
         Args:
-            hostgroup (int | HostGroup): The parent HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): The parent HostGroup instance, name string, or numeric ID.
             subgroup (str | HostGroup): HostGroup instance or name string to remove.
         """
         hostgroup = self._resolve(hostgroup)
@@ -1034,11 +1053,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         )
         return self._refetch(hostgroup)
 
-    def add_host(self, hostgroup: int | HostGroup, host: str | Host) -> HostGroup:
+    def add_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> HostGroup:
         """Add a host to a host group.
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
         """
         hostgroup = self._resolve(hostgroup)
@@ -1050,11 +1069,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         )
         return self._refetch(hostgroup)
 
-    def remove_host(self, hostgroup: int | HostGroup, host: str | Host) -> HostGroup:
+    def remove_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> HostGroup:
         """Remove a host from a host group.
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
             host (str | Host): Host reference (name string or Host instance).
         """
         hostgroup = self._resolve(hostgroup)
@@ -1065,11 +1084,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         )
         return self._refetch(hostgroup)
 
-    def add_owner(self, hostgroup: int | HostGroup, name: str) -> HostGroup:
+    def add_owner(self, hostgroup: int | str | HostGroup, name: str) -> HostGroup:
         """Add an owner to a host group.
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
             name (str): Name of the owner to add.
         """
         hostgroup = self._resolve(hostgroup)
@@ -1080,11 +1099,11 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         )
         return self._refetch(hostgroup)
 
-    def remove_owner(self, hostgroup: int | HostGroup, name: str) -> HostGroup:
+    def remove_owner(self, hostgroup: int | str | HostGroup, name: str) -> HostGroup:
         """Remove an owner from a host group.
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
             name (str): Name of the owner to remove.
         """
         hostgroup = self._resolve(hostgroup)
@@ -1095,13 +1114,13 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         return self._refetch(hostgroup)
 
     # RENAMED: get_all_parents -> list_parents
-    def list_parents(self, hostgroup: int | HostGroup) -> list[HostGroup]:
+    def list_parents(self, hostgroup: int | str | HostGroup) -> list[HostGroup]:
         """Get all parent groups of a host group.
 
         Renamed from `get_all_parents` to `list_parents`
 
         Args:
-            hostgroup (int | HostGroup): HostGroup instance or numeric ID.
+            hostgroup (int | str | HostGroup): HostGroup instance, name string, or numeric ID.
         """
         hostgroup = self._resolve(hostgroup)
         parents: list[HostGroup] = []
@@ -1166,17 +1185,16 @@ class LabelManager(NamedResourceManager[Label]):
         """
         return self._create({"name": name, "description": description}, fetch_after_create=False)
 
-    # TODO: add label by name (str) support!
     def update(
         self,
-        label: int | Label,
+        label: int | str | Label,
         *,
         description: str | UNSET = UNSET,
     ) -> Label:
         """Update a label's mutable fields.
 
         Args:
-            label (int | Label): Label instance or numeric ID.
+            label (int | str | Label): Label instance, numeric ID, or name string.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
         label = self._resolve(label)
@@ -1185,11 +1203,11 @@ class LabelManager(NamedResourceManager[Label]):
             data["description"] = description
         return self._patch(label, data)
 
-    def set_description(self, label: int | Label, description: str) -> Label:
+    def set_description(self, label: int | str | Label, description: str) -> Label:
         """Set the description for the label.
 
         Args:
-            label (int | Label): Label instance or numeric ID.
+            label (int | str | Label): Label instance, numeric ID, or name string.
             description (str): New description to set.
         """
         label = self._resolve(label)
@@ -1216,10 +1234,23 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     def history_resource(self) -> HistoryResource:
         return HistoryResource.HostPolicy_Role
 
-    def _resolve_atom_name(self, atom: str | Atom) -> str:
-        """Resolve an atom reference (instance or name) to a string name."""
+    def _get_atom(self, atom: str | int) -> Atom:
+        """Helper method to provide common interface to fetch an atom by name (str) or ID (int)."""
+        if isinstance(atom, int):
+            return AtomManager(self._client).get(atom)
+        return AtomManager(self._client).get_by_name(str(atom))
+
+    def _resolve_atom_name(self, atom: str | int | Atom) -> str:
+        """Resolve an atom reference (instance, numeric ID, or name) to a string name.
+
+        Fetches the atom from the API if an integer ID is provided, to ensure the name is valid.
+
+        Raises EntityNotFound if the atom does not exist when an integer ID is provided.
+        """
         if isinstance(atom, Atom):
             return atom.name
+        elif isinstance(atom, int):
+            return self._get_atom(atom).name
         return str(atom)
 
     def create(
@@ -1238,17 +1269,16 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
 
-    # TODO: add role by name (str) support!
     def update(
         self,
-        role: int | Role,
+        role: int | str | Role,
         *,
         description: str | UNSET = UNSET,
     ) -> Role:
         """Update a role's mutable fields.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
+            role (int | str | Role): Role instance, numeric ID, or name string.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
         role = self._resolve(role)
@@ -1257,11 +1287,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             data["description"] = description
         return self._patch(role, data)
 
-    def set_description(self, role: int | Role, description: str) -> Role:
+    def set_description(self, role: int | str | Role, description: str) -> Role:
         """Set the description for the role.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
+            role (int | str | Role): Role instance, numeric ID, or name string.
             description (str): New description to set.
         """
         role = self._resolve(role)
@@ -1279,26 +1309,26 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
         super().delete(obj)
 
-    def list_with_atom(self, atom: str | Atom) -> list[Role]:
+    def list_with_atom(self, atom: int | str | Atom) -> list[Role]:
         """List all roles that contain a given atom.
 
         Renamed from ``Role.get_roles_with_atom``.
 
         Args:
-            atom (str | Atom): Atom instance or name string.
+            atom (int | str | Atom): Atom instance, numeric ID, or name string.
         """
         atom_name = self._resolve_atom_name(atom)
         return self._fetch_list_by_field("atoms__name__exact", atom_name)
 
-    def add_atom(self, role: int | Role, atom: str | Atom) -> bool:
+    def add_atom(self, role: int | str | Role, atom: int | str | Atom) -> bool:
         """Add an atom to the role.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
-            atom (str | Atom): Atom instance or name string.
+            role (int | str | Role): Role instance, numeric ID, or name string.
+            atom (int | str | Atom): Atom instance, numeric ID, or name string.
 
         Returns:
-            bool: True if the atom was successfully removed.
+            bool: True if the atom was successfully added.
                 DEPRECATED: Maintains parity with older library versions.
                 Will never return False on failure; an exception is raised instead.
 
@@ -1308,7 +1338,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
-        _ = AtomManager(self._client).get_by_name(atom_name, required=True)
+        _ = self._get_atom(atom_name)  # ensure atom exists
         if atom_name in role.atoms:
             raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}")
         # TODO: need a better abstraction for endpoints that
@@ -1316,12 +1346,12 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self._client.post(Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name})
         return True
 
-    def remove_atom(self, role: int | Role, atom: str | Atom) -> bool:
+    def remove_atom(self, role: int | str | Role, atom: int | str | Atom) -> bool:
         """Remove an atom from the role.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
-            atom (str | Atom): Atom instance or name string.
+            role (int | str | Role): Role instance, numeric ID, or name string.
+            atom (int | str | Atom): Atom instance, numeric ID, or name string.
 
         Returns:
             bool: True if the atom was successfully removed.
@@ -1333,7 +1363,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
-        if atom_name not in role.atoms:
+        if atom_name not in role.atoms:  # NOTE: use a method for this? Casing, etc.
             raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
         self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
         return True
@@ -1372,11 +1402,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
         return True
 
-    def get_labels(self, role: int | Role) -> list[Label]:
+    def get_labels(self, role: int | str | Role) -> list[Label]:
         """Get the labels associated with the role.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
+            role (int | str | Role): Role instance, numeric ID, or name string.
         """
         role = self._resolve(role)
         labels = LabelManager(self._client)
@@ -1386,7 +1416,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """Add a label to the role.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
+            role (int | str | Role): Role instance, numeric ID, or name string.
             label (int | str | Label): Label instance, name, or numeric ID.
 
         Raises:
@@ -1462,17 +1492,16 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         """
         return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
 
-    # TODO: add atom by name (str) support!
     def update(
         self,
-        atom: int | Atom,
+        atom: int | str | Atom,
         *,
         description: str | UNSET = UNSET,
     ) -> Atom:
         """Update an atom's mutable fields.
 
         Args:
-            atom (int | Atom): Atom instance or numeric ID.
+            atom (int | str | Atom): Atom instance, name string, or numeric ID.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
         atom = self._resolve(atom)
@@ -1481,11 +1510,11 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
             data["description"] = description
         return self._patch(atom, data)
 
-    def set_description(self, atom: int | Atom, description: str) -> Atom:
+    def set_description(self, atom: int | str | Atom, description: str) -> Atom:
         """Set the description for the atom.
 
         Args:
-            atom (int | Atom): Atom instance or numeric ID.
+            atom (int | str | Atom): Atom instance, name string, or numeric ID.
             description (str): New description to set.
         """
         atom = self._resolve(atom)
@@ -1691,17 +1720,16 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         """
         return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
 
-    # NOTE/TODO: can we add attribute by name support? They are globally unique, right?
     def update(
         self,
-        attr: int | NetworkPolicyAttribute,
+        attr: int | str | NetworkPolicyAttribute,
         *,
         description: str | UNSET = UNSET,
     ) -> NetworkPolicyAttribute:
         """Update a network policy attribute's mutable fields.
 
         Args:
-            attr (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
+            attr (int | str | NetworkPolicyAttribute): NetworkPolicyAttribute instance, numeric ID, or name.
             description (str | UNSET): New description. Omit to leave unchanged.
         """
         attr = self._resolve(attr)
@@ -1710,21 +1738,23 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
             data["description"] = description
         return self._patch(attr, data)
 
-    def set_description(self, attr: int | NetworkPolicyAttribute, description: str) -> NetworkPolicyAttribute:
+    def set_description(
+        self, attr: int | str | NetworkPolicyAttribute, description: str
+    ) -> NetworkPolicyAttribute:
         """Set the description for the attribute.
 
         Args:
-            attr (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
+            attr (int | str | NetworkPolicyAttribute): NetworkPolicyAttribute instance, numeric ID, or name.
             description (str): New description to set.
         """
         attr = self._resolve(attr)
         return self.update(attr, description=description)
 
-    def get_policies(self, attr: int | NetworkPolicyAttribute) -> list[NetworkPolicy]:
+    def get_policies(self, attr: int | str | NetworkPolicyAttribute) -> list[NetworkPolicy]:
         """Get all network policies that use this attribute.
 
         Args:
-            attr (int | NetworkPolicyAttribute): NetworkPolicyAttribute instance or numeric ID.
+            attr (int | str | NetworkPolicyAttribute): NetworkPolicyAttribute instance, numeric ID, or name.
         """
         attr = self._resolve(attr)
         return self._client.get_typed(
@@ -1772,10 +1802,9 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             data["community_template_pattern"] = community_template_pattern
         return self._create(data, fetch_after_create=fetch_after_create)
 
-    # TODO: add policy by name (str) support
     def update(
         self,
-        policy: int | NetworkPolicy,
+        policy: int | str | NetworkPolicy,
         *,
         description: str | UNSET = UNSET,
         community_template_pattern: str | None | UNSET = UNSET,
@@ -1785,7 +1814,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         Pass ``community_template_pattern=None`` to unset it.
 
         Args:
-            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | str | NetworkPolicy): NetworkPolicy instance, numeric ID, or name string.
             description (str | UNSET): New description. Omit to leave unchanged.
             community_template_pattern (str | None | UNSET): New community name template pattern.
                 Pass None to unset, omit to leave unchanged.
@@ -1798,11 +1827,11 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             data["community_template_pattern"] = community_template_pattern
         return self._patch(policy, data)
 
-    def set_description(self, policy: int | NetworkPolicy, description: str) -> NetworkPolicy:
+    def set_description(self, policy: int | str | NetworkPolicy, description: str) -> NetworkPolicy:
         """Set the description for the policy.
 
         Args:
-            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | str | NetworkPolicy): NetworkPolicy instance, numeric ID, or name string.
             description (str): New description to set.
         """
         policy = self._resolve(policy)
@@ -1810,15 +1839,15 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
     def add_attribute(
         self,
-        policy: int | NetworkPolicy,
-        attr: NetworkPolicyAttribute,
+        policy: int | str | NetworkPolicy,
+        attr: str | NetworkPolicyAttribute,
         value: bool = True,
     ) -> NetworkPolicy:
         """Add an attribute to a policy.
 
         Args:
-            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
-            attr (NetworkPolicyAttribute): The attribute to add.
+            policy (int | str | NetworkPolicy): NetworkPolicy instance, numeric ID, or name string.
+            attr (str | NetworkPolicyAttribute): The attribute to add.
             value (bool): The boolean value to set for the attribute. Defaults to True.
 
         Raises:
@@ -1827,9 +1856,10 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         policy = self._resolve(policy)
 
         # NOTE: potential for mistakes to happen here! Can we rely on name matching via model method?
-        if policy.get_attribute(attr.name):
-            raise EntityAlreadyExists(f"Policy {policy.name!r} already has attribute {attr.name!r}.")
-        attrs = [*policy.attributes, NetworkPolicyAttributeValue(name=attr.name, value=value)]
+        attr = self._resolve_attribute_name(attr)
+        if policy.get_attribute(attr):
+            raise EntityAlreadyExists(f"Policy {policy.name!r} already has attribute {attr!r}.")
+        attrs = [*policy.attributes, NetworkPolicyAttributeValue(name=attr, value=value)]
         return self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
     def _resolve_attribute_name(self, attribute: str | NetworkPolicyAttribute) -> str:
@@ -1839,12 +1869,12 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         return str(attribute)
 
     def remove_attribute(
-        self, policy: int | NetworkPolicy, attribute: str | NetworkPolicyAttribute
+        self, policy: int | str | NetworkPolicy, attribute: str | NetworkPolicyAttribute
     ) -> NetworkPolicy:
         """Remove an attribute from a policy.
 
         Args:
-            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | str | NetworkPolicy): NetworkPolicy instance, numeric ID, or name string.
             attribute (str | NetworkPolicyAttribute): NetworkPolicyAttribute instance or name string.
 
         Raises:
@@ -1857,11 +1887,11 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         attrs = [a for a in policy.attributes if a.name != attribute_name]
         return self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
-    def networks(self, policy: int | NetworkPolicy) -> list[Network]:
+    def networks(self, policy: int | str | NetworkPolicy) -> list[Network]:
         """Get all networks that use this policy.
 
         Args:
-            policy (int | NetworkPolicy): NetworkPolicy instance or numeric ID.
+            policy (int | str | NetworkPolicy): NetworkPolicy instance, numeric ID, or name string.
         """
         policy = self._resolve(policy)
         return self._client.get_typed(Endpoint.Networks, list[Network], params={"policy": policy.id})
@@ -2415,6 +2445,7 @@ class NetworkManager(WriteResourceManager[Network]):
             end (str): The end IP address of the excluded range.
         """
         network = self._resolve(network)
+        # NOTE: should we actually perform this check client-side? Network object could be stale.
         exrange = next(
             (r for r in network.excluded_ranges if str(r.start_ip) == start and str(r.end_ip) == end),
             None,
@@ -2448,10 +2479,35 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
     def endpoint(self) -> Endpoint:
         return Endpoint.Ipaddresses
 
+    # TODO: add IP_AddressT support for `get()` (eventually...!)
+    #       Requires redefining overloads. Lots of boilerplate.
+
+    def _list_by_ip(self, ip: str) -> list[IPAddress]:
+        """Common interface for fetching all IPs matching a given IP address string.
+
+        Used by multiple methods. Avoids repeating `_fetch_list_by_field` calls everywhere.
+        """
+        return self._fetch_list_by_field("ipaddress", ip)
+
+    def _resolve(self, ref: int | str | IP_AddressT | IPAddress) -> IPAddress:
+        """Resolve an IP address argument by ID, name, stdlib IP address object or IPAddress object.
+
+        All argument types but IPAddress objects perform a GET call.
+        """
+        if isinstance(ref, str | IP_AddressT):
+            ipaddr = str(ref)
+            # NOTE: this is a bit of a hack, but we don't have a way to fetch by IP address directly
+            # so we fetch the list of IP addresses with this IP and return the first one.
+            ip_list = self._list_by_ip(ipaddr)
+            if not ip_list:
+                raise EntityNotFound(f"IP address {ipaddr!r} not found.")
+            return ip_list[0]
+        return super()._resolve(ref)
+
     def create(
         self,
         *,
-        ipaddress: IP_AddressT | str,
+        ipaddress: str | IP_AddressT,
         host: int | str | Host | None = None,
         macaddress: str | MacAddress | None = None,
         fetch_after_create: bool = True,
@@ -2459,8 +2515,8 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         """Create an IP address record.
 
         Args:
-            host (int | str | Host): Host instance or numeric ID.
-            ipaddress (IP_AddressT | str): The IP address to assign.
+            ipaddress (str | IP_AddressT): The IP address to assign.
+            host (int | str | Host): Host instance, name, or numeric ID.
             macaddress (str | MacAddress | None): Optional MAC address to associate. Pass None to omit.
             fetch_after_create (bool): Whether to fetch and return the created object.
         """
@@ -2471,10 +2527,9 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             data["host"] = resolve_host_id(host, self._client)
         return self._create(data, fetch_after_create=fetch_after_create)
 
-    # TODO: add support for ip by str and IP_AddressT objects!
     def update(
         self,
-        ip: int | IPAddress,
+        ip: int | str | IP_AddressT | IPAddress,
         *,
         ipaddress: IP_AddressT | str | UNSET = UNSET,
         macaddress: str | MacAddress | None | UNSET = UNSET,
@@ -2483,7 +2538,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         """Update an IP address record's mutable fields.
 
         Args:
-            ip (int | IPAddress): IPAddress instance or numeric ID.
+            ip (int | str | IP_AddressT | IPAddress): IPAddress instance, numeric ID, or IP address string.
             ipaddress (IP_AddressT | str | UNSET): New IP address. Omit to leave unchanged.
             macaddress (str | MacAddress | None | UNSET): New MAC address. Pass None to unset,
                 omit to leave unchanged.
@@ -2499,17 +2554,19 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             # TODO: decide if we can modify resolve_host_id to return int | None
             # on a general basis, or if it's only applicable here
             if host is not None:
-                host_id = resolve_host_id(host, self._client)  # pyright: ignore[reportArgumentType]
+                host_id = resolve_host_id(host, self._client)
             else:
                 host_id = host
             data["host"] = host_id
         return self._patch(ip, data)
 
-    def associate_mac(self, ip: int | IPAddress, mac: str | MacAddress, *, force: bool = False) -> IPAddress:
+    def associate_mac(
+        self, ip: int | str | IP_AddressT | IPAddress, mac: str | MacAddress, *, force: bool = False
+    ) -> IPAddress:
         """Associate a MAC address with an IP address.
 
         Args:
-            ip (int | IPAddress): IPAddress instance or numeric ID.
+            ip (int | str | IP_AddressT | IPAddress): IPAddress instance, numeric ID, or IP address string.
             mac (str | MacAddress): The MAC address to associate.
             force (bool): When True, skip safety checks and overwrite an existing MAC.
 
@@ -2521,11 +2578,11 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             raise EntityAlreadyExists(f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.")
         return self.update(ip, macaddress=mac)
 
-    def disassociate_mac(self, ip: int | IPAddress) -> IPAddress:
+    def disassociate_mac(self, ip: int | str | IP_AddressT | IPAddress) -> IPAddress:
         """Remove the MAC address from an IP address.
 
         Args:
-            ip (int | IPAddress): IPAddress instance or numeric ID.
+            ip (int | str | IP_AddressT | IPAddress): IPAddress instance, numeric ID, or IP address string.
         """
         ip = self._resolve(ip)
         return self.update(ip, macaddress=None)
@@ -2539,13 +2596,17 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
-    def list_by_ip(self, ip: IP_AddressT | str) -> list[IPAddress]:
+    def list_by_ip(self, ip: int | str | IP_AddressT | IPAddress) -> list[IPAddress]:
         """List all IP address records with a given IP address.
 
         Args:
             ip (IP_AddressT | str): The IP address to filter by.
         """
-        return self._fetch_list_by_field("ipaddress", str(ip))
+        if isinstance(ip, (str, IP_AddressT)):
+            ipaddr = str(ip)
+        else:
+            ipaddr = str(self._resolve(ip).ipaddress)
+        return self._list_by_ip(ipaddr)
 
     def list_by_mac(self, mac: str | MacAddress) -> list[IPAddress]:
         """List all IP address records with a given MAC address.
@@ -2572,8 +2633,14 @@ class CNAMEManager(NamedResourceManager[CNAME]):
     def endpoint(self) -> Endpoint:
         return Endpoint.Cnames
 
+    @override
     def _normalize_name(self, name: str) -> str:
+        # NOTE: this does not respect name casing defined by `name_lowercase`!
         return self._client.fqdn(name)
+
+    @override
+    def _normalize_id(self, ident: str | int) -> str | int:
+        return self._normalize_name(ident) if isinstance(ident, str) else ident
 
     def create(
         self,
@@ -2595,11 +2662,9 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             fetch_after_create=fetch_after_create,
         )
 
-    # TODO: add support for cname by name (str) args!
-
     def update(
         self,
-        cname: int | CNAME,
+        cname: int | str | CNAME,
         *,
         host: int | str | Host | UNSET = UNSET,
         name: str | HostName | UNSET = UNSET,
@@ -2880,6 +2945,55 @@ class MXManager(WriteResourceManager[MX]):
         host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("host", host_id)
 
+    @overload
+    def get_unique(
+        self, host: int | str | Host, mx: str, priority: int, *, required: Literal[False]
+    ) -> MX | None: ...
+    @overload
+    def get_unique(
+        self, host: int | str | Host, mx: str, priority: int, *, required: Literal[True] = ...
+    ) -> MX: ...
+    def get_unique(
+        self, host: int | str | Host, mx: str, priority: int, *, required: bool = True
+    ) -> MX | None:
+        """Get an MX record matching host, mx value, and priority.
+
+        Args:
+            host (int | str | Host): Host instance or numeric ID.
+            mx (str): The mail exchange hostname.
+            priority (int): The MX priority value.
+            required (bool): When True (default), raise EntityNotFound if not found.
+
+        Raises:
+            EntityNotFound: If no matching MX record exists and `required` is True.
+
+        Returns:
+            MX | None: The matching MX record, or None if not found and `required` is False.
+        """
+        host_id = resolve_host_id(host, self._client)
+        obj = self._client.get_list_unique(
+            self.endpoint,
+            params={"host": str(host_id), "mx": mx, "priority": str(priority)},
+            ok404=True,
+        )
+        if obj:
+            return MX.model_validate(obj)
+
+        if required:
+            raise EntityNotFound(f"MX {mx!r} with priority {priority} not found for host {host_id}.")
+        return None
+
+    # NOTE: This is a somewhat clumsy interface. It would be better if we had
+    # a get method that takes in `host`, `mx`, `priority` perhaps?
+    # Although that would remove the ability to fetch by ID (how common is that?)
+    # A similar method is named `get_by_triplet` in `PermissionManager`.
+    # Maybe a better general-purpose name would be something like `get_unique`? or something
+    #
+    # Alternatively, `get()` needs to be decoupled from `ResourceManager` and redesigned to
+    # have a bespoke implementation per-manager, with different parameters for each,
+    # denoting the "canonical" way to fetch the resource (name, triplet, etc.),
+    # and then move fetching by ID to a separate `get_by_id` method.
+    @deprecated('Use "get_unique" instead.')
     def get_by_all(self, host: int | str | Host, mx: str, priority: int) -> MX:
         """Get an MX record matching host, mx value, and priority.
 
@@ -2891,13 +3005,7 @@ class MXManager(WriteResourceManager[MX]):
         Raises:
             EntityNotFound: If no matching MX record exists.
         """
-        host_id = resolve_host_id(host, self._client)
-        obj = self._client.get_list_unique(
-            self.endpoint, params={"host": str(host_id), "mx": mx, "priority": str(priority)}
-        )
-        if not obj:
-            raise EntityNotFound(f"MX {mx!r} with priority {priority} not found for host {host_id}.")
-        return MX.model_validate(obj)
+        return self.get_unique(host, mx, priority)
 
 
 class NAPTRManager(WriteResourceManager[NAPTR]):
@@ -2989,6 +3097,88 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             data["replacement"] = replacement
         return self._patch(naptr, data)
 
+    # TODO: ensure overload is sound; does `= ...` capture both defaults and explicit str args?
+    @overload
+    def get_unique(
+        self,
+        host: int | str | Host,
+        preference: int,
+        order: int,
+        flag: str = ...,
+        service: str = ...,
+        regex: str = ...,
+        replacement: str = ...,
+        *,
+        required: Literal[False],
+    ) -> NAPTR | None: ...
+    @overload
+    def get_unique(
+        self,
+        host: int | str | Host,
+        preference: int,
+        order: int,
+        flag: str = ...,
+        service: str = ...,
+        regex: str = ...,
+        replacement: str = ...,
+        *,
+        required: Literal[True] = ...,
+    ) -> NAPTR: ...
+    def get_unique(
+        self,
+        host: int | str | Host,
+        preference: int,
+        order: int,
+        flag: str = "",
+        service: str = "",
+        regex: str = "",
+        replacement: str = "",
+        *,
+        required: bool = True,
+    ) -> NAPTR | None:
+        """Get a NAPTR record matching host, preference, order, flag, service, regex, and replacement.
+
+        Args:
+            host (int | str | Host): Host instance or numeric ID.
+            preference (int): The NAPTR preference value.
+            order (int): The NAPTR order value.
+            flag (str): The NAPTR flag. Defaults to "".
+            service (str): The NAPTR service. Defaults to "".
+            regex (str): The NAPTR regular expression. Defaults to "".
+            replacement (str): The NAPTR replacement string.
+            required (bool): When True (default), raise EntityNotFound if not found.
+
+        Raises:
+            EntityNotFound: If no matching NAPTR record exists and `required` is True.
+
+        Returns:
+            NAPTR | None: The matching NAPTR record, or None if not found and `required` is False.
+        """
+        host_id = resolve_host_id(host, self._client)
+        obj = self._client.get_list_unique(
+            self.endpoint,
+            params={
+                "host": str(host_id),
+                "preference": preference,
+                "order": order,
+                "flag": flag,
+                "service": service,
+                "regex": regex,
+                "replacement": replacement,
+            },
+            ok404=True,
+        )
+        if obj:
+            return NAPTR.model_validate(obj)
+
+        if required:
+            raise EntityNotFound(
+                f"NAPTR with preference {preference}, order {order}, flag {flag}, "  # pyright: ignore[reportImplicitStringConcatenation]
+                f"service {service}, regex {regex}, replacement {replacement} not found "
+                f"for host {host_id}."
+            )
+        return None
+
     def list_by_host(self, host: int | str | Host) -> list[NAPTR]:
         """List all NAPTR records for a host.
 
@@ -3011,6 +3201,60 @@ class SrvManager(WriteResourceManager[Srv]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.Srvs
+
+    @overload
+    def get_unique(
+        self,
+        *,
+        name: str,
+        priority: int,
+        weight: int,
+        port: int,
+        host: int | str | Host,
+        required: Literal[False],
+    ) -> Srv | None: ...
+    @overload
+    def get_unique(
+        self,
+        *,
+        name: str,
+        priority: int,
+        weight: int,
+        port: int,
+        host: int | str | Host,
+        required: Literal[True] = ...,
+    ) -> Srv: ...
+    def get_unique(
+        self,
+        *,
+        name: str,
+        priority: int,
+        weight: int,
+        port: int,
+        host: int | str | Host,
+        required: bool = True,
+    ) -> Srv | None:
+        """Get a SRV record matching name, priority, weight, port, and host."""
+        host_id = resolve_host_id(host, self._client)
+        obj = self._client.get_list_unique(
+            self.endpoint,
+            params={
+                "name": name,
+                "priority": priority,
+                "weight": weight,
+                "port": port,
+                "host": host_id,
+            },
+        )
+        if obj:
+            return Srv.model_validate(obj)
+
+        if required:
+            raise EntityNotFound(
+                f"SRV {name!r} with priority {priority}, weight {weight}, port {port} "  # pyright: ignore[reportImplicitStringConcatenation]
+                f"not found for host {host_id}."
+            )
+        return None
 
     def create(
         self,
@@ -3144,6 +3388,8 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
         return self._patch(ptr, data)
+
+    # NOTE: potential for `get_by_ip()` here, since ipaddress field is unique per record
 
     def list_by_host(self, host: int | str | Host) -> list[PTR_override]:
         """List all PTR override records for a host.
