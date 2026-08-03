@@ -169,7 +169,11 @@ def strip_none(data: JsonMapping) -> JsonMapping:
 def check_response(response: Response, operation_type: HTTPMethod, url: str) -> None:
     """Check the result of a request and raise on error."""
     if not response.is_success:
-        if response.status_code == 404:
+        # Produce a more helpful error message for 404s on endpoints that don't exist
+        if (
+            response.status_code == 404
+            and "The requested resource was not found on this server." in response.text
+        ):
             endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
             msg = (
                 f"Endpoint not found: '{endpoint}'\n"
@@ -838,9 +842,7 @@ class MregClient:
     @overload
     def get(self, path: str, *, params: QueryParams | None = None) -> Response: ...
 
-    def get(
-        self, path: str, *, params: QueryParams | None = None, ok404: bool = False
-    ) -> Response | None:
+    def get(self, path: str, *, params: QueryParams | None = None, ok404: bool = False) -> Response | None:
         """Make a standard get request."""
         if self.cache.is_enabled:
             cache_key = self._make_cache_key(path, params, ok404)
@@ -891,9 +893,7 @@ class MregClient:
     ) -> Response | None: ...
 
     @overload
-    def post(
-        self, path: str, *, json: Json | None = None, params: QueryParams | None = None
-    ) -> Response: ...
+    def post(self, path: str, *, json: Json | None = None, params: QueryParams | None = None) -> Response: ...
 
     @invalidate_cache
     def post(
@@ -1215,9 +1215,7 @@ class MregClient:
             if len(ret) == 0:
                 return {}
             if len(ret) > 1 and any(ret[0] != x for x in ret):
-                raise MultipleEntitiesFound(
-                    f"Expected a unique result, got {len(ret)} distinct results."
-                )
+                raise MultipleEntitiesFound(f"Expected a unique result, got {len(ret)} distinct results.")
             return ret[0]
         return ret
 
