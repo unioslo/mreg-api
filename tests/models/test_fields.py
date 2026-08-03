@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Literal
+
 import pytest
 from inline_snapshot import snapshot
 from pydantic import BaseModel
@@ -9,6 +11,7 @@ from mreg_api.exceptions import InputFailure
 from mreg_api.models.fields import HostNameField
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import NameList
+from mreg_api.models.fields import _normalize_mac_address  # pyright: ignore[reportPrivateUsage]
 from mreg_api.models.fields import parse_hostname
 
 
@@ -160,24 +163,105 @@ MacAddressValidationFailure = pytest.mark.xfail(raises=InputFailure, strict=True
 @pytest.mark.parametrize(
     "inp, expect",
     [
-        # 6-part colon-separated MAC addresses
+        # 6-octet colon-separated MAC addresses
         ("00:00:00:00:00:00", "00:00:00:00:00:00"),
         ("FF:FF:FF:FF:FF:FF", "ff:ff:ff:ff:ff:ff"),
         ("A1:B2:C3:D4:E5:F6", "a1:b2:c3:d4:e5:f6"),
         ("a1:b2:c3:d4:e5:f6", "a1:b2:c3:d4:e5:f6"),
         ("Ab:cD:eF:01:23:45", "ab:cd:ef:01:23:45"),
-        # 6-part hyphen-separated MAC addresses
+        # 6-octet hyphen-separated MAC addresses
         ("00-00-00-00-00-00", "00:00:00:00:00:00"),
         ("FF-FF-FF-FF-FF-FF", "ff:ff:ff:ff:ff:ff"),
         ("A1-B2-C3-D4-E5-F6", "a1:b2:c3:d4:e5:f6"),
         ("a1-b2-c3-d4-e5-f6", "a1:b2:c3:d4:e5:f6"),
         ("Ab-cD-eF-01-23-45", "ab:cd:ef:01:23:45"),
-        # 3-part dot-separated MAC addresses
+        # 6-octet dot-separated MAC addresses
         ("0000.0000.0000", "00:00:00:00:00:00"),
         ("FFFF.FFFF.FFFF", "ff:ff:ff:ff:ff:ff"),
         ("A1B2.C3D4.E5F6", "a1:b2:c3:d4:e5:f6"),
         ("a1b2.c3d4.e5f6", "a1:b2:c3:d4:e5:f6"),
         ("Ab12.cD34.eF56", "ab:12:cd:34:ef:56"),
+        # 8-octet colon-separated MAC addresses
+        ("00:00:00:00:00:00:00:00", "00:00:00:00:00:00:00:00"),
+        ("FF:FF:FF:FF:FF:FF:FF:FF", "ff:ff:ff:ff:ff:ff:ff:ff"),
+        ("A1:B2:C3:D4:E5:F6:07:08", "a1:b2:c3:d4:e5:f6:07:08"),
+        ("a1:b2:c3:d4:e5:f6:07:08", "a1:b2:c3:d4:e5:f6:07:08"),
+        ("Ab:cD:eF:01:23:45:67:89", "ab:cd:ef:01:23:45:67:89"),
+        # 8-octet hyphen-separated MAC addresses
+        ("00-00-00-00-00-00-00-00", "00:00:00:00:00:00:00:00"),
+        ("FF-FF-FF-FF-FF-FF-FF-FF", "ff:ff:ff:ff:ff:ff:ff:ff"),
+        ("A1-B2-C3-D4-E5-F6-07-08", "a1:b2:c3:d4:e5:f6:07:08"),
+        ("a1-b2-c3-d4-e5-f6-07-08", "a1:b2:c3:d4:e5:f6:07:08"),
+        ("Ab-cD-eF-01-23-45-67-89", "ab:cd:ef:01:23:45:67:89"),
+        # 8-octet dot-separated MAC addresses
+        ("0000.0000.0000.0000", "00:00:00:00:00:00:00:00"),
+        ("FFFF.FFFF.FFFF.FFFF", "ff:ff:ff:ff:ff:ff:ff:ff"),
+        ("A1B2.C3D4.E5F6.0708", "a1:b2:c3:d4:e5:f6:07:08"),
+        ("a1b2.c3d4.e5f6.0708", "a1:b2:c3:d4:e5:f6:07:08"),
+        ("Ab12.cD34.eF56.6789", "ab:12:cd:34:ef:56:67:89"),
+        # 20-octet colon-separated MAC addresses
+        (
+            "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+            "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+        ),
+        (
+            "FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF:FF",
+            "ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff",
+        ),
+        (
+            "A1:B2:C3:D4:E5:F6:07:08:09:0A:0B:0C:0D:0E:0F:10:11:12:13:14",
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+        ),
+        (
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+        ),
+        (
+            "Ab:cD:eF:01:23:45:67:89:0A:0b:Cd:eF:12:34:56:78:90:Ab:Cd:Ef",
+            "ab:cd:ef:01:23:45:67:89:0a:0b:cd:ef:12:34:56:78:90:ab:cd:ef",
+        ),
+        # 20-octet hyphen-separated MAC addresses
+        (
+            "00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00-00",
+            "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+        ),
+        (
+            "FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF-FF",
+            "ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff",
+        ),
+        (
+            "A1-B2-C3-D4-E5-F6-07-08-09-0A-0B-0C-0D-0E-0F-10-11-12-13-14",
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+        ),
+        (
+            "a1-b2-c3-d4-e5-f6-07-08-09-0a-0b-0c-0d-0e-0f-10-11-12-13-14",
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+        ),
+        (
+            "Ab-cD-eF-01-23-45-67-89-0A-0b-Cd-eF-12-34-56-78-90-Ab-Cd-Ef",
+            "ab:cd:ef:01:23:45:67:89:0a:0b:cd:ef:12:34:56:78:90:ab:cd:ef",
+        ),
+        # 20-octet dot-separated MAC addresses (10 groups of 4)
+        (
+            "0000.0000.0000.0000.0000.0000.0000.0000.0000.0000",
+            "00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00:00",
+        ),
+        (
+            "FFFF.FFFF.FFFF.FFFF.FFFF.FFFF.FFFF.FFFF.FFFF.FFFF",
+            "ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff:ff",
+        ),
+        (
+            "A1B2.C3D4.E5F6.0708.090A.0B0C.0D0E.0F10.1112.1314",
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+        ),
+        (
+            "a1b2.c3d4.e5f6.0708.090a.0b0c.0d0e.0f10.1112.1314",
+            "a1:b2:c3:d4:e5:f6:07:08:09:0a:0b:0c:0d:0e:0f:10:11:12:13:14",
+        ),
+        (
+            "Ab12.cD34.eF56.6789.0AbC.dEf1.2345.6789.0aBc.DeF0",
+            "ab:12:cd:34:ef:56:67:89:0a:bc:de:f1:23:45:67:89:0a:bc:de:f0",
+        ),
         # Invalid mac addresses
         pytest.param("00:00:00:00:00:00:00", "", marks=MacAddressValidationFailure),
         pytest.param("00:00:00:00:00", "", marks=MacAddressValidationFailure),
@@ -208,6 +292,77 @@ def test_mac_address_type(inp: str, expect: str) -> None:
     assert m.mac == expect
     assert isinstance(m.mac, str)
     assert not isinstance(m.mac, MacAddress)  # Core schema coerces this to str
+
+
+@pytest.mark.parametrize(
+    "macaddress,sep,expected",
+    [
+        # 6 octet
+        ("001122334455", ":", "00:11:22:33:44:55"),
+        ("001122334455", "-", "00-11-22-33-44-55"),
+        ("001122334455", ".", "0011.2233.4455"),
+        # 8 octet
+        ("0011223344556677", ":", "00:11:22:33:44:55:66:77"),
+        ("0011223344556677", "-", "00-11-22-33-44-55-66-77"),
+        ("0011223344556677", ".", "0011.2233.4455.6677"),
+        # 20 octet
+        (
+            "00112233445566778899aabbccddeeff00112233",
+            ":",
+            "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33",
+        ),
+        (
+            "00112233445566778899aabbccddeeff00112233",
+            "-",
+            "00-11-22-33-44-55-66-77-88-99-aa-bb-cc-dd-ee-ff-00-11-22-33",
+        ),
+        (
+            "00112233445566778899aabbccddeeff00112233",
+            ".",
+            "0011.2233.4455.6677.8899.aabb.ccdd.eeff.0011.2233",
+        ),
+    ],
+)
+def test__normalize_mac_address(macaddress: str, sep: Literal[":", "-", "."], expected: str) -> None:
+    """Test the _normalize_mac_address function with various MAC address formats and separators."""
+    assert _normalize_mac_address(macaddress, sep) == expected
+
+
+@pytest.mark.parametrize(
+    "macaddress",
+    [
+        # 6 octet
+        "00:11:22:33:44:55",
+        "00-11-22-33-44-55",
+        "0011.2233.4455",
+        # 8 octet
+        "0011:2233:4455:6677",
+        "00-11-22-33-44-55-66-77",
+        "0011.2233.4455.6677",
+        # 20 octet
+        "00:11:22:33:44:55:66:77:88:99:aa:bb:cc:dd:ee:ff:00:11:22:33",
+        "00-11-22-33-44-55-66-77-88-99-aa-bb-cc-dd-ee-ff-00-11-22-33",
+        "0011.2233.4455-66-77-88-99-aa-bb-cc-dd-ee-ff-00-11-22-33",
+    ],
+)
+@pytest.mark.parametrize(
+    "sep",
+    [
+        ":",
+        "-",
+        ".",
+    ],
+)
+def test__normalize_mac_address_existing_sep(
+    macaddress: str,
+    sep: Literal[":", "-", "."],
+) -> None:
+    """Test _normalize_mac_address function with MAC addresses that already contain separators.
+
+    The function should return the original MAC address unchanged regardless of the specified separator.
+    """
+    # unchanged
+    assert _normalize_mac_address(macaddress, sep) == macaddress
 
 
 def test_name_list_basic():
@@ -248,9 +403,7 @@ def test_name_list_with_invalid_item(caplog: pytest.LogCaptureFixture):
 
     assert m.model_dump(mode="json") == snapshot({"hosts": ["test1", "test3"]})
 
-    assert caplog.record_tuples == snapshot(
-        [("mreg_api.models.fields", 40, "No 'name' key in {'value': 2}")]
-    )
+    assert caplog.record_tuples == snapshot([("mreg_api.models.fields", 40, "No 'name' key in {'value': 2}")])
 
 
 def test_name_list_invalid_type():

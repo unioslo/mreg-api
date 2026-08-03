@@ -16,11 +16,13 @@ import logging
 import re
 from typing import Annotated
 from typing import Any
+from typing import Literal
 from typing import NewType
 
 from pydantic import AfterValidator
 from pydantic import BeforeValidator
 from pydantic_extra_types.mac_address import MacAddress as PydanticMacAddress
+from typing_extensions import override
 
 from mreg_api.exceptions import InputFailure
 from mreg_api.types import get_type_adapter
@@ -82,8 +84,49 @@ of granularity.
 """
 
 
+def _normalize_mac_address(
+    mac: str,
+    sep: Literal[":", "-", "."] = ":",
+) -> str:
+    """Normalize a MAC address to a format Pydantic can parse.
+
+    Does nothing if string already contains a MAC address separator or is not
+    12, 16, or 40 characters long (6, 8, or 20 octets).
+
+    Args:
+        mac (str): MAC address string.
+        sep (Literal[":", "-", "."], optional): Separator to use for normalization. Defaults to ":".
+
+    Returns:
+        str: Normalized MAC address string.
+    """
+    # NOTE: the optional separator is not strictly necessary.
+    # Pydantic can parse anything as long as it has one of the three separators.
+
+    chunk_size = 2  # default
+    size = len(mac)
+
+    # Must not contain separators and be 12, 16, or 40 characters long (6, 8, or 20 octets)
+    if any(sep in mac for sep in (":", "-", ".")) or size not in (12, 16, 40):
+        return mac  # nothing to do
+
+    # NOTE: 20 octet with dash (-) separators is not valid, but Pydantic
+    # is able to parse it, so we just transparently allow it here.
+
+    if sep == ".":
+        chunk_size = 4
+
+    return sep.join(mac[i : i + chunk_size] for i in range(0, size, chunk_size))
+
+
 class MacAddress(PydanticMacAddress):
     """MAC address string type used in Pydantic models."""
+
+    @classmethod
+    @override
+    def _validate(cls, __input_value: str, _: Any) -> str:
+        macaddr = _normalize_mac_address(__input_value)
+        return super()._validate(macaddr, _)
 
     @classmethod
     def parse(cls, obj: Any) -> MacAddress | None:
