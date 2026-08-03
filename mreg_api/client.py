@@ -11,7 +11,6 @@ from collections.abc import Generator
 from collections.abc import Mapping
 from contextlib import contextmanager
 from contextvars import ContextVar
-from contextvars import Token
 from enum import StrEnum
 from typing import Any
 from typing import Concatenate
@@ -50,50 +49,35 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
-from mreg_api.models import CNAME
-from mreg_api.models import MX
-from mreg_api.models import NAPTR
-from mreg_api.models import SSHFP
-from mreg_api.models import TXT
-from mreg_api.models import Atom
-from mreg_api.models import BacnetID
-from mreg_api.models import Community
-from mreg_api.models import Delegation
-from mreg_api.models import DhcpHostIPv4
-from mreg_api.models import DhcpHostIPv6
-from mreg_api.models import DhcpHostIPv6ByIPv4
-from mreg_api.models import ExcludedRange
-from mreg_api.models import ForwardZone
-from mreg_api.models import ForwardZoneDelegation
-from mreg_api.models import HealthInfo
-from mreg_api.models import HeartbeatHealth
-from mreg_api.models import HInfo
-from mreg_api.models import Host
-from mreg_api.models import HostCommunity
-from mreg_api.models import HostGroup
-from mreg_api.models import HostList
-from mreg_api.models import HostPolicy
-from mreg_api.models import IPAddress
-from mreg_api.models import Label
-from mreg_api.models import LDAPHealth
-from mreg_api.models import Location
-from mreg_api.models import NameServer
-from mreg_api.models import Network
-from mreg_api.models import NetworkPolicy
-from mreg_api.models import NetworkPolicyAttribute
-from mreg_api.models import NetworkPolicyAttributeValue
-from mreg_api.models import Permission
-from mreg_api.models import PTR_override
-from mreg_api.models import ReverseZone
-from mreg_api.models import ReverseZoneDelegation
-from mreg_api.models import Role
-from mreg_api.models import ServerLibraries
-from mreg_api.models import ServerVersion
-from mreg_api.models import Srv
-from mreg_api.models import UserInfo
-from mreg_api.models import Zone
-from mreg_api.models import ZoneFile
-from mreg_api.models.fields import hostname_domain
+from mreg_api.managers import AtomManager
+from mreg_api.managers import BacnetIDManager
+from mreg_api.managers import CNAMEManager
+from mreg_api.managers import DelegationManager
+from mreg_api.managers import DhcpHostIPv4Manager
+from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
+from mreg_api.managers import DhcpHostIPv6Manager
+from mreg_api.managers import HInfoManager
+from mreg_api.managers import HostGroupManager
+from mreg_api.managers import HostManager
+from mreg_api.managers import IPAddressManager
+from mreg_api.managers import LabelManager
+from mreg_api.managers import LocationManager
+from mreg_api.managers import MetaManagerNamespace
+from mreg_api.managers import MXManager
+from mreg_api.managers import NameServerManager
+from mreg_api.managers import NAPTRManager
+from mreg_api.managers import NetworkManager
+from mreg_api.managers import NetworkPolicyAttributeManager
+from mreg_api.managers import NetworkPolicyManager
+from mreg_api.managers import PermissionManager
+from mreg_api.managers import PTROverrideManager
+from mreg_api.managers import RoleManager
+from mreg_api.managers import SrvManager
+from mreg_api.managers import SSHFPManager
+from mreg_api.managers import TXTManager
+from mreg_api.managers import ZoneManager
+from mreg_api.models.fields import HostName
+from mreg_api.models.fields import parse_hostname
 from mreg_api.models.models import TokenAuth
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
@@ -120,25 +104,6 @@ class Header(StrEnum):
     AUTH = "Authorization"
     CORRELATION_ID = "X-Correlation-ID"
     REQUEST_ID = "X-Request-Id"
-
-
-class SingletonMeta(type):
-    """A metaclass for singleton classes."""
-
-    _instances: dict[type, object] = {}
-
-    def __call__(cls: type[Any], *args: Any, **kwargs: Any):
-        """Get the singleton instance of the class."""
-        if cls not in cls._instances:
-            cls._instances[cls] = super().__call__(*args, **kwargs)  # pyright: ignore[reportUnknownMemberType, reportAttributeAccessIssue] # TODO: fix typing for this
-        return cls._instances[cls]
-
-    def reset_instance(self) -> None:
-        """Reset the singleton instance (useful for testing)."""
-        try:
-            del self._instances[self]
-        except KeyError:
-            pass
 
 
 class RequestRecord(NamedTuple):
@@ -214,6 +179,11 @@ def check_response(response: Response, operation_type: HTTPMethod, url: str) -> 
             )
         else:
             msg = response.text
+
+        # Fall back on reason phrase if derived message is empty
+        if not msg:
+            msg = response.reason_phrase
+
         cls = determine_http_error_class(operation_type)
         raise cls(msg, response)
 
@@ -284,81 +254,165 @@ def validate_paginated_response(response: Response) -> PaginatedResponse:
         raise MregValidationError.from_pydantic(e, "paginated JSON") from e
 
 
-class MregClient(metaclass=SingletonMeta):
+class MregClient:
     """Client for interacting with MREG API.
 
     This client manages HTTP sessions, authentication, and provides
-    methods for making API requests. It is designed to be used as
-    a singleton.
+    methods for making API requests.
 
     Authentication modes:
     1. Token: Provide token directly via set_token()
     2. Username/password: Call login() with credentials
 
     Example:
-        >>> client = MregClient()
+        >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
         >>> client.login("username", "password")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
+        >>> hosts = client.host.list()
 
         Or with token:
-        >>> client = MregClient()
+        >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
         >>> client.set_token("your-token-here")
-        >>> from mreg_api.models import Host
-        >>> Host.get_by_any_means("example.uio.no")
     """
 
-    # Compose models on client for easy access
-    atom: type[Atom] = Atom
-    bacnet_id: type[BacnetID] = BacnetID
-    cname: type[CNAME] = CNAME
-    community: type[Community] = Community
-    delegation: type[Delegation] = Delegation
-    dhcp_host_ipv4: type[DhcpHostIPv4] = DhcpHostIPv4
-    dhcp_host_ipv6: type[DhcpHostIPv6] = DhcpHostIPv6
-    dhcp_host_ipv6byipv4: type[DhcpHostIPv6ByIPv4] = DhcpHostIPv6ByIPv4
-    excluded_range: type[ExcludedRange] = ExcludedRange
-    forward_zone: type[ForwardZone] = ForwardZone
-    forward_zone_delegation: type[ForwardZoneDelegation] = ForwardZoneDelegation
-    hinfo: type[HInfo] = HInfo
-    host: type[Host] = Host
-    host_community: type[HostCommunity] = HostCommunity
-    host_group: type[HostGroup] = HostGroup
-    host_list: type[HostList] = HostList
-    host_policy: type[HostPolicy] = HostPolicy
-    ip_address: type[IPAddress] = IPAddress
-    label: type[Label] = Label
-    location: type[Location] = Location
-    mx: type[MX] = MX
-    name_server: type[NameServer] = NameServer
-    naptr: type[NAPTR] = NAPTR
-    network: type[Network] = Network
-    network_policy: type[NetworkPolicy] = NetworkPolicy
-    network_policy_attribute: type[NetworkPolicyAttribute] = NetworkPolicyAttribute
-    network_policy_attribute_value: type[NetworkPolicyAttributeValue] = NetworkPolicyAttributeValue
-    permission: type[Permission] = Permission
-    ptr_override: type[PTR_override] = PTR_override
-    reverse_zone: type[ReverseZone] = ReverseZone
-    reverse_zone_delegation: type[ReverseZoneDelegation] = ReverseZoneDelegation
-    role: type[Role] = Role
-    srv: type[Srv] = Srv
-    sshfp: type[SSHFP] = SSHFP
-    txt: type[TXT] = TXT
-    zone: type[Zone] = Zone
-    zonefile: type[ZoneFile] = ZoneFile
+    @functools.cached_property
+    def atom(self) -> AtomManager:
+        """Manager for host policy atom resources."""
+        return AtomManager(self)
 
-    # Fetch-based types for meta endpoints
-    health_info: type[HealthInfo] = HealthInfo
-    heartbeat_health: type[HeartbeatHealth] = HeartbeatHealth
-    ldap_health: type[LDAPHealth] = LDAPHealth
-    server_libraries: type[ServerLibraries] = ServerLibraries
-    server_version: type[ServerVersion] = ServerVersion
-    user_info: type[UserInfo] = UserInfo
+    @functools.cached_property
+    def bacnetid(self) -> BacnetIDManager:
+        """Manager for BACnet ID resources."""
+        return BacnetIDManager(self)
+
+    @functools.cached_property
+    def cname(self) -> CNAMEManager:
+        """Manager for CNAME resources."""
+        return CNAMEManager(self)
+
+    @functools.cached_property
+    def delegation(self) -> DelegationManager:
+        """Manager for zone delegation resources."""
+        return DelegationManager(self)
+
+    @functools.cached_property
+    def dhcphostipv4(self) -> DhcpHostIPv4Manager:
+        """Manager for IPv4 DHCP host records."""
+        return DhcpHostIPv4Manager(self)
+
+    @functools.cached_property
+    def dhcphostipv6(self) -> DhcpHostIPv6Manager:
+        """Manager for IPv6 DHCP host records."""
+        return DhcpHostIPv6Manager(self)
+
+    @functools.cached_property
+    def dhcphostipv6byipv4(self) -> DhcpHostIPv6ByIPv4Manager:
+        """Manager for IPv6-via-IPv4 DHCP host records."""
+        return DhcpHostIPv6ByIPv4Manager(self)
+
+    @functools.cached_property
+    def hinfo(self) -> HInfoManager:
+        """Manager for HINFO resources."""
+        return HInfoManager(self)
+
+    @functools.cached_property
+    def host(self) -> HostManager:
+        """Manager for host resources."""
+        return HostManager(self)
+
+    @functools.cached_property
+    def hostgroup(self) -> HostGroupManager:
+        """Manager for host group resources."""
+        return HostGroupManager(self)
+
+    @functools.cached_property
+    def ipaddress(self) -> IPAddressManager:
+        """Manager for IP address resources."""
+        return IPAddressManager(self)
+
+    @functools.cached_property
+    def label(self) -> LabelManager:
+        """Manager for label resources."""
+        return LabelManager(self)
+
+    @functools.cached_property
+    def location(self) -> LocationManager:
+        """Manager for location resources."""
+        return LocationManager(self)
+
+    @functools.cached_property
+    def meta(self) -> MetaManagerNamespace:
+        """Manager for meta endpoints."""
+        return MetaManagerNamespace(self)
+
+    @functools.cached_property
+    def mx(self) -> MXManager:
+        """Manager for MX record resources."""
+        return MXManager(self)
+
+    @functools.cached_property
+    def nameserver(self) -> NameServerManager:
+        """Manager for nameserver resources (read-only)."""
+        return NameServerManager(self)
+
+    @functools.cached_property
+    def naptr(self) -> NAPTRManager:
+        """Manager for NAPTR record resources."""
+        return NAPTRManager(self)
+
+    @functools.cached_property
+    def network(self) -> NetworkManager:
+        """Manager for network resources."""
+        return NetworkManager(self)
+
+    @functools.cached_property
+    def networkpolicy(self) -> NetworkPolicyManager:
+        """Manager for network policy resources."""
+        return NetworkPolicyManager(self)
+
+    @functools.cached_property
+    def networkpolicyattribute(self) -> NetworkPolicyAttributeManager:
+        """Manager for network policy attribute resources."""
+        return NetworkPolicyAttributeManager(self)
+
+    @functools.cached_property
+    def permission(self) -> PermissionManager:
+        """Manager for permission resources."""
+        return PermissionManager(self)
+
+    @functools.cached_property
+    def ptroverride(self) -> PTROverrideManager:
+        """Manager for PTR override resources."""
+        return PTROverrideManager(self)
+
+    @functools.cached_property
+    def role(self) -> RoleManager:
+        """Manager for host policy role resources."""
+        return RoleManager(self)
+
+    @functools.cached_property
+    def srv(self) -> SrvManager:
+        """Manager for SRV record resources."""
+        return SrvManager(self)
+
+    @functools.cached_property
+    def sshfp(self) -> SSHFPManager:
+        """Manager for SSHFP record resources."""
+        return SSHFPManager(self)
+
+    @functools.cached_property
+    def txt(self) -> TXTManager:
+        """Manager for TXT record resources."""
+        return TXTManager(self)
+
+    @functools.cached_property
+    def zone(self) -> ZoneManager:
+        """Manager for forward/reverse zone resources."""
+        return ZoneManager(self)
 
     def __init__(
         self,
-        url: str = "https://mreg.uio.no",
-        domain: str = "uio.no",
+        url: str,
+        domain: str | None = None,
         user: str | None = None,
         timeout: int | float | None = 60,
         cache: CacheConfig | bool = False,
@@ -368,7 +422,7 @@ class MregClient(metaclass=SingletonMeta):
         event_log_size: int | None = 100,
         user_agent: str | None = None,
     ) -> None:
-        """Initialize the client (only once for singleton)."""
+        """Initialize the client."""
         if not user_agent:
             user_agent = f"mreg-api-{__version__}"
         self.session: httpx.Client = httpx.Client(
@@ -378,7 +432,7 @@ class MregClient(metaclass=SingletonMeta):
         )
 
         self.url: str = url
-        self._domain: str = domain  # Store initial domain for reset
+        self.domain: str | None = domain
         self._page_size: int | None = page_size
         self.user: str | None = user
 
@@ -392,8 +446,6 @@ class MregClient(metaclass=SingletonMeta):
         self._token: str | None = None
         self.history: deque[RequestRecord] = deque(maxlen=history_size)
         self.events: EventLog = EventLog(max_size=event_log_size)
-        self._original_domain_token: Token[str] = self.set_domain(self._domain)
-        self._reset_contextvars()
 
     @property
     def timeout(self) -> float | None:
@@ -415,46 +467,31 @@ class MregClient(metaclass=SingletonMeta):
         _ = last_request_url.set(None)
         _ = last_request_method.set(None)
 
-    def set_domain(self, domain: str) -> Token[str]:
-        """Set the default domain for hostname validation.
+    def fqdn(self, name: str) -> HostName:
+        """Normalise and expand a hostname using this client's configured domain.
 
-        Args:
-            domain (str): The domain to set for hostname validation.
+        Not _technically_ a FQDN, since we don't include a trailing dot,
+        but that's not a concept MREG operates on anyway.
         """
-        return hostname_domain.set(domain)
-
-    def get_domain(self) -> str:
-        """Get the current hostname domain used for validation.
-
-        Returns:
-            The current hostname domain.
-        """
-        return hostname_domain.get()
-
-    def reset_domain(self) -> None:
-        """Reset the hostname domain to the value from client initialization."""
-        _ = hostname_domain.set(self._domain)
+        return parse_hostname(name, self.domain)
 
     @contextmanager
-    def domain_override(self, domain: str) -> Generator[None, None, None]:
-        """Temporarily override the hostname domain.
+    def domain_override(self, domain: str | None) -> Generator[None, None, None]:
+        """Temporarily override the hostname domain used by :meth:`fqdn`.
 
         Args:
-            domain (str): The domain to use within the context.
+            domain: The domain to use within the context.
 
         Example:
             >>> with client.domain_override("example.com"):
-            ...     # hostname validation uses example.com here
-            ...     pass
-            >>> # hostname validation uses the original domain again
+            ...     client.fqdn("web")  # → "web.example.com"
         """
-        # Save token to support nested contexts purely for correctness reasons.
-        # It's unclear why one would ever want to use nested domain overrides.
-        token = hostname_domain.set(domain)
+        old = self.domain
+        self.domain = domain
         try:
             yield
         finally:
-            hostname_domain.reset(token)
+            self.domain = old
 
     def _get_cache_tag(self) -> str:
         """Get the cache tag for this client."""
@@ -716,10 +753,11 @@ class MregClient(metaclass=SingletonMeta):
             params = None
         else:
             params = params or {}
-            # Add default params if we are passing in params
-            if self._page_size:
-                # Add page_size to params if set and not paginating
-                _ = params.setdefault("page_size", self._page_size)
+            # Add default GET params if we are passing in params
+            # Only passes default params to GET requests while NOT paginating
+            if method == "GET":
+                if self._page_size:
+                    _ = params.setdefault("page_size", self._page_size)
 
         url = urljoin(self.url, path)
 
@@ -1061,11 +1099,17 @@ class MregClient(metaclass=SingletonMeta):
         except ValidationError as e:
             raise MregValidationError.from_pydantic(e, "JSON mapping") from e
 
-    def get_first(self, path: str) -> JsonMapping | None:
+    def get_first(self, path: str, params: QueryParams | None = None) -> JsonMapping | None:
         """Get the first item from a list endpoint."""
-        response = self.get(path, params={"page_size": 1})
+        if params is None:
+            params = {}
 
-        # Non-paginated results, return them directly
+        # Set a default page size of 1 to minimize data transfer.
+        # Callers may override this (but they really shouldn't!)
+        params.setdefault("page_size", 1)
+
+        response = self.get(path, params=params)
+
         if "count" not in response.text:
             content = validate_list_response(response)
         else:
@@ -1073,6 +1117,7 @@ class MregClient(metaclass=SingletonMeta):
             content = resp.results
         if not content:
             return None
+        # Ensure that the first item is a mapping (dictionary)
         return JsonMappingValidator.validate_python(content[0])
 
     def get_count(self, path: str) -> int:
@@ -1155,6 +1200,7 @@ class MregClient(metaclass=SingletonMeta):
         resp = validate_paginated_response(response)
 
         if limit and resp.count > abs(limit):
+            # TODO: append to error message that limit can be increased/disabled
             raise TooManyResults(f"Too many hits ({resp.count}), please refine your search criteria.")
 
         # Iterate over all pages and collect the results

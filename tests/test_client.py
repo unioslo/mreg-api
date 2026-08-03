@@ -16,44 +16,27 @@ from mreg_api.__about__ import __version__
 from mreg_api.client import MregClient
 from mreg_api.client import check_response
 from mreg_api.client import strip_none
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
-from mreg_api.models.fields import HostName
-from mreg_api.models.fields import hostname_domain
+from mreg_api.managers import HostManager
 from mreg_api.models.models import Host
 from mreg_api.types import HTTPMethod
 
 
-def test_client_singleton() -> None:
-    client1 = MregClient(url="http://example.com", domain="example.com", timeout=30)
-    client2 = MregClient()
-    assert client1 is client2
-
-
-def test_client_reset_instance() -> None:
-    client1 = MregClient()
-    MregClient.reset_instance()
-    client2 = MregClient()
-    assert client1 is not client2
-
-
 def test_client_user_agent() -> None:
     """Test MregClient `user_agent` parameter."""
-    # No user agent specified - should use default
     expect = f"mreg-api-{__version__}"
     client = MregClient(url="http://example.com", domain="example.com")
     assert client.session.headers["User-Agent"] == expect
 
-    MregClient.reset_instance()
-
-    # Custom user agent specified
     custom_agent = "my-custom-agent/1.0"
-    client = MregClient(url="http://example.com", domain="example.com", user_agent=custom_agent)
-    assert client.session.headers["User-Agent"] == custom_agent
+    client2 = MregClient(url="http://example.com", domain="example.com", user_agent=custom_agent)
+    assert client2.session.headers["User-Agent"] == custom_agent
 
 
 def test_client_caching(httpserver: HTTPServer) -> None:
@@ -78,10 +61,10 @@ def test_client_caching(httpserver: HTTPServer) -> None:
 
     init_endpoint()
     # First fetch - should hit the server
-    hosts1 = Host.get_list()
+    hosts1 = client.host.list()
 
     # Second fetch - should use the cache
-    hosts2 = Host.get_list()
+    hosts2 = client.host.list()
 
     assert hosts1 == hosts2
 
@@ -90,16 +73,16 @@ def test_client_caching(httpserver: HTTPServer) -> None:
     init_endpoint()
 
     # First fetch - should hit the server
-    resp = client.get(str(Host.endpoint()), params=None, ok404=False)
+    resp = client.get(str(Endpoint.Hosts), params=None, ok404=False)
 
     # Ensure that trying to access the endpoint now raises an exception (oneshot)
     with pytest.raises(GetError) as exc_info:
-        client._do_get(str(Host.endpoint()), params=None, ok404=False)
+        client._do_get(str(Endpoint.Hosts), params=None, ok404=False)
     assert "No handler found" in exc_info.value.response.text
     assert exc_info.value.response.status_code == snapshot(500)
 
     # We know the endpoint doesn't work, so this is certain to go via the cache
-    resp2 = client.get(str(Host.endpoint()), params=None, ok404=False)
+    resp2 = client.get(str(Endpoint.Hosts), params=None, ok404=False)
 
     assert resp.content == resp2.content
     assert resp.json() == snapshot(
@@ -138,11 +121,11 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         {"detail": "Mutation successful"}
     )
 
-    hosts_pre_mutation = Host.get_list()
+    hosts_pre_mutation = client.host.list()
     assert len(hosts_pre_mutation) == 1
 
     # Assert we can access the cached data
-    hosts_pre_mutation_cached = Host.get_list()
+    hosts_pre_mutation_cached = client.host.list()
     assert len(hosts_pre_mutation_cached) == 1
 
     # We don't care about the mutation response or respecting what it would actually do
@@ -175,7 +158,7 @@ def test_client_cache_invalidate_on_mutation(httpserver: HTTPServer, method: str
         ]
     )
 
-    hosts_post_mutation = Host.get_list()
+    hosts_post_mutation = client.host.list()
     assert len(hosts_post_mutation) == 2
 
 
@@ -196,7 +179,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
             }
         ]
     )
-    hosts1 = Host.get_list()
+    hosts1 = client.host.list()
     assert len(client.get_client_history()) == 1
 
     # Perform same fetches within the context manager - should bypass cache
@@ -221,7 +204,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
                 },
             ]
         )
-        hosts2 = Host.get_list()
+        hosts2 = client.host.list()
         assert len(client.get_client_history()) == 2
 
         assert len(hosts1) == 1
@@ -231,7 +214,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     info_pre = client.get_cache_info()
     assert info_pre is not None
 
-    hosts3 = Host.get_list()
+    hosts3 = client.host.list()
     assert len(client.get_client_history()) == 2  # History unchanged
     assert len(hosts3) == len(hosts1) == 1
 
@@ -260,7 +243,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
                 }
             ]
         )
-        hosts1 = Host.get_list()
+        hosts1 = client.host.list()
         assert len(client.get_client_history()) == 1
 
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
@@ -284,7 +267,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             ]
         )
         # Second fetch should hit the cache - not the new handler
-        hosts2 = Host.get_list()
+        hosts2 = client.host.list()
         assert len(client.get_client_history()) == 1
         assert len(hosts1) == len(hosts2) == 1
 
@@ -309,7 +292,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             },
         ]
     )
-    hosts3 = Host.get_list()
+    hosts3 = client.host.list()
     assert len(client.get_client_history()) == 2
     assert len(hosts3) == 2
 
@@ -633,125 +616,86 @@ def test_client_get_list_unique_invalid_json(httpserver: HTTPServer, client: Mre
     assert "Failed to validate JSON mapping" in exc_msg
 
 
-def test_client_set_domain() -> None:
-    """set_domain changes the hostname domain used for validation."""
+def test_client_fqdn_expands_bare_hostname() -> None:
+    """Fqdn appends the client domain to bare hostnames."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert hostname_domain.get() == "example.com"
-    assert HostName.validate_hostname("myhost") == "myhost.example.com"
-
-    client.set_domain("other.org")
-    assert client.get_domain() == "other.org"
-    assert client.get_domain() == hostname_domain.get()
-    assert HostName.validate_hostname("myhost") == "myhost.other.org"
+    assert client.fqdn("myhost") == "myhost.example.com"
 
 
-def test_client_reset_domain() -> None:
-    """reset_domain restores the hostname domain to the value from initialization."""
-    assert hostname_domain.get() == snapshot("uio.no")  # default domain
-
+def test_client_fqdn_passes_through_qualified() -> None:
+    """Fqdn does not alter hostnames that already contain a dot."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert hostname_domain.get() == "example.com"
-
-    # Set another domain
-    client.set_domain("other.org")
-    assert hostname_domain.get() == "other.org"
-
-    # Reset to original
-    client.reset_domain()
-    assert client.get_domain() == snapshot("example.com")
-
-    # Can be called multiple times (also in destructor)
-    client.reset_domain()
-    client.reset_domain()
-    assert client.get_domain() == snapshot("example.com")
+    assert client.fqdn("myhost.other.org") == "myhost.other.org"
 
 
-def test_client_reset_domain_after_multiple_set_domain() -> None:
-    """reset_domain always restores to the initialization value, not the previous value."""
+def test_client_fqdn_strips_trailing_dot() -> None:
+    """Fqdn strips trailing dot then returns as-is (already qualified)."""
     client = MregClient(url="http://example.com", domain="example.com")
+    assert client.fqdn("myhost.example.com.") == "myhost.example.com"
 
-    client.set_domain("first.org")
-    client.set_domain("second.org")
-    client.set_domain("third.org")
-    assert client.get_domain() == "third.org"
-    assert client.get_domain() == hostname_domain.get()
 
-    # reset_domain should go back to example.com, not third.org or second.org
-    client.reset_domain()
-    assert client.get_domain() == "example.com"
-    assert client.get_domain() == hostname_domain.get()
+def test_client_fqdn_bare_no_domain() -> None:
+    """Fqdn returns bare hostname when no domain is configured."""
+    client = MregClient(url="http://example.com", domain="")
+    assert client.fqdn("myhost") == "myhost"
 
 
 def test_client_domain_override_context_manager() -> None:
     """domain_override temporarily changes the hostname domain within a context."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert client.get_domain() == "example.com"
+    assert client.domain == "example.com"
 
     with client.domain_override("temp.net"):
-        assert client.get_domain() == "temp.net"
-        assert HostName.validate_hostname("myhost") == "myhost.temp.net"
+        assert client.domain == "temp.net"
+        assert client.fqdn("myhost") == "myhost.temp.net"
 
-    # After exiting context, domain should be restored
-    assert client.get_domain() == "example.com"
-    assert HostName.validate_hostname("myhost") == "myhost.example.com"
+    assert client.domain == "example.com"
+    assert client.fqdn("myhost") == "myhost.example.com"
 
 
 def test_client_domain_override_restores_on_exception() -> None:
     """domain_override restores the domain even when an exception occurs."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert client.get_domain() == "example.com"
 
     with pytest.raises(ValueError, match="test error"):
         with client.domain_override("temp.net"):
-            assert client.get_domain() == "temp.net"
+            assert client.domain == "temp.net"
             raise ValueError("test error")
 
-    # Domain should still be restored after exception
-    assert client.get_domain() == "example.com"
+    assert client.domain == "example.com"
 
 
 def test_client_domain_override_nested() -> None:
     """Nested domain_override contexts work correctly."""
     client = MregClient(url="http://example.com", domain="example.com")
-    assert client.get_domain() == "example.com"
 
     with client.domain_override("outer.org"):
-        assert client.get_domain() == "outer.org"
+        assert client.domain == "outer.org"
 
         with client.domain_override("inner.net"):
-            assert client.get_domain() == "inner.net"
+            assert client.domain == "inner.net"
 
-        # After inner context exits, should restore to outer value
-        assert client.get_domain() == "outer.org"
+        assert client.domain == "outer.org"
 
-    # After outer context exits, should restore to original
-    assert client.get_domain() == "example.com"
+    assert client.domain == "example.com"
 
 
-def test_client_domain_override_after_set_domain() -> None:
-    """domain_override works correctly after set_domain has been called."""
+def test_client_domain_direct_assignment() -> None:
+    """Domain attribute can be changed directly."""
     client = MregClient(url="http://example.com", domain="example.com")
-
-    client.set_domain("changed.org")
-    assert client.get_domain() == "changed.org"
+    client.domain = "changed.org"
+    assert client.fqdn("web") == "web.changed.org"
 
     with client.domain_override("temp.net"):
-        assert client.get_domain() == "temp.net"
+        assert client.domain == "temp.net"
 
-    # After context exits, should restore to the value before the context (changed.org)
-    assert client.get_domain() == "changed.org"
-
-    # reset_domain should still restore to original initialization value
-    client.reset_domain()
-    assert client.get_domain() == "example.com"
+    assert client.domain == "changed.org"
 
 
 def test_client_model_composition(client: MregClient, httpserver: HTTPServer) -> None:
-    """MregClient has models composed as attributes for easy access."""
-    assert hasattr(client, "host")
-    assert client.host is Host
+    """MregClient exposes all resource managers as cached_property attributes."""
+    assert isinstance(client.host, HostManager)
 
-    # Test that we can use the composed model to make requests
     httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_json(
         [
             {
@@ -765,7 +709,7 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
         ]
     )
 
-    assert client.host.get_list() == snapshot(
+    assert client.host.list() == snapshot(
         [
             Host(
                 created_at=datetime.datetime(2024, 1, 1, 0, 0, tzinfo=datetime.UTC),
@@ -779,49 +723,6 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
     )
 
 
-def _to_snake_case(name: str) -> str:
-    special_cases: dict[str, str] = {
-        "BacnetID": "bacnet_id",
-        "CNAME": "cname",
-        "HInfo": "hinfo",
-        "IPAddress": "ip_address",
-        "LDAPHealth": "ldap_health",
-        "MX": "mx",
-        "NAPTR": "naptr",
-        "PTR_override": "ptr_override",
-        "SSHFP": "sshfp",
-        "TXT": "txt",
-        "DhcpHostIPv4": "dhcp_host_ipv4",
-        "DhcpHostIPv6": "dhcp_host_ipv6",
-        "DhcpHostIPv6ByIPv4": "dhcp_host_ipv6byipv4",
-    }
-    if name in special_cases:
-        return special_cases[name]
-    return "".join(["_" + c.lower() if c.isupper() else c for c in name]).lstrip("_")
-
-
-def _client_models() -> list[type]:
-    client_models: list[type] = []
-    for model in models.__all__:
-        model_cls = getattr(models, model)
-        if not isinstance(model_cls, type):
-            continue  # Skip exported names that aren't classes
-        elif inspect.isabstract(model_cls):  # Skip any ABCs that are exported
-            continue
-        # All models with a get or fetch method should be accessible via the client
-        if any(hasattr(model_cls, attr) for attr in ["get", "fetch"]):
-            client_models.append(model_cls)
-    return client_models
-
-
-@pytest.mark.parametrize("model", _client_models())
-def test_client_model_composition_dynamic(model: type, client: MregClient) -> None:
-    """Ensure all models with get/fetch are accessible via client attributes."""
-    attr_name = _to_snake_case(model.__name__)
-    assert hasattr(client, attr_name)
-    assert getattr(client, attr_name) is model
-
-
 def test_exported_abcs() -> None:
     """Snapshot test to verify which ABCs are exported from the models module."""
     abcs: list[str] = []  # names
@@ -829,7 +730,7 @@ def test_exported_abcs() -> None:
         obj = getattr(models, name)
         if inspect.isabstract(obj):
             abcs.append(name)
-    assert abcs == snapshot(["DhcpHost", "HostPolicy"])
+    assert abcs == snapshot([])
 
 
 @pytest.mark.parametrize(

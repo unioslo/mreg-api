@@ -23,7 +23,7 @@ classifiers = [
 ]
 dependencies = [
     "httpx[socks]>=0.28.1",
-    'typing_extensions>=4.12.0',
+    "typing-extensions>=4.16.0",
     "pydantic>=2.12",
     "pydantic-extra-types>=2.1.0",
     "diskcache>=5.6.3",
@@ -44,7 +44,7 @@ dev = [
     "setuptools",
     "setuptools-scm",
     "build",
-    "basedpyright>=1.37.1",
+    "basedpyright>=1.39.8",
     "pytest-cov>=7.0.0",
 ]
 
@@ -63,7 +63,7 @@ profile = "black"
 line_length = 99
 
 [tool.ruff]
-line-length = 105
+line-length = 110
 # Assume Python 3.11.
 target-version = "py311"
 
@@ -106,20 +106,21 @@ ignore = [
     # Rules disabled due to using ruff as a formatter. Most of these rules
     # will thus be enforced by the formatter.
     # https://docs.astral.sh/ruff/formatter/#conflicting-lint-rules
-    "W191",   # Indentation contains tabs
-    "E111",   # Indentation is not a multiple of four
-    "E114",   # Indentation is not a multiple of four (comment)
-    "E117",   # Over-indented
-    "D206",   # Docstring should be indented with spaces, not tabs
-    "D300",   # Use """triple double quotes""" (found '''-quotes)
-    "Q000",   # Remove bad quotes (inlined)
-    "Q001",   # Remove bad quotes (multiline)
-    "Q002",   # Remove bad quotes (docstring)
-    "Q003",   # Avoidable escape quote
-    "COM812", # Missing trailing comma in Python 3.6+
-    "COM819", # Prohibited trailing comma
-    "ISC001", # Implicit string concatenation (single line)
-    "ISC002", # Implicit string concatenation (multiline)
+    "W191",    # Indentation contains tabs
+    "E111",    # Indentation is not a multiple of four
+    "E114",    # Indentation is not a multiple of four (comment)
+    "E117",    # Over-indented
+    "D206",    # Docstring should be indented with spaces, not tabs
+    "D300",    # Use """triple double quotes""" (found '''-quotes)
+    "Q000",    # Remove bad quotes (inlined)
+    "Q001",    # Remove bad quotes (multiline)
+    "Q002",    # Remove bad quotes (docstring)
+    "Q003",    # Avoidable escape quote
+    "COM812",  # Missing trailing comma in Python 3.6+
+    "COM819",  # Prohibited trailing comma
+    "ISC001",  # Implicit string concatenation (single line)
+    "ISC002",  # Implicit string concatenation (multiline)
+    "PLC0415", # Imports from package are not at the top of the file
 ]
 
 # Allow autofix for all enabled rules (when `--fix`) is provided.
@@ -222,6 +223,15 @@ reportUnannotatedClassAttribute = "hint"
 reportUnusedCallResult = "hint"
 reportImplicitOverride = "hint"
 reportImportCycles = "hint"
+
+# Multiple inheritance is not an error per se. In order to implement a
+# clean API with type safety for read/write managers, as well as specialized
+# managers for resources with name-based lookups, we need to use multiple
+# inheritance in some places.
+# There is ONE thing we need to ensure: Only the base `ResourceManager` class
+# can define an __init__ method.
+reportUnsafeMultipleInheritance = false
+reportMissingSuperCall = "hint"
 
 # When working with pydantic before-validators, we have no choice
 # but to use and interact with `Any`-typed values.

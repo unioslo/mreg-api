@@ -16,7 +16,8 @@ from typing import Self
 from typing_extensions import override
 
 if TYPE_CHECKING:
-    from mreg_api.models.abstracts import APIMixin
+    from mreg_api.models.abstracts import MregModel
+
 
 logger = logging.getLogger(__name__)
 
@@ -61,17 +62,60 @@ class ObjectRef:
     field: str = "id"
 
     @classmethod
-    def new(cls, obj: APIMixin) -> Self:
+    def new(cls, obj: MregModel) -> Self:
         """Create a reference to an API object.
 
         Uses the object's endpoint to determine the ID field to use.
 
         Cannot fail. Logs and defaults to str(obj) for value on failure.
         """
+        from mreg_api.models.models import CNAME
+        from mreg_api.models.models import Atom
+        from mreg_api.models.models import ForwardZone
+        from mreg_api.models.models import ForwardZoneDelegation
+        from mreg_api.models.models import HInfo
+        from mreg_api.models.models import Host
+        from mreg_api.models.models import HostGroup
+        from mreg_api.models.models import Location
+        from mreg_api.models.models import NameServer
+        from mreg_api.models.models import Network
+        from mreg_api.models.models import ReverseZone
+        from mreg_api.models.models import ReverseZoneDelegation
+        from mreg_api.models.models import Role
+
+        # TODO: refactor when we have a better way to get the external ID
+        # field from an object without needing the endpoint.
+        MODEL_FIELDS = {
+            "name": (
+                Host,
+                HostGroup,
+                CNAME,
+                ForwardZone,
+                ReverseZone,
+                ForwardZoneDelegation,
+                ReverseZoneDelegation,
+                Role,
+                Atom,
+                NameServer,
+            ),
+            "network": (Network,),
+            "host": (HInfo, Location),
+        }
+        for field_name, models in MODEL_FIELDS.items():
+            if isinstance(obj, models):
+                id_value = getattr(obj, field_name)
+                id_field = field_name
+                break
+        else:
+            try:
+                id_value = str(obj.id)  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType, reportUnknownArgumentType]
+                id_field = "id"
+            except AttributeError:
+                id_value = str(obj)
+                id_field = "id"
+
         try:
-            id_field = obj.endpoint().external_id_field()
-            id_val = str(getattr(obj, id_field))  # pyright: ignore[reportAny]
-            return cls(type=obj.__class__.__name__, value=id_val, field=id_field)
+            return cls(type=obj.__class__.__name__, value=str(id_value), field=id_field)
         except Exception:
             logger.exception("Failed to instantiate ObjectRef from %s", obj)
             return cls(type=obj.__class__.__name__, value=str(obj))
