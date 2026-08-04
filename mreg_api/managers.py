@@ -3837,6 +3837,9 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
         resp = self._client.get(Endpoint.ForwardZoneForHost.with_id(name), ok404=True)
         if not resp:
             return None
+
+        # TODO: use Pydantic JsonMapping validator for this
+        # These checks are dangerous! `in` checks and direct key access may break.
         blob = resp.json()
         if "delegate" in blob:
             return ForwardZoneDelegation.model_validate(blob)
