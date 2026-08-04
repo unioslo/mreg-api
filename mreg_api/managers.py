@@ -182,7 +182,7 @@ class ResourceManager(Generic[T], ABC):
     _path_field: ClassVar[str] = "id"
     """The name of the field whose value forms the URL path for a single resource.
 
-    For most resources this is the numeric ``id`` field:
+    For most resources this is the numeric `id` field:
         GET /api/sshfps/123 # 200
 
     But for other resources it is a different field (e.g. name, network, host):
@@ -304,7 +304,7 @@ class ResourceManager(Generic[T], ABC):
 
     # TODO. rename to path_field_value, and make private?
     def id_field_value(self, obj: T) -> str | int:
-        """Get the value of the field that forms the URL path for ``obj``."""
+        """Get the value of the field that forms the URL path for `obj`."""
         return getattr(obj, self._path_field)
 
     # TODO: test for all model types/managers! getattr is not great!
@@ -312,9 +312,9 @@ class ResourceManager(Generic[T], ABC):
         return self.endpoint.with_id(self.id_field_value(obj))
 
     def _fetch_by_path(self, value: str | int) -> T | None:
-        """Fetch one object via its detail URL: ``GET /endpoint/{value}``.
+        """Fetch one object via its detail URL: `GET /endpoint/{value}`.
 
-        ``value`` must be the URL path identifier (e.g. hostname, network, id, etc.).
+        `value` must be the URL path identifier (e.g. hostname, network, id, etc.).
         """
         value = self._normalize_id(value)
         resp = self._client.get(self.endpoint.with_id(value), ok404=True)
@@ -323,14 +323,10 @@ class ResourceManager(Generic[T], ABC):
         return self._validate_json(resp.text)
 
     def _search_one(self, field: str, value: str | int) -> T | None:
-        """Fetch one object via a unique search: ``GET /endpoint?field=value``.
+        """Fetch one object via a unique search: `GET /endpoint?field=value`.
 
-        Used for any field that is not the URL path identifier (e.g. ``/hosts?ipaddress=foo``).
+        Used for any field that is not the URL path identifier (e.g. `/hosts?ipaddress=10.0.0.1`).
         """
-        # TODO: refactor the get_list/get_item_by_key_value methods to return a response
-        # OR JSON strings, so we can pass everything through _validate_json().
-        # Pydantic's JSON parser is faster than passing everything through the stdlib
-        # JSON parser, and then through _validate().
         data = self._client.get_item_by_key_value(self.endpoint, field, value, ok404=True)
         if not data:
             return None
@@ -349,11 +345,11 @@ class ResourceManager(Generic[T], ABC):
 
     # NOTE: add toggleable _refetch behavior? Return None if refetching is disabled?
     def _refetch(self, obj: T) -> T:
-        """Fetch a fresh copy of ``obj`` from the server.
+        """Fetch a fresh copy of `obj` from the server.
 
-        Prefers the immutable ``id`` when the model has one, so a preceding rename (which
-        leaves the path field on ``obj`` stale) does not break the lookup. Models without an
-        ``id`` field (HInfo, Location — keyed by ``host``) fall back to the path identifier.
+        Prefers the immutable `id` when the model has one, so a preceding rename (which
+        leaves the path field on `obj` stale) does not break the lookup. Models without an
+        `id` field (HInfo, Location — keyed by `host`) fall back to the path identifier.
         """
         if (obj_id := getattr(obj, "id", None)) is not None:
             fresh = self._fetch_by_field("id", obj_id)
@@ -372,14 +368,14 @@ class ResourceManager(Generic[T], ABC):
 
         Args:
             ident: The URL identifier (id / name / network, per resource).
-            required: When ``True`` (default), raise ``EntityNotFound`` if missing.
-                Pass ``False`` to return ``T | None`` instead.
+            required: When `True` (default), raise `EntityNotFound` if missing.
+                Pass `False` to return `T | None` instead.
 
         Raises:
             EntityNotFound: If `required` is True and the resource is not found.
 
         Returns:
-            The resource, or ``None`` when `required` is False.
+            The resource, or `None` when `required` is False.
         """
         obj: T | None = None
         try:
@@ -390,7 +386,7 @@ class ResourceManager(Generic[T], ABC):
         return obj
 
     def ensure_absent(self, ident: str | int) -> None:
-        """Assert that no resource with ``ident`` exists.
+        """Assert that no resource with `ident` exists.
 
         Args:
             ident (str | int): The URL identifier to check (id / name / network, per resource).
@@ -426,18 +422,18 @@ class ResourceManager(Generic[T], ABC):
     def first(self, *, required: bool = True, **query: str | int | float | bool | None) -> T | None:
         """Return the first resource, raising if not found by default.
 
-        Passes ``page_size=1`` to avoid over-fetching.
+        Passes `page_size=1` to avoid over-fetching.
 
         Over-fetches on certain non-standard endpoints that do not implement pagination
         such as `networks/{network}/unused_list`, `/dhcphosts`, and others.
 
         Args:
-            required: When ``True`` (default), raise ``EntityNotFound`` if no resource
-                exists. Pass ``False`` to return ``None`` instead.
+            required: When `True` (default), raise `EntityNotFound` if no resource
+                exists. Pass `False` to return `None` instead.
             **query: Optional filter parameters forwarded to the list endpoint.
 
         Raises:
-            EntityNotFound: If ``required`` is True and no resource is found.
+            EntityNotFound: If `required` is True and no resource is found.
         """
         params: QueryParams = dict(query)
         res = self._client.get_first(self.endpoint, params)
@@ -454,12 +450,12 @@ class WriteResourceManager(ResourceManager[T], ABC):
     """Manager for performing CRUD operations on an API resource type."""
 
     def _create(self, data: dict[str, Any], *, fetch_after_create: bool = True) -> T | None:
-        """POST ``data`` to the resource endpoint, optionally fetching the result.
+        """POST `data` to the resource endpoint, optionally fetching the result.
 
         Raises :class:`PostError` (from the client) if the server rejects the create.
-        Returns ``None`` when the create succeeds but the server provides no
-        ``Location`` header to refetch from (many endpoints don't), or when
-        ``fetch_after_create`` is ``False``.
+        Returns `None` when the create succeeds but the server provides no
+        `Location` header to refetch from (many endpoints don't), or when
+        `fetch_after_create` is `False`.
         """
         response = self._client.post(self.endpoint, json=data)
         if fetch_after_create and "Location" in response.headers:
@@ -467,7 +463,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
         return None
 
     def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> T:
-        """PATCH ``obj`` with ``data`` and return the refetched object.
+        """PATCH `obj` with `data` and return the refetched object.
 
         Raises :class:`PatchError` (from the client) if the server rejects the patch.
         """
@@ -487,14 +483,14 @@ class WriteResourceManager(ResourceManager[T], ABC):
 
 
 class CountableResourceManager(WriteResourceManager[T], ABC):
-    """Opt-in capability mixin: adds ``count`` to a ``WriteResourceManager``.
+    """Opt-in capability mixin: adds `count` to a `WriteResourceManager`.
 
-    Inherit this alongside (or instead of) ``WriteResourceManager`` for any resource
-    whose list endpoint returns a DRF-paginated response with a ``count`` field.
+    Inherit this alongside (or instead of) `WriteResourceManager` for any resource
+    whose list endpoint returns a DRF-paginated response with a `count` field.
     DhcpHost managers must NOT inherit this (their endpoints are non-paginated).
 
     Combine with other capabilities via multiple inheritance, the same way
-    ``HostManager`` combines ``NamedResourceManager`` + ``HistoryManager``.
+    `HostManager` combines `NamedResourceManager` + `HistoryManager`.
     """
 
     def count(self) -> int:
@@ -571,7 +567,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
             required (bool): Raise if not found. Defaults to True.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the resource is not found.
+            EntityNotFound: If `required` is True and the resource is not found.
 
         Returns:
             T | None: The resource object if found, else None.
@@ -634,7 +630,7 @@ class HistoryManager(ResourceManager[T], ABC):
     def history(self, name: str) -> list[HistoryItem]:
         """Get the audit history for a named resource.
 
-        Relocated from the former ``HistoryItem.get``: fetches history through the
+        Relocated from the former `HistoryItem.get`: fetches history through the
         owning client and constructs :class:`HistoryItem` models from the result.
 
         Args:
@@ -689,7 +685,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         return self._client.fqdn(name)
 
     def _record_ptr_event(self, host: Host, ip: str) -> None:
-        """Record that ``ip`` resolved to ``host`` via a PTR override."""
+        """Record that `ip` resolved to `host` via a PTR override."""
         self._client.events.record(
             Event(
                 kind=EventKind.RESOLUTION,
@@ -708,14 +704,14 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         """Get a host by its numeric id.
 
         Distinct from :meth:`get`: the Host endpoint id-field is the hostname, so
-        :meth:`get` resolves by name while this resolves by the numeric ``id``.
+        :meth:`get` resolves by name while this resolves by the numeric `id`.
 
         Args:
             host_id (int): The numeric id of the host.
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the host is not found.
+            EntityNotFound: If `required` is True and the host is not found.
         """
         obj = self._fetch_by_field("id", host_id)
         if required and obj is None:
@@ -742,7 +738,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
         Raises:
             MultipleEntitiesFound: If more than one host matches the IP address.
-            EntityNotFound: If ``required`` is True and no host is found.
+            EntityNotFound: If `required` is True and no host is found.
         """
         addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
         try:
@@ -769,7 +765,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and no host is found.
+            EntityNotFound: If `required` is True and no host is found.
         """
         addr = MacAddress.parse_or_raise(mac)
         host = self._fetch_by_field("ipaddresses__macaddress", str(addr))
@@ -1316,7 +1312,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     def list_with_atom(self, atom: int | str | Atom) -> list[Role]:
         """List all roles that contain a given atom.
 
-        Renamed from ``Role.get_roles_with_atom``.
+        Renamed from `Role.get_roles_with_atom`.
 
         Args:
             atom (int | str | Atom): Atom instance, numeric ID, or name string.
@@ -1667,7 +1663,7 @@ class PermissionManager(WriteResourceManager[Permission]):
     ) -> Permission | None:
         """Get a permission by the (group, range, regex) triplet.
 
-        Replaces ``Permission.get_by_query_unique_or_raise`` from the old model API.
+        Replaces `Permission.get_by_query_unique_or_raise` from the old model API.
 
         Args:
             group (str): The netgroup name.
@@ -1677,7 +1673,7 @@ class PermissionManager(WriteResourceManager[Permission]):
 
         Raises:
             MultipleEntitiesFound: If more than one permission matches the triplet.
-            EntityNotFound: If ``required`` is True and no match is found.
+            EntityNotFound: If `required` is True and no match is found.
         """
         # NOTE: Should only return a single result. do we have to use `list` to fetch it?
         results = self.list(group=group, range=range, regex=regex)
@@ -1815,7 +1811,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
     ) -> NetworkPolicy:
         """Update a network policy's mutable fields.
 
-        Pass ``community_template_pattern=None`` to unset it.
+        Pass `community_template_pattern=None` to unset it.
 
         Args:
             policy (int | str | NetworkPolicy): NetworkPolicy instance, numeric ID, or name string.
@@ -1902,13 +1898,13 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
     @functools.cached_property
     def attribute(self) -> NetworkPolicyAttributeManager:
-        """Manager for network policy attributes (``client.network.policy.attribute``)."""
+        """Manager for network policy attributes (`client.network.policy.attribute`)."""
         return NetworkPolicyAttributeManager(self._client)
 
 
 # NOTE: WHY does this not inherit from the regular ResourceManager?
 class CommunityManager:
-    """Operations on network communities (``client.network.communities``).
+    """Operations on network communities (`client.network.communities`).
 
     Communities are always scoped to a network — every method takes a network
     reference (address string or :class:`~mreg_api.models.Network` instance).
@@ -1995,7 +1991,7 @@ class CommunityManager:
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the community is not found.
+            EntityNotFound: If `required` is True and the community is not found.
         """
         # If network is a string, try to perform lookup directly
         if isinstance(network, str):
@@ -2032,7 +2028,7 @@ class CommunityManager:
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the community is not found.
+            EntityNotFound: If `required` is True and the community is not found.
         """
         community: Community | None = None
         nw_addr = self._resolve_network_address(network)
@@ -2065,7 +2061,7 @@ class CommunityManager:
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the community is not found.
+            EntityNotFound: If `required` is True and the community is not found.
         """
         if isinstance(community, int):
             com = next((c for c in self.list(network) if c.id == community), None)
@@ -2193,12 +2189,12 @@ class NetworkManager(WriteResourceManager[Network]):
     # NOTE: expose as properties so we don't need to override __init__ and call `super()`
     @functools.cached_property
     def policy(self) -> NetworkPolicyManager:
-        """Manager for network policies (``client.network.policy``)."""
+        """Manager for network policies (`client.network.policy`)."""
         return NetworkPolicyManager(self._client)
 
     @functools.cached_property
     def community(self) -> CommunityManager:
-        """Manager for network communities (``client.network.communities``)."""
+        """Manager for network communities (`client.network.communities`)."""
         return CommunityManager(self._client, self)
 
     @overload
@@ -2213,7 +2209,7 @@ class NetworkManager(WriteResourceManager[Network]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and no network is found.
+            EntityNotFound: If `required` is True and no network is found.
         """
         addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
         resp = self._client.get(Endpoint.NetworksByIP.with_id(addr), ok404=True)
@@ -2280,7 +2276,7 @@ class NetworkManager(WriteResourceManager[Network]):
     ) -> Network:
         """Update a network's mutable fields.
 
-        Pass ``policy=None`` or ``max_communities=None`` to unset; omit to leave unchanged.
+        Pass `policy=None` or `max_communities=None` to unset; omit to leave unchanged.
 
         Args:
             network (str | int | Network): Network reference (address, numeric ID, or Network instance).
@@ -2575,7 +2571,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             force (bool): When True, skip safety checks and overwrite an existing MAC.
 
         Raises:
-            EntityAlreadyExists: If the IP already has a MAC and ``force`` is False.
+            EntityAlreadyExists: If the IP already has a MAC and `force` is False.
         """
         ip = self._resolve(ip)
         if ip.macaddress and not force:
@@ -2674,7 +2670,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         name: str | HostName | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
     ) -> CNAME:
-        """Update a CNAME record's mutable fields. Pass ``ttl=None`` to reset to default.
+        """Update a CNAME record's mutable fields. Pass `ttl=None` to reset to default.
 
         Args:
             cname (int | CNAME): CNAME instance or numeric ID.
@@ -2704,7 +2700,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the CNAME is not found.
+            EntityNotFound: If `required` is True and the CNAME is not found.
         """
         obj = self._fetch_by_field("name", self._client.fqdn(name))
         if required and obj is None:
@@ -2722,7 +2718,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the CNAME is not found.
+            EntityNotFound: If `required` is True and the CNAME is not found.
         """
         host_id = resolve_host_id(host, self._client)
         fqdn = self._client.fqdn(name)
@@ -2810,7 +2806,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and no HInfo record is found.
+            EntityNotFound: If `required` is True and no HInfo record is found.
         """
         host_id = resolve_host_id(host, self._client)
         obj = self._fetch_by_field("host", host_id)
@@ -3304,7 +3300,7 @@ class SrvManager(WriteResourceManager[Srv]):
         port: int | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
     ) -> Srv:
-        """Update a SRV record's mutable fields. Pass ``ttl=None`` to reset to default.
+        """Update a SRV record's mutable fields. Pass `ttl=None` to reset to default.
 
         Args:
             srv (int | Srv): Srv instance or numeric ID.
@@ -3458,7 +3454,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         fingerprint: str | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
     ) -> SSHFP:
-        """Update an SSHFP record's mutable fields. Pass ``ttl=None`` to reset to default.
+        """Update an SSHFP record's mutable fields. Pass `ttl=None` to reset to default.
 
         Args:
             sshfp (int | SSHFP): SSHFP instance or numeric ID.
@@ -3540,7 +3536,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and no BacnetID record is found.
+            EntityNotFound: If `required` is True and no BacnetID record is found.
         """
         name = resolve_host_name(host, self._client)
         obj = self._fetch_by_field("hostname", name)
@@ -3607,7 +3603,7 @@ class LocationManager(WriteResourceManager[Location]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and no LOC record is found.
+            EntityNotFound: If `required` is True and no LOC record is found.
         """
         host_id = resolve_host_id(host, self._client)
         obj = self._fetch_by_field("host", host_id)
@@ -3634,7 +3630,7 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
 
     Raises:
         InputFailure: If no nameservers are given.
-        ForceMissing: If a nameserver is missing (or lacks glue) and ``force`` is False.
+        ForceMissing: If a nameserver is missing (or lacks glue) and `force` is False.
     """
     if not nameservers:
         raise InputFailure("At least one nameserver is required")
@@ -3802,7 +3798,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
     # Ideally, we resolve all safety issues in the ZoneManager itself.
     @override
     def delete(self, obj: _ZoneT, *, force: bool = False) -> None:
-        """Delete the zone, guarding against non-empty zones unless ``force``.
+        """Delete the zone, guarding against non-empty zones unless `force`.
 
         Args:
             obj (_ZoneT): The zone to delete.
@@ -3872,7 +3868,7 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
 # sub managers public, because their methods expect verified nameserver arguments (`VeriifedNS`),
 # which we only produce through a private function (_verify_nameservers).
 class ZoneManager:
-    """Public facade over the forward/reverse zone managers (``client.zone``).
+    """Public facade over the forward/reverse zone managers (`client.zone`).
 
     Zones split into forward/reverse, but are otherwise very similar in their APIs.
     This manager delegates to the correct forward/reverse manager based on the name
@@ -3917,12 +3913,12 @@ class ZoneManager:
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the zone is not found.
+            EntityNotFound: If `required` is True and the zone is not found.
         """
         return self._sub_for_name(name).get_by_name(name, required=required)
 
     def ensure_absent(self, name: str) -> None:
-        """Raise EntityAlreadyExists if a zone with ``name`` exists.
+        """Raise EntityAlreadyExists if a zone with `name` exists.
 
         Args:
             name (str): The zone name to check.
@@ -4054,7 +4050,7 @@ class ZoneManager:
         return self._forward.list_subzones(z)
 
     def delete(self, zone: str | ForwardZone | ReverseZone, *, force: bool = False) -> None:
-        """Delete the zone, guarding against non-empty zones unless ``force``.
+        """Delete the zone, guarding against non-empty zones unless `force`.
 
         Args:
             zone (str | ForwardZone | ReverseZone): Zone reference (name string or instance).
@@ -4083,17 +4079,17 @@ class ZoneManager:
 
     @functools.cached_property
     def delegations(self) -> DelegationManager:
-        """Manager for zone delegations (``client.zone.delegations``)."""
+        """Manager for zone delegations (`client.zone.delegations`)."""
         return DelegationManager(self._client)
 
 
 class DelegationManager:
-    """Operations on zone delegations (``client.delegation``).
+    """Operations on zone delegations (`client.delegation`).
 
     Delegations have no standalone endpoint; their type (forward/reverse) is derived
     from the parent zone, so every method takes the parent zone as its first argument.
     Kept separate from :class:`ZoneManager` to stay composition-ready (a future
-    ``client.zone.delegations``).
+    `client.zone.delegations`).
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -4122,7 +4118,7 @@ class DelegationManager:
     def get(
         self, zone: Zone, name: str, *, required: bool = True
     ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
-        """Get a delegation in ``zone`` by name.
+        """Get a delegation in `zone` by name.
 
         Args:
             zone (Zone): The parent zone to search in.
@@ -4130,7 +4126,7 @@ class DelegationManager:
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            EntityNotFound: If ``required`` is True and the delegation is not found.
+            EntityNotFound: If `required` is True and the delegation is not found.
         """
         self._ensure_in_zone(zone, name)
         cls = self._model_for(zone)
@@ -4165,10 +4161,10 @@ class DelegationManager:
         force: bool = False,
         fetch_after_create: bool = True,
     ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
-        """Create a delegation in ``zone``.
+        """Create a delegation in `zone`.
 
         Verifies the delegation name is within the zone and the nameservers exist.
-        Unless ``force``, also checks the delegated zone exists and matches the parent
+        Unless `force`, also checks the delegated zone exists and matches the parent
         zone type, and that the delegation does not already exist.
 
         Args:
@@ -4222,7 +4218,7 @@ class DelegationManager:
         return None
 
     def delete(self, zone: Zone, name: str) -> None:
-        """Delete a delegation from ``zone``.
+        """Delete a delegation from `zone`.
 
         Args:
             zone (Zone): The parent zone to delete the delegation from.
@@ -4236,7 +4232,7 @@ class DelegationManager:
     def set_comment(
         self, zone: Zone, name: str, comment: str
     ) -> ForwardZoneDelegation | ReverseZoneDelegation:
-        """Set (or clear, with ``""``) the comment for a delegation.
+        """Set (or clear, with `""`) the comment for a delegation.
 
         Args:
             zone (Zone): The parent zone containing the delegation.
@@ -4253,7 +4249,7 @@ class DelegationManager:
 
 
 class DhcpHostManager(ResourceManager[T], ABC):
-    """Read-only manager for DHCP host records (``client.dhcphost``).
+    """Read-only manager for DHCP host records (`client.dhcphost`).
 
     This is a generic base class for the IPv4, IPv6, and IPv6-via-IPv4 managers.
     Cannot be instantiated directly; use one of the concrete subclasses instead.
@@ -4273,7 +4269,7 @@ class DhcpHostManager(ResourceManager[T], ABC):
 
 
 class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
-    """Read-only manager for IPv4 DHCP host records (``client.dhcphostipv4``)."""
+    """Read-only manager for IPv4 DHCP host records (`client.dhcphostipv4`)."""
 
     @property
     @override
@@ -4287,7 +4283,7 @@ class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
 
 
 class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
-    """Read-only manager for IPv6 DHCP host records (``client.dhcphostipv6``)."""
+    """Read-only manager for IPv6 DHCP host records (`client.dhcphostipv6`)."""
 
     @property
     @override
@@ -4301,7 +4297,7 @@ class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
 
 
 class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
-    """Read-only manager for IPv6-via-IPv4 DHCP host records (``client.dhcphostipv6byipv4``)."""
+    """Read-only manager for IPv6-via-IPv4 DHCP host records (`client.dhcphostipv6byipv4`)."""
 
     @property
     @override
@@ -4315,7 +4311,7 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
 
 
 class NameServerManager(NamedResourceManager[NameServer]):
-    """Access to :class:`~mreg_api.models.NameServer` resources (``client.nameserver``).
+    """Access to :class:`~mreg_api.models.NameServer` resources (`client.nameserver`).
 
     Nameservers are created and deleted implicitly through zone and delegation
     operations; this manager exposes listing and lookup.
@@ -4353,7 +4349,7 @@ class MetaManagerNamespace:
 
 
 class ServerVersionManager:
-    """Access to server version metadata (``client.serverversion``)."""
+    """Access to server version metadata (`client.serverversion`)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4363,8 +4359,8 @@ class ServerVersionManager:
         """Fetch the server version from the meta endpoint.
 
         Args:
-            required: When ``True``, raise on error. When ``False``, return
-                ``ServerVersion(version="Unknown")`` on failure.
+            required: When `True`, raise on error. When `False`, return
+                `ServerVersion(version="Unknown")` on failure.
         """
         try:
             response = self._client.get(Endpoint.MetaVersion)
@@ -4376,7 +4372,7 @@ class ServerVersionManager:
 
 
 class ServerLibrariesManager:
-    """Access to server library metadata (``client.serverlibraries``)."""
+    """Access to server library metadata (`client.serverlibraries`)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4386,8 +4382,8 @@ class ServerLibrariesManager:
         """Fetch the server library list from the meta endpoint.
 
         Args:
-            required: When ``True``, raise on error. When ``False``, return
-                ``ServerLibraries(libraries=[])`` on failure.
+            required: When `True`, raise on error. When `False`, return
+                `ServerLibraries(libraries=[])` on failure.
         """
         try:
             response = self._client.get_typed(Endpoint.MetaLibraries, dict[str, str])
@@ -4400,7 +4396,7 @@ class ServerLibrariesManager:
 
 
 class UserInfoManager:
-    """Access to user information (``client.userinfo``)."""
+    """Access to user information (`client.userinfo`)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4410,9 +4406,9 @@ class UserInfoManager:
         """Fetch user information from the meta endpoint.
 
         Args:
-            required: When ``True``, raise on error. When ``False``, return a
-                zeroed-out ``UserInfo`` on failure.
-            user: The username to fetch. If ``None``, fetches the current user.
+            required: When `True`, raise on error. When `False`, return a
+                zeroed-out `UserInfo` on failure.
+            user: The username to fetch. If `None`, fetches the current user.
         """
         try:
             endpoint: str = Endpoint.MetaUser
@@ -4441,7 +4437,7 @@ class UserInfoManager:
 
 
 class LDAPHealthManager:
-    """Access to LDAP health status (``client.ldaphealth``)."""
+    """Access to LDAP health status (`client.ldaphealth`)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4453,7 +4449,7 @@ class LDAPHealthManager:
         A 503 response means LDAP is down and is not treated as a hard error.
 
         Args:
-            required: When ``True``, raise on non-503 errors.
+            required: When `True`, raise on non-503 errors.
         """
         try:
             self._client.get(Endpoint.HealthLDAP)
@@ -4468,7 +4464,7 @@ class LDAPHealthManager:
 
 
 class HeartbeatHealthManager:
-    """Access to heartbeat health status (``client.heartbeathealth``)."""
+    """Access to heartbeat health status (`client.heartbeathealth`)."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4478,8 +4474,8 @@ class HeartbeatHealthManager:
         """Fetch heartbeat health from the health endpoint.
 
         Args:
-            required: When ``True``, raise on error. When ``False``, return
-                ``HeartbeatHealth(uptime=-1, start_time=0)`` on failure.
+            required: When `True`, raise on error. When `False`, return
+                `HeartbeatHealth(uptime=-1, start_time=0)` on failure.
         """
         try:
             result = self._client.get(Endpoint.HealthHeartbeat)
@@ -4492,7 +4488,7 @@ class HeartbeatHealthManager:
 
 
 class HealthManager:
-    """Access to combined health information (``client.health``)."""
+    """Access to combined health information (`client.health`)."""
 
     def __init__(
         self,
@@ -4517,7 +4513,7 @@ class HealthManager:
         """Fetch combined health from all health endpoints.
 
         Args:
-            required: Forwarded to both sub-managers. When ``True``, raises
+            required: Forwarded to both sub-managers. When `True`, raises
                 on any failure instead of returning a default object.
         """
         heartbeat = self._heartbeat_manager.get(required=required)
