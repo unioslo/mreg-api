@@ -723,18 +723,22 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         return obj
 
     @overload
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False]) -> Host | None: ...
+    def get_by_ip(
+        self, ip: str | IP_AddressT, *, required: Literal[False], ptr_fallback: bool = ...
+    ) -> Host | None: ...
     @overload
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[True] = ...) -> Host: ...
-    def get_by_ip(self, ip: str | IP_AddressT, *, required: bool = True) -> Host | None:
-        """Get a host by IP address (A/AAAA, falling back to PTR override).
-
-        Falls back to a PTR override when no direct A/AAAA match exists; a PTR match
-        always records a ``RESOLUTION`` event (no opt-out — see ADR-0001).
+    def get_by_ip(
+        self, ip: str | IP_AddressT, *, required: Literal[True] = ..., ptr_fallback: bool = ...
+    ) -> Host: ...
+    def get_by_ip(
+        self, ip: str | IP_AddressT, *, required: bool = True, ptr_fallback: bool = True
+    ) -> Host | None:
+        """Get a host by IP address (A/AAAA, optionally falling back to PTR override).
 
         Args:
             ip (str | IP_AddressT): The IP address to look up.
             required (bool): When True (default), raise EntityNotFound if not found.
+            ptr_fallback (bool): When True (default), fall back to PTR override if no host is found.
 
         Raises:
             MultipleEntitiesFound: If more than one host matches the IP address.
@@ -743,7 +747,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
         try:
             host = self._fetch_by_field("ipaddresses__ipaddress", addr)
-            if host is None:
+            if host is None and ptr_fallback:
                 host = self._fetch_by_field("ptr_overrides__ipaddress", addr)
                 if host is not None:
                     self._record_ptr_event(host, addr)
