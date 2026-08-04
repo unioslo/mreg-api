@@ -168,7 +168,25 @@ def test_network_or_ip_parse(inp: str, mode: IPNetMode, expect: Any) -> None:
         pytest.param("2001:db8::/129", None, marks=pytest.mark.xfail(raises=InputFailure, strict=True)),
     ],
 )
-def test_network_or_ip_validate(inp: Any, expect_type_call: Callable[[NetworkOrIP], bool]) -> None:
+def test_network_or_ip_validate(inp: Any, expect_type_call: Callable[[NetworkOrIP], bool] | None) -> None:
+    """Test the validation of network or IP address."""
+    res = NetworkOrIP.validate(inp)
+    # Ensure it's validated as the correct type
+    if expect_type_call is None:
+        pytest.fail(f"{inp} should not have passed validation")
+    assert expect_type_call(res)
+
+
+@pytest.mark.parametrize(
+    "inp, expect_type_call",
+    [
+        (IPv4Address("192.168.0.1"), NetworkOrIP.is_ipv4),
+        (IPv4Network("192.168.0.0/24"), NetworkOrIP.is_ipv4_network),
+        (IPv6Address("2001:db8::1"), NetworkOrIP.is_ipv6),
+        (IPv6Network("2001:db8::/64"), NetworkOrIP.is_ipv6_network),
+    ],
+)
+def test_network_or_ip_validate_stdlib(inp: Any, expect_type_call: Callable[[NetworkOrIP], bool]) -> None:
     """Test the validation of network or IP address."""
     res = NetworkOrIP.validate(inp)
     # Ensure it's validated as the correct type
