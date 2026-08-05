@@ -17,6 +17,15 @@ from pydantic import field_serializer
 from mreg_api.exceptions import CacheError
 from mreg_api.exceptions import CacheMiss
 
+__all__ = [
+    "CacheConfig",
+    "MregApiCache",
+    "CacheInfo",
+    "CacheError",
+    "CacheMiss",
+]
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -77,6 +86,10 @@ class CacheConfig(BaseModel):
     directory: str | None = None
 
 
+# NOTE: this class used to make more sense when we had a protocol type for
+# the backend class. Now that the backend class is explicitly `diskcache.Cache`,
+# this class is mostly a wrapper around the cache instance and config.
+# TODO: support other cache types: in-memory, etc.
 @final
 class MregApiCache(Generic[T]):
     """Wrapper around the mreg-api cache.
@@ -93,8 +106,8 @@ class MregApiCache(Generic[T]):
 
     Warning:
         NEVER use `if self._cache` checks! diskcache.Cache implements `__bool__`
-        to check if the cache is non-empty, not whether it exists. Always use
-        `if self._cache is None` instead.
+        to report whether the cache is NON-EMPTY, not whether it EXISTS.
+        Always use `if self._cache is None` instead in this class.
     """
 
     def __init__(self, cache: Cache | None, config: CacheConfig) -> None:
@@ -140,6 +153,18 @@ class MregApiCache(Generic[T]):
     def disable(self) -> None:
         """Disable the cache."""
         self.config.enable = False
+
+    def close(self) -> None:
+        """Close the cache and release resources."""
+        if self._cache is not None:
+            try:
+                self._cache.close()
+            except Exception as e:
+                logger.warning("Failed to close cache: %s", e)
+            finally:
+                # Unbind the object reference, allowing it to be garbage collected
+                # regardless of whether close() succeeded or not.
+                self._cache = None
 
     def get_info(self) -> CacheInfo | None:
         """Get information about the cache.

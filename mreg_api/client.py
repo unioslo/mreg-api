@@ -466,6 +466,13 @@ class MregClient:
         self._reset_contextvars()
         self.session.close()
 
+        # Attempt to close open connections if cache is enabled
+        # In practice, we rarely need this, but in tests and multihreaded applications,
+        # we may see "ResourceWarning: unclosed database in [...]" when running
+        # via coverage and vscode test runner.
+        if self.cache.has_backend:  # always close if cache _exists_ (may be disabled)
+            self.cache.close()
+
     def _reset_contextvars(self) -> None:
         """Reset context variables used for request tracking."""
         _ = last_request_url.set(None)

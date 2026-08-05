@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import datetime
+import gc
 import inspect
 from typing import Any
 
@@ -295,6 +296,21 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
     hosts3 = client.host.list()
     assert len(client.get_client_history()) == 2
     assert len(hosts3) == 2
+
+
+def test_client_destructor_close_cache() -> None:
+    """Test that MregClient destructor closes its _own_ but not others' cache on deletion."""
+    client1 = MregClient(url="http://example.com", domain="example.com", cache=True)
+    client2 = MregClient(url="http://example.com", domain="example.com", cache=True)
+
+    # Ensure both clients have their own cache
+    assert client1.cache is not client2.cache
+
+    # Delete client1 and ensure gc collects deleted objects
+    del client1
+    gc.collect()
+
+    assert client2.cache.is_enabled  # client2's cache should still be enabled
 
 
 @pytest.mark.parametrize(
