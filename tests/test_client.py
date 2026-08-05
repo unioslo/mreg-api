@@ -361,9 +361,7 @@ def test_client_get_list_paginated_empty(httpserver: HTTPServer, client: MregCli
 
 
 def test_client_get_list_paginated_multiple_pages(httpserver: HTTPServer, client: MregClient) -> None:
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_paginated_multiple_pages"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_paginated_multiple_pages").respond_with_json(
         {
             "results": [{"foo": "bar"}],
             "count": 1,
@@ -385,9 +383,7 @@ def test_client_get_list_paginated_multiple_pages(httpserver: HTTPServer, client
     assert resp == snapshot([{"foo": "bar"}, {"baz": "qux"}])
 
 
-def test_client_get_list_paginated_multiple_pages_ok404(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_paginated_multiple_pages_ok404(httpserver: HTTPServer, client: MregClient) -> None:
     """Paginated response with 404 on next page is ignored when `ok404=True`."""
     httpserver.expect_oneshot_request(
         "/test_client_get_list_paginated_multiple_pages_ok404"
@@ -402,9 +398,9 @@ def test_client_get_list_paginated_multiple_pages_ok404(
     httpserver.expect_oneshot_request(
         "/test_client_get_list_paginated_multiple_pages_ok404", query_string="page=2"
     ).respond_with_response(Response(status=404))
-    assert client.get_list(
-        "/test_client_get_list_paginated_multiple_pages_ok404", ok404=True
-    ) == snapshot([{"foo": "bar"}])
+    assert client.get_list("/test_client_get_list_paginated_multiple_pages_ok404", ok404=True) == snapshot(
+        [{"foo": "bar"}]
+    )
 
 
 def test_client_get_list_paginated_multiple_pages_inconsistent_count(
@@ -445,9 +441,7 @@ def test_client_get_list_paginated_multiple_pages_inconsistent_count(
         "[{'foo': 'bar'}]",  # Invalid JSON
     ],
 )
-def test_client_get_list_paginated_invalid(
-    httpserver: HTTPServer, client: MregClient, results: Any
-) -> None:
+def test_client_get_list_paginated_invalid(httpserver: HTTPServer, client: MregClient, results: Any) -> None:
     """Invalid JSON or non-array response is an error."""
     httpserver.expect_oneshot_request("/test_client_get_list_paginated_invalid").respond_with_data(
         f"""{{
@@ -498,9 +492,7 @@ def test_client_get_list_non_paginated_non_array(httpserver: HTTPServer, client:
 
 def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, client: MregClient) -> None:
     """Non-paginated response with invalid JSON is an error."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_non_paginated_invalid_json"
-    ).respond_with_data(
+    httpserver.expect_oneshot_request("/test_client_get_list_non_paginated_invalid_json").respond_with_data(
         "[{'key': 'value'}, 'foo',]",  # strings must be double quoted
         content_type="application/json",
     )
@@ -579,17 +571,13 @@ def test_client_get_list_unique_paginated_duplicate_result_ok(
             "previous": "/test_client_get_list_unique_paginated_duplicate_result_ok?page=1",
         }
     )
-    resp = client.get_list_unique(
-        "/test_client_get_list_unique_paginated_duplicate_result_ok", params={}
-    )
+    resp = client.get_list_unique("/test_client_get_list_unique_paginated_duplicate_result_ok", params={})
     assert resp == snapshot({"foo": "bar"})
 
 
 def test_client_get_list_unique_paginated_no_result(httpserver: HTTPServer, client: MregClient) -> None:
     """No result is None."""
-    httpserver.expect_oneshot_request(
-        "/test_client_get_list_unique_paginated_no_result"
-    ).respond_with_json(
+    httpserver.expect_oneshot_request("/test_client_get_list_unique_paginated_no_result").respond_with_json(
         {
             "results": [],
             "count": 0,
@@ -601,9 +589,7 @@ def test_client_get_list_unique_paginated_no_result(httpserver: HTTPServer, clie
     assert resp is None
 
 
-def test_client_get_list_unique_non_paginated_no_result(
-    httpserver: HTTPServer, client: MregClient
-) -> None:
+def test_client_get_list_unique_non_paginated_no_result(httpserver: HTTPServer, client: MregClient) -> None:
     """No result is None."""
     httpserver.expect_oneshot_request(
         "/test_client_get_list_unique_non_paginated_no_result"
@@ -783,9 +769,7 @@ def test_request_exception_handling(
 def test_check_response_2xx(method: HTTPMethod, status_code: int) -> None:
     """Test that check_response does not raise on non-2xx response."""
     # Valid 2xx response should not raise
-    response = HttpxResponse(
-        status_code=status_code, request=HttpxRequest(method=method, url="http://test")
-    )
+    response = HttpxResponse(status_code=status_code, request=HttpxRequest(method=method, url="http://test"))
     check_response(response, method, str(response.request.url))
 
 
@@ -802,14 +786,10 @@ def test_check_response_2xx(method: HTTPMethod, status_code: int) -> None:
     "status_code",
     [400, 403, 404, 409, 500],
 )
-def test_check_response_error(
-    method: HTTPMethod, expected_exc: type[Exception], status_code: int
-) -> None:
+def test_check_response_error(method: HTTPMethod, expected_exc: type[Exception], status_code: int) -> None:
     """Test that check_response raises the correct error on non-2xx response."""
     # Valid 2xx response should not raise
-    response = HttpxResponse(
-        status_code=status_code, request=HttpxRequest(method=method, url="http://test")
-    )
+    response = HttpxResponse(status_code=status_code, request=HttpxRequest(method=method, url="http://test"))
     with pytest.raises(expected_exc) as exc_info:
         check_response(response, method, str(response.request.url))
     assert exc_info.type is expected_exc

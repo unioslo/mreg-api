@@ -157,9 +157,7 @@ Validation Error: Required - This field is required.: name; Invalid - Enter a va
             status_code=400,
             json_body={
                 "type": "client_error",
-                "errors": [
-                    {"code": "authentication_failed", "detail": "Invalid credentials.", "attr": None}
-                ],
+                "errors": [{"code": "authentication_failed", "detail": "Invalid credentials.", "attr": None}],
             },
         )
         error = APIError("Request failed", response=response)

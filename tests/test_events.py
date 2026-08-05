@@ -115,12 +115,8 @@ def test_eventlog_max_size() -> None:
     """Test eviction of events when max size is exceeded."""
     log = EventLog(max_size=2)
 
-    event1 = Event(
-        kind=EventKind.NOTICE, message="Test event 1", subject=ObjectRef("TestModel", value="1")
-    )
-    event2 = Event(
-        kind=EventKind.MUTATION, message="Test event 2", subject=ObjectRef("TestModel", value="2")
-    )
+    event1 = Event(kind=EventKind.NOTICE, message="Test event 1", subject=ObjectRef("TestModel", value="1"))
+    event2 = Event(kind=EventKind.MUTATION, message="Test event 2", subject=ObjectRef("TestModel", value="2"))
     event3 = Event(
         kind=EventKind.RESOLUTION, message="Test event 3", subject=ObjectRef("TestModel", value="3")
     )
