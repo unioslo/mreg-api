@@ -1417,17 +1417,32 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
         return True
 
+    @deprecated('use "list_labels()" instead')
     def get_labels(self, role: int | str | Role) -> list[Label]:
-        """Get the labels associated with the role.
+        """List the labels associated with the role.
 
         Args:
             role (int | str | Role): Role instance, numeric ID, or name string.
+
+        Returns:
+            list[Label]: List of labels associated with the role.
+        """
+        return self.list_labels(role)
+
+    def list_labels(self, role: int | str | Role) -> list[Label]:
+        """List the labels associated with the role.
+
+        Args:
+            role (int | str | Role): Role instance, numeric ID, or name string.
+
+        Returns:
+            list[Label]: List of labels associated with the role.
         """
         role = self._resolve(role)
         labels = LabelManager(self._client)
         return [labels.get(lid, required=True) for lid in role.labels]
 
-    def add_label(self, role: int | Role, label: int | str | Label) -> Role:
+    def add_label(self, role: int | str | Role, label: int | str | Label) -> Role:
         """Add a label to the role.
 
         Args:
@@ -1444,11 +1459,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             raise EntityAlreadyExists(f"Role {role.name!r} already has label {label!r}")
         return self._patch(role, {"labels": [*role.labels, label_id]})
 
-    def remove_label(self, role: int | Role, label: int | str | Label) -> Role:
+    def remove_label(self, role: int | str | Role, label: int | str | Label) -> Role:
         """Remove a label from the role.
 
         Args:
-            role (int | Role): Role instance or numeric ID.
+            role (int | str | Role): Role instance, numeric ID, or name string.
             label (int | str | Label): Label instance, name, or numeric ID.
 
         Raises:
@@ -1465,7 +1480,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """List all roles that include the given host.
 
         Args:
-            host (int | str | Host): Host instance or numeric ID.
+            host (int | str | Host): Host instance, name string, or numeric ID.
         """
         host_id = resolve_host_id(host, self._client)
         return self._fetch_list_by_field("hosts", host_id)
@@ -1769,11 +1784,26 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         attr = self._resolve(attr)
         return self.update(attr, description=description)
 
+    @deprecated('Use "list_policies()" instead.')
     def get_policies(self, attr: int | str | NetworkPolicyAttribute) -> list[NetworkPolicy]:
-        """Get all network policies that use this attribute.
+        """List all network policies that use this attribute.
 
         Args:
             attr (int | str | NetworkPolicyAttribute): NetworkPolicyAttribute instance, numeric ID, or name.
+
+        Returns:
+            list[NetworkPolicy]: List of network policies that use this attribute.
+        """
+        return self.list_policies(attr)
+
+    def list_policies(self, attr: int | str | NetworkPolicyAttribute) -> list[NetworkPolicy]:
+        """List all network policies that use this attribute.
+
+        Args:
+            attr (int | str | NetworkPolicyAttribute): NetworkPolicyAttribute instance, numeric ID, or name.
+
+        Returns:
+            list[NetworkPolicy]: List of network policies that use this attribute.
         """
         attr = self._resolve(attr)
         return self._client.get_typed(
