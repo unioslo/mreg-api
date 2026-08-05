@@ -473,12 +473,13 @@ class WriteResourceManager(ResourceManager[T], ABC):
     # TODO: rename to _delete so subclass implementations of `delete` can use
     # appropriately named parameters + add new parameters if required. This public
     # method is too inflexible.
-    def delete(self, obj: T) -> None:
+    def delete(self, obj: int | T) -> None:
         """Delete a resource.
 
         Args:
-            obj (T): The resource to delete.
+            obj (T): The ID or object reference of resource to delete.
         """
+        obj = self._resolve(obj)
         _ = self._client.delete(self._endpoint_with_id(obj))
 
 
@@ -577,6 +578,16 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         if required and obj is None:
             raise EntityNotFound(f"{self.model.__name__} {name!r} not found.")
         return obj
+
+    @override
+    def delete(self, obj: int | str | T) -> None:
+        """Delete a resource.
+
+        Args:
+            obj (int | str | T): The resource, ID, or name to delete.
+        """
+        obj = self._resolve(obj)
+        _ = self._client.delete(self._endpoint_with_id(obj))
 
     # TODO: add str | int support for obj?
     def rename(self, obj: T, new_name: str) -> T:
@@ -1298,12 +1309,16 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         return self.update(role, description=description)
 
     @override
-    def delete(self, obj: Role) -> None:
+    def delete(self, obj: int | str | Role) -> None:
         """Delete a role.
+
+        Args:
+            obj (int | str | Role): Role instance, numeric ID, or name string.
 
         Raises:
             DeleteError: If the role is still in use on any hosts.
         """
+        obj = self._resolve(obj)
         if obj.hosts:
             hosts = ", ".join(obj.hosts)
             raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
@@ -1521,12 +1536,16 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         return self.update(atom, description=description)
 
     @override
-    def delete(self, obj: Atom) -> None:
+    def delete(self, obj: int | str | Atom) -> None:
         """Delete an atom.
+
+        Args:
+            obj (int | str | Atom): Atom instance, name string, or numeric ID.
 
         Raises:
             DeleteError: If the atom is still used in any roles.
         """
+        obj = self._resolve(obj)
         if obj.roles:
             roles = ", ".join(obj.roles)
             raise DeleteError(f"Atom {obj.name!r} used in roles: {roles}")
@@ -3797,13 +3816,14 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
     # NOTE: force should not propagate to this method.
     # Ideally, we resolve all safety issues in the ZoneManager itself.
     @override
-    def delete(self, obj: _ZoneT, *, force: bool = False) -> None:
+    def delete(self, obj: int | str | _ZoneT, *, force: bool = False) -> None:
         """Delete the zone, guarding against non-empty zones unless `force`.
 
         Args:
-            obj (_ZoneT): The zone to delete.
+            obj (int | str | _ZoneT): The zone to delete, by numeric ID, name string, or instance.
             force (bool): When True, skip safety checks and delete even non-empty zones.
         """
+        obj = self._resolve(obj)
         if not force:
             self._ensure_deletable(obj)
         super().delete(obj)
@@ -4059,6 +4079,9 @@ class ZoneManager:
             zone (str | ForwardZone | ReverseZone): Zone reference (name string or instance).
             force (bool): When True, skip safety checks and delete even non-empty zones.
         """
+        # NOTE: cannot delete by ID with the current architecture, since we delegate
+        # the deletion to a reverse or forward sub-manager based on the identified
+        # zone type.
         z = self._resolve_zone(zone)
         if isinstance(z, ReverseZone):
             self._reverse.delete(z, force=force)
