@@ -50,6 +50,7 @@ from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
+from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models import CNAME
@@ -179,8 +180,12 @@ def resolve_host(host: int | str | Host, client: MregClient) -> Host:
 class ResourceManager(Generic[T], ABC):
     """Basic manager for performing read operations on an API resource type."""
 
-    _path_field: ClassVar[str] = "id"
-    """The name of the field whose value forms the URL path for a single resource.
+    _path_param_field: ClassVar[str] = "id"
+    """Name of the model field whose value is the resource's URL path parameter.
+
+    The path parameter is the variable trailing segment of a detail URL
+    (`/hosts/{name}`, `/networks/{network}`, `/sshfps/{id}`) that identifies a
+    single resource.
 
     For most resources this is the numeric `id` field:
         GET /api/sshfps/123 # 200
@@ -223,20 +228,20 @@ class ResourceManager(Generic[T], ABC):
         Depending on the endpoint, the reference may be a numeric ID, or a string
         such as name, network, and more.
 
-        A resource is only directly fetchable by an integer value if its path resource
-        identifier is named `id`, otherwise it must be searched for.
+        A resource is only directly fetchable by an integer value if its path
+        parameter field is named `id`, otherwise it must be searched for.
 
-        Strings are always treated as the path resource identifier, and uses the manager's
+        Strings are always treated as the path parameter, and use the manager's
         endpoint to construct the direct lookup, i.e.:
 
         `_fetch("myhost")` -> `/hosts/{name}` -> `/hosts/myhost`
         """
-        if isinstance(ref, int) and self._path_field != "id":
+        if isinstance(ref, int) and self._path_param_field != "id":
             return self._search_one("id", ref)
         return self._fetch_by_path(ref)
 
     def _resolve(self, ref: int | str | T) -> T:
-        """Resolve an object reference (instance, path identifier, or numeric id) to a model.
+        """Resolve an object reference (instance, path parameter, or numeric id) to a model.
 
         Fetches the object from the server if only an identifier is provided.
 
@@ -255,7 +260,7 @@ class ResourceManager(Generic[T], ABC):
         # ref narrowed to int | str
         obj = self._fetch(ref)
         if obj is None:
-            raise EntityNotFound(f"{self.model.__name__} with {self._path_field} {ref!r} not found.")
+            raise EntityNotFound(f"{self.model.__name__} with {self._path_param_field} {ref!r} not found.")
         return obj
 
     def _resolve_hostname(self, host: str | HostName | Host) -> str:
@@ -302,19 +307,28 @@ class ResourceManager(Generic[T], ABC):
         """
         return get_type_adapter(self.model).validate_python(data)
 
-    # TODO. rename to path_field_value, and make private?
-    def id_field_value(self, obj: T) -> str | int:
-        """Get the value of the field that forms the URL path for `obj`."""
-        return getattr(obj, self._path_field)
+    def _path_param_value(self, obj: T) -> str | int:
+        """Return the value of `obj`'s path parameter field (its URL path segment).
 
-    # TODO: test for all model types/managers! getattr is not great!
-    def _endpoint_with_id(self, obj: T) -> str:
-        return self.endpoint.with_id(self.id_field_value(obj))
+        Raises:
+            InternalError: If `obj` has no attribute named by `_path_param_field`.
+                This indicates a misconfigured manager rather than bad user input.
+        """
+        try:
+            return getattr(obj, self._path_param_field)
+        except AttributeError as e:
+            raise InternalError(
+                f"{type(obj).__name__} has no path parameter field {self._path_param_field!r}."
+            ) from e
+
+    def _endpoint_with_path_param(self, obj: T) -> str:
+        """Build the detail URL for `obj` from its path parameter value."""
+        return self.endpoint.with_id(self._path_param_value(obj))
 
     def _fetch_by_path(self, value: str | int) -> T | None:
         """Fetch one object via its detail URL: `GET /endpoint/{value}`.
 
-        `value` must be the URL path identifier (e.g. hostname, network, id, etc.).
+        `value` must be the path parameter (e.g. hostname, network, id, etc.).
         """
         value = self._normalize_id(value)
         resp = self._client.get(self.endpoint.with_id(value), ok404=True)
@@ -325,7 +339,7 @@ class ResourceManager(Generic[T], ABC):
     def _search_one(self, field: str, value: str | int) -> T | None:
         """Fetch one object via a unique search: `GET /endpoint?field=value`.
 
-        Used for any field that is not the URL path identifier (e.g. `/hosts?ipaddress=10.0.0.1`).
+        Used for any field that is not the path parameter (e.g. `/hosts?ipaddress=10.0.0.1`).
         """
         data = self._client.get_item_by_key_value(self.endpoint, field, value, ok404=True)
         if not data:
@@ -333,8 +347,8 @@ class ResourceManager(Generic[T], ABC):
         return self._validate(data)
 
     def _fetch_by_field(self, field: str, value: str | int) -> T | None:
-        """Fetch one object by any field, path-fetching when it is the URL identifier."""
-        if field.casefold() == self._path_field.casefold():
+        """Fetch one object by any field, path-fetching when it is the path parameter."""
+        if field.casefold() == self._path_param_field.casefold():
             return self._fetch_by_path(value)
         return self._search_one(field, value)
 
@@ -348,13 +362,13 @@ class ResourceManager(Generic[T], ABC):
         """Fetch a fresh copy of `obj` from the server.
 
         Prefers the immutable `id` when the model has one, so a preceding rename (which
-        leaves the path field on `obj` stale) does not break the lookup. Models without an
-        `id` field (HInfo, Location — keyed by `host`) fall back to the path identifier.
+        leaves the path parameter field on `obj` stale) does not break the lookup. Models
+        without an `id` field (HInfo, Location — keyed by `host`) fall back to the path parameter.
         """
         if (obj_id := getattr(obj, "id", None)) is not None:
             fresh = self._fetch_by_field("id", obj_id)
         else:
-            fresh = self._fetch_by_path(self.id_field_value(obj))
+            fresh = self._fetch_by_path(self._path_param_value(obj))
         if fresh is None:
             raise GetError(f"Could not refetch {self.model.__name__}.")
         return fresh
@@ -367,7 +381,9 @@ class ResourceManager(Generic[T], ABC):
         """Get a resource by its endpoint identifier (str) or its ID (int).
 
         Args:
-            ident: The URL identifier (id / name / network, per resource).
+            ident: The path parameter (id / name / network, per resource).
+                String arguments are only supported for resources that are
+                addressed by a non-numeric path parameter (e.g. name, network, hostname).
             required: When `True` (default), raise `EntityNotFound` if missing.
                 Pass `False` to return `T | None` instead.
 
@@ -389,13 +405,13 @@ class ResourceManager(Generic[T], ABC):
         """Assert that no resource with `ident` exists.
 
         Args:
-            ident (str | int): The URL identifier to check (id / name / network, per resource).
+            ident (str | int): The path parameter to check (id / name / network, per resource).
 
         Raises:
             EntityAlreadyExists: If a resource with `ident` exists.
         """
         ident = self._normalize_id(ident)
-        if self._fetch_by_field(self._path_field, ident) is not None:
+        if self._fetch_by_field(self._path_param_field, ident) is not None:
             raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
     def list(
@@ -467,7 +483,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
 
         Raises :class:`PatchError` (from the client) if the server rejects the patch.
         """
-        _ = self._client.patch(self._endpoint_with_id(obj), json=data, params=params)
+        _ = self._client.patch(self._endpoint_with_path_param(obj), json=data, params=params)
         return self._refetch(obj)
 
     # TODO: rename to _delete so subclass implementations of `delete` can use
@@ -480,7 +496,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
             obj (T): The ID or object reference of resource to delete.
         """
         obj = self._resolve(obj)
-        _ = self._client.delete(self._endpoint_with_id(obj))
+        _ = self._client.delete(self._endpoint_with_path_param(obj))
 
 
 class CountableResourceManager(WriteResourceManager[T], ABC):
@@ -505,7 +521,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     # NOTE: write methods are inherited even for managers where the underlying
     # API endpoint may not support writes (e.g. NameServerManager).
 
-    # TODO: should override _path_field instead?!
+    # TODO: should override _path_param_field instead?!
     name_field: ClassVar[str] = "name"
     name_lowercase: ClassVar[bool] = False
 
@@ -521,7 +537,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         # Resolve by name search if we have a str arg and the API resource path
         # does not identify the resource by name, e.g.:
         # `/labels/{id}` -> must search by name -> `/labels?name={name}`
-        if isinstance(ref, str) and self._path_field != self.name_field:
+        if isinstance(ref, str) and self._path_param_field != self.name_field:
             return self.get_by_name(ref)
         return super()._resolve(ref)
 
@@ -530,7 +546,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         """Assert that a given resource does not exist.
 
         Args:
-            ident (str | int): The URL identifier or name to check.
+            ident (str | int): The path parameter or name to check.
 
         Raises:
             EntityAlreadyExists: If a resource with the given identifier exists.
@@ -551,7 +567,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     #       uses some basic heuristics to determine if it should fetch by name (using this method ironically),
     #       or if it should fall back on the path-identifier based approach.
     #
-    #       get() should IDEALLY handle the "primary" path i.e. the URL path identifier.
+    #       get() should IDEALLY handle the "primary" path i.e. the path parameter.
     #       So if we could do `client.host.get("ExAMple.com")`, with the knowledge
     #       that the class is aware that string arguments are names, which then normalizes
     #       them like we do here, then we can remove this method entirely.
@@ -587,7 +603,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
             obj (int | str | T): The resource, ID, or name to delete.
         """
         obj = self._resolve(obj)
-        _ = self._client.delete(self._endpoint_with_id(obj))
+        _ = self._client.delete(self._endpoint_with_path_param(obj))
 
     # TODO: add str | int support for obj?
     def rename(self, obj: T, new_name: str) -> T:
@@ -667,7 +683,7 @@ class HistoryManager(ResourceManager[T], ABC):
 class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     """Operations on :class:`~mreg_api.models.Host` resources."""
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -957,7 +973,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
     """Operations on :class:`~mreg_api.models.HostGroup` resources."""
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -1165,7 +1181,7 @@ class LabelManager(NamedResourceManager[Label]):
     # NOTE: the regular labels endpoint uses IDs for lookups, but it is possible
     # to fetch by name when using the /labels/name endpoint.
     # This makes no sense, of course, but that's how it is.
-    _path_field: ClassVar[str] = "id"
+    _path_param_field: ClassVar[str] = "id"
 
     @property
     @override
@@ -1228,7 +1244,7 @@ class LabelManager(NamedResourceManager[Label]):
 class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     """Operations on :class:`~mreg_api.models.Role` resources."""
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -1489,7 +1505,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
 class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
     """Operations on :class:`~mreg_api.models.Atom` resources."""
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -2223,7 +2239,7 @@ class CommunityManager:
 class NetworkManager(WriteResourceManager[Network]):
     """Operations on :class:`~mreg_api.models.Network` resources."""
 
-    _path_field: ClassVar[str] = "network"
+    _path_param_field: ClassVar[str] = "network"
 
     @property
     @override
@@ -2670,7 +2686,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
 class CNAMEManager(NamedResourceManager[CNAME]):
     """Operations on :class:`~mreg_api.models.CNAME` resources."""
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
 
     @property
     @override
@@ -2791,10 +2807,10 @@ class CNAMEManager(NamedResourceManager[CNAME]):
 class HInfoManager(WriteResourceManager[HInfo]):
     """Operations on :class:`~mreg_api.models.HInfo` resources.
 
-    HInfo is a 1-per-host record; the URL identifier is the host ID (not a numeric row id).
+    HInfo is a 1-per-host record; the path parameter is the host ID (not a numeric row id).
     """
 
-    _path_field: ClassVar[str] = "host"
+    _path_param_field: ClassVar[str] = "host"
 
     @property
     @override
@@ -3597,7 +3613,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
 class LocationManager(WriteResourceManager[Location]):
     """Operations on :class:`~mreg_api.models.Location` resources."""
 
-    _path_field: ClassVar[str] = "host"
+    _path_param_field: ClassVar[str] = "host"
 
     @property
     @override
@@ -3737,7 +3753,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
     which dispatches to these by zone-name shape.
     """
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
     nameservers_endpoint: ClassVar[Endpoint]
     """The per-type nameservers endpoint (forward/reverse differ)."""
 
@@ -4373,7 +4389,7 @@ class NameServerManager(NamedResourceManager[NameServer]):
     operations; this manager exposes listing and lookup.
     """
 
-    _path_field: ClassVar[str] = "name"
+    _path_param_field: ClassVar[str] = "name"
 
     @property
     @override
