@@ -3971,6 +3971,24 @@ class ZoneManager:
         return _verify_nameservers(self._client, nameservers, force=force)
 
     @overload
+    def get(self, name: str, *, required: Literal[False]) -> ForwardZone | ReverseZone | None: ...
+    @overload
+    def get(self, name: str, *, required: Literal[True] = ...) -> ForwardZone | ReverseZone: ...
+    def get(self, name: str, *, required: bool = True) -> ForwardZone | ReverseZone | None:
+        """Get a zone by name; forward/reverse chosen by name shape.
+
+        Alias for `get_by_name`.
+
+        Args:
+            name (str): The zone name to look up.
+            required (bool): When True (default), raise EntityNotFound if not found.
+
+        Raises:
+            EntityNotFound: If `required` is True and the zone is not found.
+        """
+        return self._sub_for_name(name).get_by_name(name, required=required)
+
+    @overload
     def get_by_name(self, name: str, *, required: Literal[False]) -> ForwardZone | ReverseZone | None: ...
     @overload
     def get_by_name(self, name: str, *, required: Literal[True] = ...) -> ForwardZone | ReverseZone: ...
