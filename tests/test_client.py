@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import datetime
 import gc
-import inspect
 from typing import Any
 
 import pytest
@@ -12,7 +11,6 @@ from inline_snapshot import snapshot
 from pytest_httpserver import HTTPServer
 from werkzeug import Response
 
-from mreg_api import models
 from mreg_api.__about__ import __version__
 from mreg_api.client import MregClient
 from mreg_api.client import check_response
@@ -694,8 +692,8 @@ def test_client_domain_direct_assignment() -> None:
     assert client.domain == "changed.org"
 
 
-def test_client_model_composition(client: MregClient, httpserver: HTTPServer) -> None:
-    """MregClient exposes all resource managers as cached_property attributes."""
+def test_client_manager_composition_usage(client: MregClient, httpserver: HTTPServer) -> None:
+    """Test using the HostManager via the MregClient."""
     assert isinstance(client.host, HostManager)
 
     httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_json(
@@ -725,14 +723,64 @@ def test_client_model_composition(client: MregClient, httpserver: HTTPServer) ->
     )
 
 
-def test_exported_abcs() -> None:
-    """Snapshot test to verify which ABCs are exported from the models module."""
-    abcs: list[str] = []  # names
-    for name in models.__all__:
-        obj = getattr(models, name)
-        if inspect.isabstract(obj):
-            abcs.append(name)
-    assert abcs == snapshot([])
+def get_mreg_client_managers(client: MregClient) -> list[tuple[str, str, type[Any]]]:
+    """Return a list of (attribute_name, class_name, class_type) for all managers in the client."""
+    # XXX: This is very similar to tests.test_managers.get_resource_managers :\
+    managers: list[tuple[str, str, type[Any]]] = []
+    for name in dir(client):
+        obj = getattr(client, name)
+        cls_name = obj.__class__.__name__
+        if cls_name.endswith("Manager"):
+            managers.append((name, cls_name, obj.__class__))
+    return managers
+
+
+def test_client_manager_composition_snapshot(client: MregClient) -> None:
+    """Snapshot test to verify which managers are exported from the client."""
+    managers = get_mreg_client_managers(client)
+    names = sorted([f"{attr} ({cls_name})" for attr, cls_name, _ in managers])
+    assert names == snapshot(
+        [
+            "atom (AtomManager)",
+            "bacnetid (BacnetIDManager)",
+            "cname (CNAMEManager)",
+            "delegation (DelegationManager)",
+            "dhcphostipv4 (DhcpHostIPv4Manager)",
+            "dhcphostipv6 (DhcpHostIPv6Manager)",
+            "dhcphostipv6byipv4 (DhcpHostIPv6ByIPv4Manager)",
+            "hinfo (HInfoManager)",
+            "host (HostManager)",
+            "hostgroup (HostGroupManager)",
+            "ipaddress (IPAddressManager)",
+            "label (LabelManager)",
+            "location (LocationManager)",
+            "mx (MXManager)",
+            "nameserver (NameServerManager)",
+            "naptr (NAPTRManager)",
+            "network (NetworkManager)",
+            "networkpolicy (NetworkPolicyManager)",
+            "networkpolicyattribute (NetworkPolicyAttributeManager)",
+            "permission (PermissionManager)",
+            "ptroverride (PTROverrideManager)",
+            "role (RoleManager)",
+            "srv (SrvManager)",
+            "sshfp (SSHFPManager)",
+            "txt (TXTManager)",
+            "zone (ZoneManager)",
+        ]
+    )
+
+
+def test_client_manager_composition_has_get_method(client: MregClient) -> None:
+    # Test that they all export a `get()` method (both via class attr and composed attr on MregClient)
+    managers = get_mreg_client_managers(client)
+    for client_attr, cls_name, manager_cls in managers:
+        assert hasattr(manager_cls, "get"), f"Manager class {cls_name} does not have a get() method"
+
+        # MregClient instance attr exists (`MregClient.<attr>.get()`)
+        assert hasattr(getattr(client, client_attr), "get"), (
+            f"Manager instance {client.__class__.__name__}.{client_attr} does not have a get() method"
+        )
 
 
 @pytest.mark.parametrize(
