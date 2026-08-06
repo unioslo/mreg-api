@@ -1127,7 +1127,7 @@ class MregClient:
         # Ensure that the first item is a mapping (dictionary)
         return JsonMappingValidator.validate_python(content[0])
 
-    def get_count(self, path: str) -> int:
+    def get_count(self, path: str, *, strict: bool = False) -> int:
         """Get the count of items from a list endpoint.
 
         Warning:
@@ -1141,6 +1141,12 @@ class MregClient:
             resp = validate_paginated_response(response)
             return resp.count
         except MregValidationError:
+            if strict:
+                raise GetError(
+                    f"Endpoint {path} does not support counting. "  # pyright: ignore[reportImplicitStringConcatenation]
+                    "Pass `strict=False` to fall back on client-side counting."
+                ) from None
+
             content = validate_list_response(response)
             logger.warning(
                 "Endpoint %s did not return a paginated response, returning length of results as count",
