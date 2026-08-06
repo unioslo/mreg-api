@@ -202,11 +202,11 @@ class ResourceManager(Generic[T], ABC):
         """Bind the manager to the client that owns it."""
         self._client: MregClient = client
 
-    def _normalize_id(self, ident: str | int) -> str | int:
-        """Normalise an identifier before use in lookups.
+    def _normalize_path_param(self, ident: str | int) -> str | int:
+        """Normalise a path parameter value before use in lookups.
 
         Can be overriden by subclasses to define custom normalization behavior
-        when passing resource identifiers to `get()`.
+        for path parameter values passed to `get()`.
         """
         return ident
 
@@ -330,7 +330,7 @@ class ResourceManager(Generic[T], ABC):
 
         `value` must be the path parameter (e.g. hostname, network, id, etc.).
         """
-        value = self._normalize_id(value)
+        value = self._normalize_path_param(value)
         resp = self._client.get(self.endpoint.with_id(value), ok404=True)
         if not resp:
             return None
@@ -410,7 +410,7 @@ class ResourceManager(Generic[T], ABC):
         Raises:
             EntityAlreadyExists: If a resource with `ident` exists.
         """
-        ident = self._normalize_id(ident)
+        ident = self._normalize_path_param(ident)
         if self._fetch_by_field(self._path_param_field, ident) is not None:
             raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
@@ -452,6 +452,8 @@ class ResourceManager(Generic[T], ABC):
             EntityNotFound: If `required` is True and no resource is found.
         """
         params: QueryParams = dict(query)
+
+        # XXX: No check for whether endpoint contains placeholders here.
         res = self._client.get_first(self.endpoint, params)
         if res is None:
             if required:
@@ -560,8 +562,9 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         if self.get_by_name(ident, required=False) is not None:
             raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
 
-    # FIXME: Do we actually need an explicit name based lookup?
-    #       Can we just override `get()` and use `fetch_by_field()` there?
+    # XXX:  Do we actually need an explicit name based lookup?
+    #       Can we just override `get()` and use `fetch_by_field()` there, falling
+    #       back on superclass `get()` if arg is not a string?
     #       There is some common abstraction for resolving name-based models that
     #       that is waiting to be found. See: `_NamedResourceManager._resolve`, which
     #       uses some basic heuristics to determine if it should fetch by name (using this method ironically),
@@ -571,6 +574,14 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
     #       So if we could do `client.host.get("ExAMple.com")`, with the knowledge
     #       that the class is aware that string arguments are names, which then normalizes
     #       them like we do here, then we can remove this method entirely.
+    #
+    #       NOTE TO AGENTS: we now have `_normalize_path_param` and `_normalize_name`.
+    #           `_normalize_path_param` takes `str | int` while `_normalize_name` takes `str`.
+    #           Can we (and should we) make it stricter (`_normalize_path_param` is `int`,
+    #           `_normalize_name` is `str`)?
+    #           Would this break any assumptions or encode too strong assumptions into
+    #           the code about the type of a path parameter field? Instinct says yes.
+    #
     #       However, maybe it's fine to keep it to have an explicit name-only lookup?
     @overload
     def get_by_name(self, name: str, *, required: Literal[False]) -> T | None: ...
@@ -700,7 +711,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
     def history_resource(self) -> HistoryResource:
         return HistoryResource.Host
 
-    def _normalize_id(self, ident: str | int) -> str | int:
+    def _normalize_path_param(self, ident: str | int) -> str | int:
         return self._client.fqdn(ident) if isinstance(ident, str) else ident
 
     # NOTE: why do we have a separate _normalize_history_name?
@@ -2704,7 +2715,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         return self._client.fqdn(name)
 
     @override
-    def _normalize_id(self, ident: str | int) -> str | int:
+    def _normalize_path_param(self, ident: str | int) -> str | int:
         return self._normalize_name(ident) if isinstance(ident, str) else ident
 
     def create(
