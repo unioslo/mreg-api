@@ -1,0 +1,8 @@
+zones:
+  - name: "example.uio.no"
+    email: "hostmaster@uio.no"
+    primary_ns: ["ns1.example.uio.no"]
+
+networks:
+  - network: "10.0.0.0/8"
+    description: "Integration test network"
