@@ -422,8 +422,6 @@ class MregClient:
         cache: CacheConfig | bool = False,
         follow_redirects: bool = False,
         page_size: int | None = None,
-        # Future: set to None for unbounded capture. Planned: serialize client.history
-        # (deque[RequestRecord]) to JSON after integration test runs for auditing.
         history_size: int | None = 100,
         event_log_size: int | None = 100,
         user_agent: str | None = None,
