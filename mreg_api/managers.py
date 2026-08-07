@@ -463,6 +463,17 @@ class ResourceManager(Generic[T], ABC):
                 return None
         return get_type_adapter(self.model).validate_python(res)
 
+    def count(self, *, strict: bool = False) -> int:
+        """Return the server-reported total count of resources at this endpoint.
+
+        Falls back on fetching all results and counting them client-side
+        if endpoint does not support counting via pagination and `strict` is `False`.
+
+        Args:
+            strict (bool): Raise exception instead of falling back on counting client-side.
+        """
+        return self._client.get_count(self.endpoint, strict=strict)
+
 
 class WriteResourceManager(ResourceManager[T], ABC):
     """Manager for performing CRUD operations on an API resource type."""
@@ -499,22 +510,6 @@ class WriteResourceManager(ResourceManager[T], ABC):
         """
         obj = self._resolve(obj)
         _ = self._client.delete(self._endpoint_with_path_param(obj))
-
-
-class CountableResourceManager(WriteResourceManager[T], ABC):
-    """Opt-in capability mixin: adds `count` to a `WriteResourceManager`.
-
-    Inherit this alongside (or instead of) `WriteResourceManager` for any resource
-    whose list endpoint returns a DRF-paginated response with a `count` field.
-    DhcpHost managers must NOT inherit this (their endpoints are non-paginated).
-
-    Combine with other capabilities via multiple inheritance, the same way
-    `HostManager` combines `NamedResourceManager` + `HistoryManager`.
-    """
-
-    def count(self) -> int:
-        """Return the server-reported total count of resources at this endpoint."""
-        return self._client.get_count(self.endpoint)
 
 
 class NamedResourceManager(WriteResourceManager[T], ABC):
