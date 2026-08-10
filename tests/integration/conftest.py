@@ -19,6 +19,7 @@ from typing import Any
 import pytest
 
 from mreg_api.client import MregClient
+from mreg_api.exceptions import PostError
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -142,8 +143,7 @@ def seed_test_network(
         return
 
     client: MregClient = request.getfixturevalue("integration_client")
-
-    from mreg_api.exceptions import PostError
+    assert isinstance(client, MregClient)
 
     existing = client.network.get(test_network, required=False)
     if existing is None:
