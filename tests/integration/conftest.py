@@ -29,6 +29,9 @@ def pytest_addoption(parser: pytest.Parser) -> None:
     parser.addoption("--mreg-domain", default=None, help="mreg domain (overrides MREG_DOMAIN)")
     parser.addoption("--test-network", default=None, help="test network CIDR (overrides MREG_TEST_NETWORK)")
     parser.addoption("--test-ip", default=None, help="test IP address (overrides MREG_TEST_IP)")
+    parser.addoption(
+        "--mreg-cache", default=None, help="enable or disable mreg client cache (overrides MREG_CACHE)"
+    )
 
 
 def pytest_runtest_setup(item: pytest.Item) -> None:
@@ -67,8 +70,16 @@ def mreg_password(request: pytest.FixtureRequest) -> str:
 @pytest.fixture(scope="session")
 def mreg_domain(request: pytest.FixtureRequest) -> str:
     return (
-        os.environ.get("MREG_DOMAIN") or request.config.getoption("--mreg-domain", default=None) or "uio.no"
+        os.environ.get("MREG_DOMAIN")
+        or request.config.getoption("--mreg-domain", default=None)
+        or "example.com"
     )
+
+
+@pytest.fixture(scope="session")
+def mreg_enable_cache(request: pytest.FixtureRequest) -> bool:
+    val = os.environ.get("MREG_CACHE") or request.config.getoption("--mreg-cache", default=None) or "false"
+    return str(val).lower() in ("1", "true", "yes")
 
 
 @pytest.fixture(scope="session")
@@ -94,8 +105,9 @@ def integration_client(
     mreg_username: str,
     mreg_password: str,
     mreg_domain: str,
+    mreg_cache: bool,
 ) -> MregClient:
-    client = MregClient(url=mreg_url, domain=mreg_domain, cache=False)
+    client = MregClient(url=mreg_url, domain=mreg_domain, cache=mreg_cache)
     client.login(username=mreg_username, password=mreg_password)
     return client
 

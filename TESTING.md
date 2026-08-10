@@ -41,7 +41,8 @@ MREG_URL=http://127.0.0.1:8000 uv run pytest tests/integration/
 MREG_URL=http://127.0.0.1:8000 \
 MREG_USERNAME=myuser \
 MREG_PASSWORD=secret \
-MREG_DOMAIN=uio.no \
+MREG_DOMAIN=example.com \
+MREG_CACHE=0 \
 MREG_TEST_NETWORK=10.0.0.0/8 \
   uv run pytest tests/integration/ -v
 
@@ -54,7 +55,7 @@ uv run pytest tests/integration/ \
 
 ### Seed data
 
-Tests that depend on a zone (`example.uio.no`) or bulk DHCP data require `ci/seed.py` to have run first:
+Tests that depend on a zone (`example.com`) or bulk DHCP data require `ci/seed.py` to have run first:
 
 ```bash
 MREG_URL=http://127.0.0.1:8000 MREG_USERNAME=test MREG_PASSWORD=test \

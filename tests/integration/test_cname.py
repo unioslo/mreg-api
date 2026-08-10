@@ -13,7 +13,7 @@ from mreg_api.models.models import Zone
 
 pytestmark = [pytest.mark.integration]
 
-DOMAIN = "example.uio.no"
+DOMAIN = "subzone.example.com"
 
 
 @pytest.fixture(scope="module")

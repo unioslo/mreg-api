@@ -10,7 +10,7 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Host
 from mreg_api.models.models import IPAddress
 
-DOMAIN = "example.uio.no"
+DOMAIN = "subzone.example.com"
 
 pytestmark = [pytest.mark.integration]
 

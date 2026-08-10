@@ -15,7 +15,7 @@ from mreg_api.models.models import ReverseZone
 
 pytestmark = [pytest.mark.integration]
 
-DOMAIN = "example.uio.no"
+DOMAIN = "subzone.example.com"
 
 
 @pytest.fixture(scope="module")
@@ -41,7 +41,7 @@ def test_zone(
     resource_tracker: list[Callable[[], Any]],
     seed_ns: str,
 ) -> ForwardZone:
-    zone_name = f"{test_prefix}.uio.no"
+    zone_name = f"{test_prefix}.example.com"
     zone = integration_client.zone.create(
         name=zone_name,
         email=f"hostmaster@{zone_name}",
@@ -79,7 +79,7 @@ def delegation(
 
 def test_create_forward_zone(test_zone: ForwardZone) -> None:
     assert isinstance(test_zone, ForwardZone)
-    assert test_zone.name.endswith(".uio.no")
+    assert test_zone.name.endswith(".example.com")
 
 
 def test_get_by_name(integration_client: MregClient, test_zone: ForwardZone) -> None:
@@ -89,13 +89,13 @@ def test_get_by_name(integration_client: MregClient, test_zone: ForwardZone) -> 
 
 
 def test_get_nonexistent_returns_none(integration_client: MregClient) -> None:
-    result = integration_client.zone.get("nonexistent-zzz.uio.no", required=False)
+    result = integration_client.zone.get("nonexistent-zzz.example.com", required=False)
     assert result is None
 
 
 def test_get_nonexistent_raises(integration_client: MregClient) -> None:
     with pytest.raises(EntityNotFound):
-        integration_client.zone.get("nonexistent-zzz.uio.no")
+        integration_client.zone.get("nonexistent-zzz.example.com")
 
 
 def test_list_forward(integration_client: MregClient, test_zone: ForwardZone) -> None:
@@ -104,7 +104,7 @@ def test_list_forward(integration_client: MregClient, test_zone: ForwardZone) ->
 
 
 def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.zone.ensure_absent("nonexistent-zzz.uio.no")
+    integration_client.zone.ensure_absent("nonexistent-zzz.example.com")
 
 
 def test_ensure_absent_existing(
@@ -120,7 +120,7 @@ def test_delete_by_name(
     test_prefix: str,
     seed_ns: str,
 ) -> None:
-    zone_name = f"{test_prefix}zdn.uio.no"
+    zone_name = f"{test_prefix}zdn.example.com"
     zone = integration_client.zone.create(
         name=zone_name,
         email=f"hostmaster@{zone_name}",
@@ -137,7 +137,7 @@ def test_delete_by_object(
     test_prefix: str,
     seed_ns: str,
 ) -> None:
-    zone_name = f"{test_prefix}zdo.uio.no"
+    zone_name = f"{test_prefix}zdo.example.com"
     zone = integration_client.zone.create(
         name=zone_name,
         email=f"hostmaster@{zone_name}",

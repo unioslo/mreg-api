@@ -2,12 +2,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from typing import Any
+from urllib.parse import quote
 
 import pytest
 
 from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import GetError
 from mreg_api.models.models import Atom
 
 pytestmark = [pytest.mark.integration]
@@ -47,6 +49,95 @@ def test_create(
     assert atm is not None
     resource_tracker.append(lambda: integration_client.atom.delete(atm))
     assert atm.name == f"{test_prefix}ac"
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "name_with_underscores",
+        "name-with-dashes",
+        "name.with.dots",
+        "name+with+pluses",
+        "name9with9numbers",
+        pytest.param(
+            # NOTE: it is actually upon receiving the `Location` header
+            # that we get a 400 Bad Request, not on the POST itself,
+            # hence the `GetError` instead of `PostError` here.
+            # The server doesn't quote the name in the Location header,
+            # and neither does the client. So this is just a disaster all around.
+            "name/with/slashes",
+            marks=pytest.mark.xfail(raises=GetError),
+        ),
+    ],
+)
+def test_create_various_names(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: list[Callable[[], Any]],
+    name: str,
+) -> None:
+    """Test atom creation with various valid name formats."""
+    atom_name = f"{test_prefix}{name}"
+    atm = integration_client.atom.create(
+        name=atom_name,
+        description="create test",
+        fetch_after_create=True,
+    )
+    assert atm is not None
+    resource_tracker.append(lambda: integration_client.atom.delete(atm))
+    assert atm.name == atom_name
+    # Check that we can fetch these atoms by name as well
+    assert integration_client.atom.get_by_name(atom_name)
+
+
+def test_create_name_with_slashes(
+    integration_client: MregClient,
+    test_prefix: str,
+) -> None:
+    """Test atom creation with a name containing slashes.
+
+    This is a case where it is possible to create the Atom, but
+    automatic retrieval fails, and the API library does not quote the name
+    in `get()`, so it just becomes almost impossible to retrieve unless
+    the name is manually quoted when passing the argument to `get()`.
+
+    `Endpoint.with_id` does not quote `/` because it is a valid character
+    in a path parameter for networks (i.e. `/networks/10.0.0.0/24`), so MREG
+    clients have historically never quoted `/` in path parameters.
+    """
+    #
+    atom_name_1 = f"{test_prefix}name/with/slashes1"
+    atm = integration_client.atom.create(
+        name=atom_name_1,
+        description="create test",
+        # We MUST not fetch after create, because the server returns
+        # an invalid Location header for this atom.
+        fetch_after_create=False,
+    )
+    assert atm is None  # nothing returned
+
+    # Trying to fetch it without quoting the name will fail
+    with pytest.raises(EntityNotFound):
+        integration_client.atom.get_by_name(atom_name_1)
+
+    fetched_atom = integration_client.atom.get_by_name(quote(atom_name_1, safe=""))
+    assert fetched_atom is not None
+    assert fetched_atom.name == atom_name_1
+
+    # Creating an atom with fetch_after_create=True will fail,
+    # but the atom is still created!
+    atom_name_2 = f"{test_prefix}name/with/slashes2"
+    with pytest.raises(GetError):
+        integration_client.atom.create(
+            name=atom_name_2,
+            description="create test",
+            fetch_after_create=True,
+        )
+
+    # We can still fetch it by quoting the name
+    fetched_atom_2 = integration_client.atom.get_by_name(quote(atom_name_2, safe=""))
+    assert fetched_atom_2 is not None
+    assert fetched_atom_2.name == atom_name_2
 
 
 def test_get_by_id(integration_client: MregClient, atom: Atom) -> None:

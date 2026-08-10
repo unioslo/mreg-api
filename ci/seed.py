@@ -25,7 +25,7 @@ def main() -> None:
     url = os.environ.get("MREG_URL", "http://127.0.0.1:8000")
     username = os.environ.get("MREG_USERNAME", "test")
     password = os.environ.get("MREG_PASSWORD", "test")
-    domain = os.environ.get("MREG_DOMAIN", "uio.no")
+    domain = os.environ.get("MREG_DOMAIN", "example.com")
 
     if not SEED_FILE.exists():
         print(f"No seed file found at {SEED_FILE}, skipping.")

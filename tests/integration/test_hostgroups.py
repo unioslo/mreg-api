@@ -252,7 +252,6 @@ def test_list_parents(
     assert any(p.name == parent_name for p in parents)
 
 
-@pytest.mark.skip(reason="requires zone 'uio.no' to exist — ensure seed data is loaded")
 def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,
@@ -260,7 +259,7 @@ def test_add_remove_host(
 ) -> None:
     client = integration_client
     group_name = f"{test_prefix}hg-rh"
-    host_name = f"{test_prefix}hh.uio.no"
+    host_name = f"{test_prefix}hh.example.com"
 
     group = client.hostgroup.create(name=group_name)
     host = client.host.create(name=host_name)

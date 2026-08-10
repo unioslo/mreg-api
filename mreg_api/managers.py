@@ -374,10 +374,10 @@ class ResourceManager(Generic[T], ABC):
         return fresh
 
     @overload
-    def get(self, ident: str | int, *, required: Literal[False]) -> T | None: ...
+    def get(self, ident: str | int | T, *, required: Literal[False]) -> T | None: ...
     @overload
-    def get(self, ident: str | int, *, required: Literal[True] = ...) -> T: ...
-    def get(self, ident: str | int, *, required: bool = True) -> T | None:
+    def get(self, ident: str | int | T, *, required: Literal[True] = ...) -> T: ...
+    def get(self, ident: str | int | T, *, required: bool = True) -> T | None:
         """Get a resource by its endpoint identifier (str) or its ID (int).
 
         Args:

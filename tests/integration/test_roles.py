@@ -235,14 +235,14 @@ def test_add_remove_atom(
     assert atom.name not in after_remove.atoms
 
 
-@pytest.mark.skip(reason="requires zone 'uio.no' to exist — ensure seed data is loaded")
+@pytest.mark.skip(reason="requires zone 'example.com' to exist — ensure seed data is loaded")
 def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list,
 ) -> None:
     client = integration_client
-    host_name = f"{test_prefix}rh.uio.no"
+    host_name = f"{test_prefix}rh.example.com"
     role_name = f"{test_prefix}role-rh"
 
     host = client.host.create(name=host_name)
@@ -296,11 +296,11 @@ def test_delete_role_with_hosts_raises(
     resource_tracker: list,
 ) -> None:
     client = integration_client
-    zone = client.zone.get("uio.no", required=False)
+    zone = client.zone.get("example.com", required=False)
     if zone is None:
-        pytest.skip("requires zone 'uio.no' to exist — ensure seed data is loaded")
+        pytest.skip("requires zone 'example.com' to exist — ensure seed data is loaded")
 
-    host_name = f"{test_prefix}dhr.uio.no"
+    host_name = f"{test_prefix}dhr.example.com"
     role_name = f"{test_prefix}role-dhr"
 
     host = client.host.create(name=host_name)

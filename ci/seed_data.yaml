@@ -1,7 +1,10 @@
 zones:
-  - name: "example.uio.no"
-    email: "hostmaster@uio.no"
-    primary_ns: ["ns1.example.uio.no"]
+  - name: "example.com"
+    email: "hostmaster@example.com"
+    primary_ns: ["ns1.example.com"]
+  - name: "subzone.example.com"
+    email: "hostmaster@example.com"
+    primary_ns: ["ns1.example.com"]
 
 networks:
   - network: "10.0.0.0/8"
