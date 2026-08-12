@@ -32,8 +32,9 @@ def test_zone(
     test_prefix: str,
     resource_tracker: ResourceTracker,
     seed_ns: str,
+    main_zone: Zone,
 ) -> ForwardZone:
-    zone_name = f"{test_prefix}.example.com"
+    zone_name = f"{test_prefix}.{main_zone.name}"
     zone = integration_client.zone.create(
         name=zone_name,
         email=f"hostmaster@{zone_name}",
@@ -69,10 +70,10 @@ def delegation(
 # --- Forward zone tests ---
 
 
-def test_create_forward_zone(test_zone: ForwardZone) -> None:
+def test_create_forward_zone(main_zone: Zone, test_zone: ForwardZone) -> None:
     """Test the forward zone fixture."""
     assert isinstance(test_zone, ForwardZone)
-    assert test_zone.name.endswith(".example.com")
+    assert test_zone.name.endswith(f".{main_zone.name}")  # redundant?
 
 
 def test_get_by_name(integration_client: MregClient, test_zone: ForwardZone) -> None:
@@ -81,14 +82,14 @@ def test_get_by_name(integration_client: MregClient, test_zone: ForwardZone) -> 
     assert result.name == test_zone.name
 
 
-def test_get_nonexistent_returns_none(integration_client: MregClient) -> None:
-    result = integration_client.zone.get("nonexistent-zzz.example.com", required=False)
+def test_get_nonexistent_returns_none(integration_client: MregClient, main_zone: Zone) -> None:
+    result = integration_client.zone.get(f"nonexistent-zzz.{main_zone.name}", required=False)
     assert result is None
 
 
-def test_get_nonexistent_raises(integration_client: MregClient) -> None:
+def test_get_nonexistent_raises(integration_client: MregClient, main_zone: Zone) -> None:
     with pytest.raises(EntityNotFound):
-        integration_client.zone.get("nonexistent-zzz.example.com")
+        integration_client.zone.get(f"nonexistent-zzz.{main_zone.name}")
 
 
 def test_list_forward(integration_client: MregClient, test_zone: ForwardZone) -> None:
@@ -96,8 +97,8 @@ def test_list_forward(integration_client: MregClient, test_zone: ForwardZone) ->
     assert any(z.name == test_zone.name for z in results)
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.zone.ensure_absent("nonexistent-zzz.example.com")
+def test_ensure_absent_nonexistent(integration_client: MregClient, main_zone: Zone) -> None:
+    integration_client.zone.ensure_absent(f"nonexistent-zzz.{main_zone.name}")
 
 
 def test_ensure_absent_existing(
@@ -112,8 +113,9 @@ def test_delete_by_name(
     integration_client: MregClient,
     test_prefix: str,
     seed_ns: str,
+    main_zone: Zone,
 ) -> None:
-    zone_name = f"{test_prefix}zdn.example.com"
+    zone_name = f"{test_prefix}zdn.{main_zone.name}"
     zone = integration_client.zone.create(
         name=zone_name,
         email=f"hostmaster@{zone_name}",
@@ -129,8 +131,9 @@ def test_delete_by_object(
     integration_client: MregClient,
     test_prefix: str,
     seed_ns: str,
+    main_zone: Zone,
 ) -> None:
-    zone_name = f"{test_prefix}zdo.example.com"
+    zone_name = f"{test_prefix}zdo.{main_zone.name}"
     zone = integration_client.zone.create(
         name=zone_name,
         email=f"hostmaster@{zone_name}",

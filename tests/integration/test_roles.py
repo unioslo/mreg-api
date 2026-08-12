@@ -8,6 +8,7 @@ from mreg_api.client import MregClient
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.models import Zone
 
 if TYPE_CHECKING:
     from tests.integration.conftest import ResourceTracker
@@ -244,9 +245,10 @@ def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
+    main_zone: Zone,
 ) -> None:
     client = integration_client
-    host_name = f"{test_prefix}rh.example.com"
+    host_name = f"{test_prefix}rh.{main_zone.name}"
     role_name = f"{test_prefix}role-rh"
 
     host = client.host.create(name=host_name)
@@ -298,13 +300,11 @@ def test_delete_role_with_hosts_raises(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
+    main_zone: Zone,
 ) -> None:
     client = integration_client
-    zone = client.zone.get("example.com", required=False)
-    if zone is None:
-        pytest.skip("requires zone 'example.com' to exist — ensure seed data is loaded")
 
-    host_name = f"{test_prefix}dhr.example.com"
+    host_name = f"{test_prefix}dhr.{main_zone.name}"
     role_name = f"{test_prefix}role-dhr"
 
     host = client.host.create(name=host_name)

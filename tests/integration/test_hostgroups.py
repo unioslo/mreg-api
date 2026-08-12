@@ -7,6 +7,7 @@ import pytest
 from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.models import Zone
 
 if TYPE_CHECKING:
     from tests.integration.conftest import ResourceTracker
@@ -261,10 +262,11 @@ def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
+    main_zone: Zone,
 ) -> None:
     client = integration_client
     group_name = f"{test_prefix}hg-rh"
-    host_name = f"{test_prefix}hh.example.com"
+    host_name = f"{test_prefix}hh.{main_zone.name}"
 
     group = client.hostgroup.create(name=group_name)
     host = client.host.create(name=host_name)

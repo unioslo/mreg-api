@@ -150,44 +150,47 @@ def resource_tracker() -> Generator[ResourceTracker, None, None]:
     tracker._run_cleanups()
 
 
-MAIN_ZONE = "example.com"
-TEST_ZONE = "subzone.example.com"
-assert MAIN_ZONE in TEST_ZONE  # Sanity check
+def _create_zone(
+    client: MregClient, name: str, resource_tracker: ResourceTracker, primary_ns: list[str] | None = None
+) -> Zone:
+    """Create a zone if it doesn't exist, and register cleanup."""
+    if not primary_ns:
+        primary_ns = [f"ns1.{client.domain}"]
+
+    if (zone := client.zone.get(name, required=False)) is None:
+        zone = client.zone.create(
+            name=name,
+            email=f"hostmaster@{name}",
+            primary_ns=primary_ns,
+            force=True,
+        )
+
+    if not zone:
+        pytest.exit(f"Failed to create or fetch zone {name}; aborting integration tests")
+    resource_tracker.add(lambda: client.zone.delete(name, force=True))
+
+    return zone
 
 
 @pytest.fixture(scope="session")
-def seed_main_zone(integration_client: MregClient, resource_tracker: ResourceTracker) -> None:
-    """Ensure example.com exists; required parent zone for test zone we pass around."""
-    if integration_client.zone.get(MAIN_ZONE, required=False) is None:
-        zone = integration_client.zone.create(
-            name=MAIN_ZONE,
-            email=f"hostmaster@{MAIN_ZONE}",
-            primary_ns=[f"ns1.{MAIN_ZONE}"],
-            force=True,
-        )
-        if zone is not None:
-            resource_tracker.add(lambda: integration_client.zone.delete(MAIN_ZONE, force=True))
+def main_zone(
+    integration_client: MregClient, resource_tracker: ResourceTracker
+) -> Generator[Zone, None, None]:
+    """Create the main zone (based on client's configured domain via MREG_DOMAIN).
+
+    Aborts integration tests if the integration client has no configured domain.
+    """
+    if not integration_client.domain:
+        pytest.exit("MregClient has no domain configured; aborting integration tests")
+    yield _create_zone(integration_client, integration_client.domain, resource_tracker)
 
 
 @pytest.fixture(scope="module")
 def zone(
-    integration_client: MregClient, seed_main_zone: None, resource_tracker: ResourceTracker
+    integration_client: MregClient, main_zone: Zone, resource_tracker: ResourceTracker
 ) -> Generator[Zone, None, None]:
     """Create test zone before the module runs and tear it down after."""
-    if (zone := integration_client.zone.get(TEST_ZONE, required=False)) is None:
-        zone = integration_client.zone.create(
-            name=TEST_ZONE,
-            email=f"hostmaster@{TEST_ZONE}",
-            primary_ns=[f"ns1.{MAIN_ZONE}"],
-            force=True,
-        )
-
-    # Should never happen, but `zone.create` is not _guaranteed_ to return a Zone object...
-    if not zone:
-        pytest.exit(f"Failed to create or fetch test zone {TEST_ZONE}; aborting integration tests")
-    resource_tracker.add(lambda: integration_client.zone.delete(TEST_ZONE, force=True))
-
-    yield zone
+    yield _create_zone(integration_client, f"subzone.{main_zone.name}", resource_tracker)
 
 
 @pytest.fixture(scope="session", autouse=True)
