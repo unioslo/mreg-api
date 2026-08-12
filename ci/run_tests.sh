@@ -6,6 +6,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 
 RUN_UNIT=true
 RUN_INTEGRATION=true
+RUN_COVERAGE=true
 MREG_IMAGE="${MREG_IMAGE:-ghcr.io/unioslo/mreg:master}"
 # Host port the mreg container is exposed on. Override if 8000 is already in use.
 MREG_PORT="${MREG_PORT:-8000}"
@@ -18,6 +19,7 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --unit-only)        RUN_INTEGRATION=false; shift ;;
         --integration-only) RUN_UNIT=false; shift ;;
+        --no-cov)           RUN_COVERAGE=false; shift ;;
         *) shift ;;
     esac
 done
@@ -63,22 +65,27 @@ INTEGRATION_EXIT=0
 
 if [[ "$RUN_UNIT" == "true" ]]; then
     echo "Running unit tests..."
-    uv run pytest tests/ --ignore=tests/integration \
-        --cov=mreg_api --cov-report= -q \
-        -v
-    UNIT_EXIT=$?
+    UNIT_ARGS=(tests/ --ignore=tests/integration -v)
+    if [[ "$RUN_COVERAGE" == "true" ]]; then
+        UNIT_ARGS+=(--cov=mreg_api --cov-report=)
+    else
+        UNIT_ARGS+=(--no-cov)
+    fi
+    uv run pytest "${UNIT_ARGS[@]}" || UNIT_EXIT=$?
 fi
 
 if [[ "$RUN_INTEGRATION" == "true" ]]; then
     echo "Running integration tests..."
+    INTEGRATION_ARGS=(tests/integration/ -v)
+    if [[ "$RUN_COVERAGE" == "true" ]]; then
+        INTEGRATION_ARGS+=(--cov=mreg_api --cov-append --cov-report=html --cov-report=term)
+    else
+        INTEGRATION_ARGS+=(--no-cov)
+    fi
     MREG_URL="$MREG_URL" \
     MREG_USERNAME="$MREG_USERNAME" \
     MREG_PASSWORD="$MREG_PASSWORD" \
-        uv run pytest tests/integration/ \
-            --cov=mreg_api --cov-append \
-            --cov-report=html --cov-report=term \
-            -v
-    INTEGRATION_EXIT=$?
+        uv run pytest "${INTEGRATION_ARGS[@]}" || INTEGRATION_EXIT=$?
 fi
 
 if [[ $UNIT_EXIT -ne 0 || $INTEGRATION_EXIT -ne 0 ]]; then

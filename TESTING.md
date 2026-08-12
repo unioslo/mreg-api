@@ -38,6 +38,19 @@ MREG_PORT=8081 bash ci/run_tests.sh
 
 This starts containers, creates a superuser, then runs both unit and integration tests with combined coverage output in `htmlcov/`.
 
+Flags:
+
+| Flag | Effect |
+|---|---|
+| `--unit-only` | Skip integration tests (no containers started) |
+| `--integration-only` | Skip unit tests |
+| `--no-cov` | Disable coverage. Used in CI |
+
+```bash
+# Fast run without coverage
+bash ci/run_tests.sh --no-cov
+```
+
 ### Running manually against a local server
 
 ```bash
@@ -67,7 +80,7 @@ uv run pytest tests/integration/ \
 | `MREG_URL` | `--mreg-url` | *(none — required to activate integration tests)* | mreg server base URL |
 | `MREG_USERNAME` | `--mreg-username` | `test` | Login username |
 | `MREG_PASSWORD` | `--mreg-password` | `test` | Login password |
-| `MREG_DOMAIN` | `--mreg-domain` | `example.com` | Default domain for the client |
+| `MREG_DOMAIN` | `--mreg-domain` | `example.com` | Default domain for the client. Controls the main zone used in integration tests |
 | `MREG_CACHE` | `--mreg-cache` | `false` | Enable mreg client cache (`1`/`true`/`yes` = on) |
 | `MREG_TEST_NETWORK` | `--test-network` | `10.0.0.0/8` | Network CIDR created as shared test network |
 | `MREG_TEST_IP` | `--test-ip` | `10.0.0.1` | IP address used in IP-related tests |
