@@ -53,6 +53,20 @@ uv run pytest tests/integration/ \
   --mreg-password secret
 ```
 
+### Configuration
+
+| Env var | CLI flag | Default | Description |
+|---|---|---|---|
+| `MREG_URL` | `--mreg-url` | *(none — required to activate integration tests)* | mreg server base URL |
+| `MREG_USERNAME` | `--mreg-username` | `test` | Login username |
+| `MREG_PASSWORD` | `--mreg-password` | `test` | Login password |
+| `MREG_DOMAIN` | `--mreg-domain` | `example.com` | Default domain for the client |
+| `MREG_CACHE` | `--mreg-cache` | `false` | Enable mreg client cache (`1`/`true`/`yes` = on) |
+| `MREG_TEST_NETWORK` | `--test-network` | `10.0.0.0/8` | Network CIDR created as shared test network |
+| `MREG_TEST_IP` | `--test-ip` | `10.0.0.1` | IP address used in IP-related tests |
+
+CLI flags take precedence over env vars.
+
 ### Seed data
 
 Tests that depend on a zone (`example.com`) or bulk DHCP data require `ci/seed.py` to have run first:
