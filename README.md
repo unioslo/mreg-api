@@ -2,7 +2,6 @@
 
 
 ## Quick Start
-## Quick Start
 
 ### Connect
 
