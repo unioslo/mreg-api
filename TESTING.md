@@ -1,14 +1,21 @@
 # Testing
 
+mreg-api has two types of tests:
+
+- **Unit tests** — Unit testing of functions and methods used by the package. No interaction with a live mreg server is required.
+- **Integration tests** — Run against a live (containerized) mreg server. Skipped automatically when no server URL is configured.
+
 ## Unit tests
 
-Unit tests use `pytest-httpserver` to spin up a local HTTP server. No external services required.
+Unit tests use `pytest-httpserver` to mock MREG server responses for any tests that require HTTP interactions. No external services required.
+
+Bare `pytest` invocations ignore integration tests (skipped automatically when no server URL is configured):
 
 ```bash
-uv run pytest tests/ --ignore=tests/integration
+uv run pytest
 ```
 
-Or by marker:
+In case some configuration defines `MREG_URL`, unit tests can still be run exclusively by ignoring the integration tests via markers:
 
 ```bash
 uv run pytest -m "not integration"
