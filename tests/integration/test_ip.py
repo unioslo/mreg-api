@@ -9,18 +9,9 @@ from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Host
 from mreg_api.models.models import IPAddress
-
-DOMAIN = "subzone.example.com"
+from mreg_api.models.models import Zone
 
 pytestmark = [pytest.mark.integration]
-
-
-@pytest.fixture(scope="module")
-def host_zone(integration_client: MregClient) -> object:
-    zone = integration_client.zone.get(DOMAIN, required=False)
-    if zone is None:
-        pytest.skip(f"Zone {DOMAIN!r} not found; run ci/seed.py first")
-    return zone
 
 
 @pytest.fixture(scope="module")
@@ -28,9 +19,9 @@ def host(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> Host:
-    hostname = f"{test_prefix}iph.{DOMAIN}"
+    hostname = f"{test_prefix}iph.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="integration test host for ip tests",
@@ -59,9 +50,9 @@ def test_create(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}ipc.{DOMAIN}"
+    hostname = f"{test_prefix}ipc.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="ip create test host",
@@ -109,9 +100,9 @@ def test_delete_by_id(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}ipdid.{DOMAIN}"
+    hostname = f"{test_prefix}ipdid.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="ip delete by id test host",
@@ -131,9 +122,9 @@ def test_delete_by_object(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}ipdobj.{DOMAIN}"
+    hostname = f"{test_prefix}ipdobj.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="ip delete by object test host",

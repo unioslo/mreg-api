@@ -7,6 +7,7 @@ from urllib.parse import quote
 import pytest
 
 from mreg_api.client import MregClient
+from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
@@ -116,28 +117,48 @@ def test_create_name_with_slashes(
     )
     assert atm is None  # nothing returned
 
-    # Trying to fetch it without quoting the name will fail
+    # Trying to fetch it (with or without quoting) will fail
     with pytest.raises(EntityNotFound):
         integration_client.atom.get_by_name(atom_name_1)
+    with pytest.raises(EntityNotFound):
+        integration_client.atom.get_by_name(quote(atom_name_1, safe=""))
 
-    fetched_atom = integration_client.atom.get_by_name(quote(atom_name_1, safe=""))
-    assert fetched_atom is not None
-    assert fetched_atom.name == atom_name_1
 
+def test_create_name_with_slashes_location_header_invalid(
+    integration_client: MregClient,
+    test_prefix: str,
+) -> None:
+    """Test atom creation with a name containing slashes, using MregClient directly.
+
+    Verifies that the Location header is invalid, and that the atom
+    is still created, even though it cannot be fetched via conventional means.
+    """
     # Creating an atom with fetch_after_create=True will fail,
     # but the atom is still created!
-    atom_name_2 = f"{test_prefix}name/with/slashes2"
-    with pytest.raises(GetError):
-        integration_client.atom.create(
-            name=atom_name_2,
-            description="create test",
-            fetch_after_create=True,
-        )
 
-    # We can still fetch it by quoting the name
-    fetched_atom_2 = integration_client.atom.get_by_name(quote(atom_name_2, safe=""))
-    assert fetched_atom_2 is not None
-    assert fetched_atom_2.name == atom_name_2
+    atom_name_2 = f"{test_prefix}name/with/slashes2"
+    assert integration_client.atom.get_by_name(atom_name_2, required=False) is None
+
+    resp = integration_client.post(
+        Endpoint.HostPolicyAtoms,
+        json={"name": atom_name_2, "description": "create test"},
+    )
+
+    assert resp.status_code == 201
+
+    # Location header contains URL with slashes in atom name, which is invalid.
+    assert resp.headers["Location"] == f"{Endpoint.HostPolicyAtoms}{atom_name_2}"
+
+    # We can't fetch atom directly, but we can still list it via querying all atoms.
+    # We should still be able to see it if we fetch _all_ atoms
+    all_atoms = integration_client.atom.list()
+    atom = next((a for a in all_atoms if a.name == atom_name_2), None)
+    assert atom is not None
+
+    # Try to fetch our atom by ID
+    fetched = integration_client.atom.get(atom.id)
+    assert fetched is not None
+    assert fetched.name == atom_name_2
 
 
 def test_get_by_id(integration_client: MregClient, atom: Atom) -> None:

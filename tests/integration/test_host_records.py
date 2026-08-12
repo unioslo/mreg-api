@@ -11,16 +11,6 @@ from mreg_api.models.models import Zone
 
 pytestmark = [pytest.mark.integration]
 
-DOMAIN = "subzone.example.com"
-
-
-@pytest.fixture(scope="module")
-def zone(integration_client: MregClient) -> Zone:
-    z = integration_client.zone.get(DOMAIN, required=False)
-    if z is None:
-        pytest.skip(f"Zone {DOMAIN!r} not found; run ci/seed.py first")
-    return z
-
 
 @pytest.fixture(scope="module")
 def host(
@@ -29,7 +19,7 @@ def host(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> Host:
-    name = f"{test_prefix}rech.{DOMAIN}"
+    name = f"{test_prefix}rech.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -43,7 +33,7 @@ def hinfo_host(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> Host:
-    name = f"{test_prefix}hinfo.{DOMAIN}"
+    name = f"{test_prefix}hinfo.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -57,7 +47,7 @@ def ptr_host(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> Host:
-    name = f"{test_prefix}ptr.{DOMAIN}"
+    name = f"{test_prefix}ptr.{zone.name}"
     h = integration_client.host.create(name=name, ipaddress="10.0.1.50", fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -71,7 +61,7 @@ def bacnet_host(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> Host:
-    name = f"{test_prefix}bacnet.{DOMAIN}"
+    name = f"{test_prefix}bacnet.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -85,7 +75,7 @@ def loc_host(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> Host:
-    name = f"{test_prefix}loc.{DOMAIN}"
+    name = f"{test_prefix}loc.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -133,7 +123,7 @@ def test_hinfo_delete_by_id(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}hinfodid.{DOMAIN}"
+    name = f"{test_prefix}hinfodid.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -150,7 +140,7 @@ def test_hinfo_delete_by_object(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}hinfodo.{DOMAIN}"
+    name = f"{test_prefix}hinfodo.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -201,7 +191,7 @@ def test_txt_delete_by_id(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}txth.{DOMAIN}"
+    name = f"{test_prefix}txth.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -219,7 +209,7 @@ def test_txt_delete_by_object(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}txto.{DOMAIN}"
+    name = f"{test_prefix}txto.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -233,19 +223,23 @@ def test_txt_delete_by_object(
 
 # ── MX tests ──────────────────────────────────────────────────────────────────
 
-_MX_HOST = f"mail.{DOMAIN}"
+
+@pytest.fixture(name="mx_host", scope="module")
+def mx_host(zone: Zone) -> str:
+    return f"mail.{zone.name}"
 
 
 def test_mx_create(
     integration_client: MregClient,
     host: Host,
     resource_tracker: list[Callable[[], Any]],
+    mx_host: str,
 ) -> None:
-    integration_client.mx.create(host=host, mx=_MX_HOST, priority=10)
-    mx = integration_client.mx.get_unique(host, _MX_HOST, 10)
+    integration_client.mx.create(host=host, mx=mx_host, priority=10)
+    mx = integration_client.mx.get_unique(host, mx_host, 10)
     assert mx is not None
     resource_tracker.append(lambda: integration_client.mx.delete(mx))
-    assert mx.mx == _MX_HOST
+    assert mx.mx == mx_host
     assert mx.priority == 10
     assert mx.host == host.id
 
@@ -254,9 +248,10 @@ def test_mx_get_by_id(
     integration_client: MregClient,
     host: Host,
     resource_tracker: list[Callable[[], Any]],
+    mx_host: str,
 ) -> None:
-    integration_client.mx.create(host=host, mx=_MX_HOST, priority=20)
-    mx = integration_client.mx.get_unique(host, _MX_HOST, 20)
+    integration_client.mx.create(host=host, mx=mx_host, priority=20)
+    mx = integration_client.mx.get_unique(host, mx_host, 20)
     assert mx is not None
     resource_tracker.append(lambda: integration_client.mx.delete(mx))
     result = integration_client.mx.get(mx.id)
@@ -268,12 +263,13 @@ def test_mx_get_unique(
     integration_client: MregClient,
     host: Host,
     resource_tracker: list[Callable[[], Any]],
+    mx_host: str,
 ) -> None:
-    integration_client.mx.create(host=host, mx=_MX_HOST, priority=30)
-    mx = integration_client.mx.get_unique(host, _MX_HOST, 30)
+    integration_client.mx.create(host=host, mx=mx_host, priority=30)
+    mx = integration_client.mx.get_unique(host, mx_host, 30)
     assert mx is not None
     resource_tracker.append(lambda: integration_client.mx.delete(mx))
-    result = integration_client.mx.get_unique(host, _MX_HOST, 30)
+    result = integration_client.mx.get_unique(host, mx_host, 30)
     assert result is not None
     assert result.id == mx.id
 
@@ -281,9 +277,10 @@ def test_mx_get_unique(
 def test_mx_delete_by_id(
     integration_client: MregClient,
     host: Host,
+    mx_host: str,
 ) -> None:
-    integration_client.mx.create(host=host, mx=_MX_HOST, priority=40)
-    mx = integration_client.mx.get_unique(host, _MX_HOST, 40)
+    integration_client.mx.create(host=host, mx=mx_host, priority=40)
+    mx = integration_client.mx.get_unique(host, mx_host, 40)
     assert mx is not None
     integration_client.mx.delete(mx.id)
     assert integration_client.mx.get(mx.id, required=False) is None
@@ -292,9 +289,10 @@ def test_mx_delete_by_id(
 def test_mx_delete_by_object(
     integration_client: MregClient,
     host: Host,
+    mx_host: str,
 ) -> None:
-    integration_client.mx.create(host=host, mx=_MX_HOST, priority=50)
-    mx = integration_client.mx.get_unique(host, _MX_HOST, 50)
+    integration_client.mx.create(host=host, mx=mx_host, priority=50)
+    mx = integration_client.mx.get_unique(host, mx_host, 50)
     assert mx is not None
     integration_client.mx.delete(mx)
     assert integration_client.mx.get(mx.id, required=False) is None
@@ -374,16 +372,17 @@ def test_srv_create(
     integration_client: MregClient,
     host: Host,
     resource_tracker: list[Callable[[], Any]],
+    zone: Zone,
 ) -> None:
     integration_client.srv.create(
         host=host,
-        name=f"_sip._tcp.{DOMAIN}",
+        name=f"_sip._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=5060,
     )
     srv = integration_client.srv.get_unique(
-        name=f"_sip._tcp.{DOMAIN}",
+        name=f"_sip._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=5060,
@@ -399,16 +398,17 @@ def test_srv_get_by_id(
     integration_client: MregClient,
     host: Host,
     resource_tracker: list[Callable[[], Any]],
+    zone: Zone,
 ) -> None:
     integration_client.srv.create(
         host=host,
-        name=f"_xmpp._tcp.{DOMAIN}",
+        name=f"_xmpp._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=5222,
     )
     srv = integration_client.srv.get_unique(
-        name=f"_xmpp._tcp.{DOMAIN}",
+        name=f"_xmpp._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=5222,
@@ -425,16 +425,17 @@ def test_srv_get_unique(
     integration_client: MregClient,
     host: Host,
     resource_tracker: list[Callable[[], Any]],
+    zone: Zone,
 ) -> None:
     integration_client.srv.create(
         host=host,
-        name=f"_ldap._tcp.{DOMAIN}",
+        name=f"_ldap._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=389,
     )
     srv = integration_client.srv.get_unique(
-        name=f"_ldap._tcp.{DOMAIN}",
+        name=f"_ldap._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=389,
@@ -443,7 +444,7 @@ def test_srv_get_unique(
     assert srv is not None
     resource_tracker.append(lambda: integration_client.srv.delete(srv))
     result = integration_client.srv.get_unique(
-        name=f"_ldap._tcp.{DOMAIN}",
+        name=f"_ldap._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=389,
@@ -456,16 +457,17 @@ def test_srv_get_unique(
 def test_srv_delete_by_id(
     integration_client: MregClient,
     host: Host,
+    zone: Zone,
 ) -> None:
     integration_client.srv.create(
         host=host,
-        name=f"_smtp._tcp.{DOMAIN}",
+        name=f"_smtp._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=25,
     )
     srv = integration_client.srv.get_unique(
-        name=f"_smtp._tcp.{DOMAIN}",
+        name=f"_smtp._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=25,
@@ -479,16 +481,17 @@ def test_srv_delete_by_id(
 def test_srv_delete_by_object(
     integration_client: MregClient,
     host: Host,
+    zone: Zone,
 ) -> None:
     integration_client.srv.create(
         host=host,
-        name=f"_imaps._tcp.{DOMAIN}",
+        name=f"_imaps._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=993,
     )
     srv = integration_client.srv.get_unique(
-        name=f"_imaps._tcp.{DOMAIN}",
+        name=f"_imaps._tcp.{zone.name}",
         priority=10,
         weight=10,
         port=993,
@@ -670,7 +673,7 @@ def test_bacnetid_delete_by_id(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}bacnetdid.{DOMAIN}"
+    name = f"{test_prefix}bacnetdid.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -687,7 +690,7 @@ def test_bacnetid_delete_by_object(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}bacnetdo.{DOMAIN}"
+    name = f"{test_prefix}bacnetdo.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -740,7 +743,7 @@ def test_location_delete_by_id(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}locdid.{DOMAIN}"
+    name = f"{test_prefix}locdid.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -757,7 +760,7 @@ def test_location_delete_by_object(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> None:
-    name = f"{test_prefix}locdo.{DOMAIN}"
+    name = f"{test_prefix}locdo.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))

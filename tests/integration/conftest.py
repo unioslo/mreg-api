@@ -20,6 +20,7 @@ import pytest
 
 from mreg_api.client import MregClient
 from mreg_api.exceptions import PostError
+from mreg_api.models import Zone
 
 
 def pytest_addoption(parser: pytest.Parser) -> None:
@@ -77,7 +78,7 @@ def mreg_domain(request: pytest.FixtureRequest) -> str:
 
 
 @pytest.fixture(scope="session")
-def mreg_enable_cache(request: pytest.FixtureRequest) -> bool:
+def mreg_cache(request: pytest.FixtureRequest) -> bool:
     val = os.environ.get("MREG_CACHE") or request.config.getoption("--mreg-cache", default=None) or "false"
     return str(val).lower() in ("1", "true", "yes")
 
@@ -135,7 +136,44 @@ def resource_tracker() -> Generator[list[Callable[[], Any]], None, None]:
             cleanup()
 
 
-# --- Seed fixtures ---
+MAIN_ZONE = "example.com"
+TEST_ZONE = "subzone.example.com"
+assert MAIN_ZONE in TEST_ZONE  # Sanity check
+
+
+@pytest.fixture(scope="session")
+def seed_main_zone(integration_client: MregClient, resource_tracker: list[Callable[[], Any]]) -> None:
+    """Ensure example.com exists; required parent zone for test zone we pass around."""
+    if integration_client.zone.get(MAIN_ZONE, required=False) is None:
+        zone = integration_client.zone.create(
+            name=MAIN_ZONE,
+            email=f"hostmaster@{MAIN_ZONE}",
+            primary_ns=[f"ns1.{MAIN_ZONE}"],
+            force=True,
+        )
+        if zone is not None:
+            resource_tracker.append(lambda: integration_client.zone.delete(MAIN_ZONE, force=True))
+
+
+@pytest.fixture(scope="module")
+def zone(
+    integration_client: MregClient, seed_main_zone: None, resource_tracker: list[Callable[[], Any]]
+) -> Generator[Zone, None, None]:
+    """Create test zone before the module runs and tear it down after."""
+    if (zone := integration_client.zone.get(TEST_ZONE, required=False)) is None:
+        zone = integration_client.zone.create(
+            name=TEST_ZONE,
+            email=f"hostmaster@{TEST_ZONE}",
+            primary_ns=[f"ns1.{MAIN_ZONE}"],
+            force=True,
+        )
+
+    # Should never happen, but `zone.create` is not _guaranteed_ to return a Zone object...
+    if not zone:
+        pytest.exit(f"Failed to create or fetch test zone {TEST_ZONE}; aborting integration tests")
+    resource_tracker.append(lambda: integration_client.zone.delete(TEST_ZONE, force=True))
+
+    yield zone
 
 
 @pytest.fixture(scope="session", autouse=True)

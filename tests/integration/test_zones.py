@@ -11,24 +11,14 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import ForwardZone
 from mreg_api.models.models import ForwardZoneDelegation
 from mreg_api.models.models import NameServer
-from mreg_api.models.models import ReverseZone
+from mreg_api.models.models import Zone
 
 pytestmark = [pytest.mark.integration]
 
-DOMAIN = "subzone.example.com"
-
 
 @pytest.fixture(scope="module")
-def seed_zone(integration_client: MregClient) -> ForwardZone | ReverseZone:
-    zone = integration_client.zone.get(DOMAIN, required=False)
-    if zone is None:
-        pytest.skip(f"Seed zone {DOMAIN!r} not found; run ci/seed.py first")
-    return zone
-
-
-@pytest.fixture(scope="module")
-def seed_ns(seed_zone: ForwardZone | ReverseZone) -> str:
-    nameservers = seed_zone.nameservers
+def seed_ns(zone: Zone) -> str:
+    nameservers = zone.nameservers
     if not nameservers:
         pytest.skip("No nameservers on seed zone")
     return nameservers[0].name
@@ -78,6 +68,7 @@ def delegation(
 
 
 def test_create_forward_zone(test_zone: ForwardZone) -> None:
+    """Test the forward zone fixture."""
     assert isinstance(test_zone, ForwardZone)
     assert test_zone.name.endswith(".example.com")
 

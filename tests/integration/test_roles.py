@@ -235,7 +235,6 @@ def test_add_remove_atom(
     assert atom.name not in after_remove.atoms
 
 
-@pytest.mark.skip(reason="requires zone 'example.com' to exist — ensure seed data is loaded")
 def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,

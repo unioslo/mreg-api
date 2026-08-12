@@ -10,18 +10,9 @@ from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Host
 from mreg_api.models.models import Network
-
-DOMAIN = "subzone.example.com"
+from mreg_api.models.models import Zone
 
 pytestmark = [pytest.mark.integration]
-
-
-@pytest.fixture(scope="module")
-def host_zone(integration_client: MregClient) -> object:
-    zone = integration_client.zone.get(DOMAIN, required=False)
-    if zone is None:
-        pytest.skip(f"Zone {DOMAIN!r} not found; run ci/seed.py first")
-    return zone
 
 
 @pytest.fixture(scope="module")
@@ -29,9 +20,9 @@ def host(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> Host:
-    hostname = f"{test_prefix}h.{DOMAIN}"
+    hostname = f"{test_prefix}h.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="integration test host",
@@ -46,9 +37,9 @@ def test_create(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}hc.{DOMAIN}"
+    hostname = f"{test_prefix}hc.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="create test",
@@ -56,7 +47,7 @@ def test_create(
     )
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
-    assert str(h.name).endswith(DOMAIN)
+    assert str(h.name).endswith(zone.name)
 
 
 def test_get_by_name(integration_client: MregClient, host: Host) -> None:
@@ -77,22 +68,22 @@ def test_get_by_object(integration_client: MregClient, host: Host) -> None:
     assert result.id == host.id
 
 
-def test_get_nonexistent_returns_none(integration_client: MregClient) -> None:
-    result = integration_client.host.get(f"nope.{DOMAIN}", required=False)
+def test_get_nonexistent_returns_none(integration_client: MregClient, zone: Zone) -> None:
+    result = integration_client.host.get(f"nope.{zone.name}", required=False)
     assert result is None
 
 
-def test_get_nonexistent_raises(integration_client: MregClient) -> None:
+def test_get_nonexistent_raises(integration_client: MregClient, zone: Zone) -> None:
     with pytest.raises(EntityNotFound):
-        integration_client.host.get(f"nope.{DOMAIN}")
+        integration_client.host.get(f"nope.{zone.name}")
 
 
 def test_delete_by_id(
     integration_client: MregClient,
     test_prefix: str,
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}hdid.{DOMAIN}"
+    hostname = f"{test_prefix}hdid.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="delete by id test",
@@ -106,9 +97,9 @@ def test_delete_by_id(
 def test_delete_by_name(
     integration_client: MregClient,
     test_prefix: str,
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}hdn.{DOMAIN}"
+    hostname = f"{test_prefix}hdn.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="delete by name test",
@@ -122,9 +113,9 @@ def test_delete_by_name(
 def test_delete_by_object(
     integration_client: MregClient,
     test_prefix: str,
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    hostname = f"{test_prefix}hdo.{DOMAIN}"
+    hostname = f"{test_prefix}hdo.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="delete by object test",
@@ -163,10 +154,10 @@ def test_first(integration_client: MregClient) -> None:
 def test_rename(
     integration_client: MregClient,
     test_prefix: str,
-    host_zone: object,
+    zone: Zone,
 ) -> None:
-    old_name = f"{test_prefix}hold.{DOMAIN}"
-    new_name = f"{test_prefix}hnew.{DOMAIN}"
+    old_name = f"{test_prefix}hold.{zone.name}"
+    new_name = f"{test_prefix}hnew.{zone.name}"
     h = integration_client.host.create(
         name=old_name,
         comment="rename test",
@@ -189,10 +180,10 @@ def test_get_by_ip(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
 ) -> None:
     ip = "10.0.99.1"
-    hostname = f"{test_prefix}hbip.{DOMAIN}"
+    hostname = f"{test_prefix}hbip.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="get by ip test",
@@ -210,11 +201,11 @@ def test_get_networks(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
-    host_zone: object,
+    zone: Zone,
     test_network: str,
 ) -> None:
     ip = "10.0.99.2"
-    hostname = f"{test_prefix}hgn.{DOMAIN}"
+    hostname = f"{test_prefix}hgn.{zone.name}"
     h = integration_client.host.create(
         name=hostname,
         comment="get networks test",
@@ -229,8 +220,8 @@ def test_get_networks(
     assert all(isinstance(k, Network) for k in networks)
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.host.ensure_absent(f"nope.{DOMAIN}")
+def test_ensure_absent_nonexistent(integration_client: MregClient, zone: Zone) -> None:
+    integration_client.host.ensure_absent(f"nope.{zone.name}")
 
 
 def test_ensure_absent_existing(

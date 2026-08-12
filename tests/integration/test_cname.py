@@ -13,16 +13,6 @@ from mreg_api.models.models import Zone
 
 pytestmark = [pytest.mark.integration]
 
-DOMAIN = "subzone.example.com"
-
-
-@pytest.fixture(scope="module")
-def zone(integration_client: MregClient) -> Zone:
-    z = integration_client.zone.get(DOMAIN, required=False)
-    if z is None:
-        pytest.skip(f"Zone {DOMAIN!r} not found; run ci/seed.py first")
-    return z
-
 
 @pytest.fixture(scope="module")
 def host(
@@ -31,7 +21,7 @@ def host(
     resource_tracker: list[Callable[[], Any]],
     zone: Zone,
 ) -> Host:
-    name = f"{test_prefix}cnameh.{DOMAIN}"
+    name = f"{test_prefix}cnameh.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
     resource_tracker.append(lambda: integration_client.host.delete(h))
@@ -39,8 +29,8 @@ def host(
 
 
 @pytest.fixture(scope="module")
-def alias_fqdn(test_prefix: str) -> str:
-    return f"{test_prefix}alias.{DOMAIN}"
+def alias_fqdn(test_prefix: str, zone: Zone) -> str:
+    return f"{test_prefix}alias.{zone.name}"
 
 
 @pytest.fixture(scope="module")
@@ -60,10 +50,11 @@ def cname(
 def test_create(
     integration_client: MregClient,
     host: Host,
+    zone: Zone,
     test_prefix: str,
     resource_tracker: list[Callable[[], Any]],
 ) -> None:
-    alias = f"{test_prefix}aliasc.{DOMAIN}"
+    alias = f"{test_prefix}aliasc.{zone.name}"
     integration_client.cname.create(host=host, name=alias)
     c = integration_client.cname.get_by_name(alias)
     assert c is not None
@@ -113,24 +104,24 @@ def test_get_by_host_and_name(
 
 def test_get_nonexistent_returns_none(
     integration_client: MregClient,
+    zone: Zone,
 ) -> None:
-    result = integration_client.cname.get(f"nope.{DOMAIN}", required=False)
+    result = integration_client.cname.get(f"nope.{zone.name}", required=False)
     assert result is None
 
 
-def test_get_nonexistent_raises(
-    integration_client: MregClient,
-) -> None:
+def test_get_nonexistent_raises(integration_client: MregClient, zone: Zone) -> None:
     with pytest.raises(EntityNotFound):
-        integration_client.cname.get(f"nope.{DOMAIN}")
+        integration_client.cname.get(f"nope.{zone.name}")
 
 
 def test_delete_by_id(
     integration_client: MregClient,
     host: Host,
     test_prefix: str,
+    zone: Zone,
 ) -> None:
-    alias = f"{test_prefix}aliasdi.{DOMAIN}"
+    alias = f"{test_prefix}aliasdi.{zone.name}"
     integration_client.cname.create(host=host, name=alias)
     c = integration_client.cname.get_by_name(alias)
     assert c is not None
@@ -142,8 +133,9 @@ def test_delete_by_name(
     integration_client: MregClient,
     host: Host,
     test_prefix: str,
+    zone: Zone,
 ) -> None:
-    alias = f"{test_prefix}aliasdn.{DOMAIN}"
+    alias = f"{test_prefix}aliasdn.{zone.name}"
     integration_client.cname.create(host=host, name=alias)
     c = integration_client.cname.get_by_name(alias)
     assert c is not None
@@ -155,8 +147,9 @@ def test_delete_by_object(
     integration_client: MregClient,
     host: Host,
     test_prefix: str,
+    zone: Zone,
 ) -> None:
-    alias = f"{test_prefix}aliasdo.{DOMAIN}"
+    alias = f"{test_prefix}aliasdo.{zone.name}"
     integration_client.cname.create(host=host, name=alias)
     c = integration_client.cname.get_by_name(alias)
     assert c is not None
