@@ -36,7 +36,7 @@ bash ci/run_tests.sh
 MREG_PORT=8081 bash ci/run_tests.sh
 ```
 
-This starts containers, creates a superuser, runs optional seed data, then runs both unit and integration tests with combined coverage output in `htmlcov/`.
+This starts containers, creates a superuser, then runs both unit and integration tests with combined coverage output in `htmlcov/`.
 
 ### Running manually against a local server
 
@@ -74,16 +74,6 @@ uv run pytest tests/integration/ \
 
 CLI flags take precedence over env vars.
 
-### Seed data
-
-Tests that depend on a zone (`example.com`) or bulk DHCP data require `ci/seed.py` to have run first:
-
-```bash
-MREG_URL=http://127.0.0.1:8000 MREG_USERNAME=test MREG_PASSWORD=test \
-  uv run python ci/seed.py
-```
-
-The seed script reads `ci/seed_data.yaml`. Tests that cannot find their prerequisite zone call `pytest.skip()` automatically.
 
 ### Subset runs
 
