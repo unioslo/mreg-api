@@ -146,11 +146,11 @@ def test_first(integration_client: MregClient) -> None:
     assert result is None or isinstance(result, Permission)
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.permission.ensure_absent(99999999)
+def test_assert_absent_nonexistent(integration_client: MregClient) -> None:
+    integration_client.permission.assert_absent(99999999)
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
@@ -167,7 +167,7 @@ def test_ensure_absent_existing(
     assert perm is not None
     resource_tracker.add(lambda: integration_client.permission.delete(perm))
     with pytest.raises(EntityAlreadyExists):
-        integration_client.permission.ensure_absent(perm.id)
+        integration_client.permission.assert_absent(perm.id)
 
 
 def test_add_remove_label(

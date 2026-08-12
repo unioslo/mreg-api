@@ -97,16 +97,16 @@ def test_list_forward(integration_client: MregClient, test_zone: ForwardZone) ->
     assert any(z.name == test_zone.name for z in results)
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient, main_zone: Zone) -> None:
-    integration_client.zone.ensure_absent(f"nonexistent-zzz.{main_zone.name}")
+def test_assert_absent_nonexistent(integration_client: MregClient, main_zone: Zone) -> None:
+    integration_client.zone.assert_absent(f"nonexistent-zzz.{main_zone.name}")
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     test_zone: ForwardZone,
 ) -> None:
     with pytest.raises(EntityAlreadyExists):
-        integration_client.zone.ensure_absent(test_zone.name)
+        integration_client.zone.assert_absent(test_zone.name)
 
 
 def test_delete_by_name(

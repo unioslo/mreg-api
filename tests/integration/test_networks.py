@@ -151,16 +151,16 @@ def test_first(integration_client: MregClient) -> None:
     assert result is None or isinstance(result, Network)
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.network.ensure_absent("192.0.2.0/30")
+def test_assert_absent_nonexistent(integration_client: MregClient) -> None:
+    integration_client.network.assert_absent("192.0.2.0/30")
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     test_network: str,
 ) -> None:
     with pytest.raises(EntityAlreadyExists):
-        integration_client.network.ensure_absent(test_network)
+        integration_client.network.assert_absent(test_network)
 
 
 def test_get_first_available_ip(

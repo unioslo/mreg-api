@@ -222,13 +222,13 @@ def test_get_networks(
     assert all(isinstance(k, Network) for k in networks)
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient, zone: Zone) -> None:
-    integration_client.host.ensure_absent(f"nope.{zone.name}")
+def test_assert_absent_nonexistent(integration_client: MregClient, zone: Zone) -> None:
+    integration_client.host.assert_absent(f"nope.{zone.name}")
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     host: Host,
 ) -> None:
     with pytest.raises(EntityAlreadyExists):
-        integration_client.host.ensure_absent(str(host.name))
+        integration_client.host.assert_absent(str(host.name))

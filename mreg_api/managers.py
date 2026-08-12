@@ -6,7 +6,7 @@ Managers are bound to an `MregClient` instance.
 As a baseline, each manager exposes:
 - `get`
 - `list`
-- `ensure_absent`  (TODO: rename)
+- `assert_absent`  (TODO: rename)
 
 Additionally, managers for resources that support name-based lookups:
 - `get_by_name`
@@ -401,7 +401,7 @@ class ResourceManager(Generic[T], ABC):
                 raise
         return obj
 
-    def ensure_absent(self, ident: str | int) -> None:
+    def assert_absent(self, ident: str | int) -> None:
         """Assert that no resource with `ident` exists.
 
         Args:
@@ -539,7 +539,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         return super()._resolve(ref)
 
     @override
-    def ensure_absent(self, ident: str | int) -> None:
+    def assert_absent(self, ident: str | int) -> None:
         """Assert that a given resource does not exist.
 
         Args:
@@ -550,8 +550,8 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         """
         if isinstance(ident, int):
             # If the identifier is an integer, we assume it's an ID and not a name.
-            # In this case, we can delegate to the parent class's ensure_absent method.
-            super().ensure_absent(ident)
+            # In this case, we can delegate to the parent class's assert_absent method.
+            super().assert_absent(ident)
             return
         # If we have a string, delegate to internal get_by_name method
         if self.get_by_name(ident, required=False) is not None:
@@ -4010,13 +4010,13 @@ class ZoneManager:
         """
         return self._sub_for_name(name).get_by_name(name, required=required)
 
-    def ensure_absent(self, name: str) -> None:
+    def assert_absent(self, name: str) -> None:
         """Raise EntityAlreadyExists if a zone with `name` exists.
 
         Args:
             name (str): The zone name to check.
         """
-        self._sub_for_name(name).ensure_absent(name)
+        self._sub_for_name(name).assert_absent(name)
 
     def list_forward(self) -> list[ForwardZone]:
         """List forward zones."""
@@ -4056,7 +4056,7 @@ class ZoneManager:
         """
         verified_ns = self.verify_nameservers(primary_ns, force=force)
         sub = self._sub_for_name(name)
-        sub.ensure_absent(name)
+        sub.assert_absent(name)
         return sub.create(
             name=name, email=email, primary_ns=verified_ns, fetch_after_create=fetch_after_create
         )
