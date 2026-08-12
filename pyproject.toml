@@ -46,8 +46,24 @@ dev = [
     "build",
     "basedpyright>=1.39.8",
     "pytest-cov>=7.0.0",
+    "pytest-timeout",
+    "pyyaml>=6.0.3",
 ]
 
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "integration: requires live mreg server (set MREG_URL env var or --mreg-url)",
+    "readonly: test only reads data, safe against staging/production servers",
+]
+
+[tool.coverage.run]
+source = ["mreg_api"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
 
 [tool.setuptools.packages.find]
 include = ["mreg_api*"]
@@ -210,7 +226,8 @@ max-complexity = 10
 convention = "google"
 
 [tool.ruff.lint.per-file-ignores]
-"**/{tests,docs,tools}/*" = ["D103", "E501", "D100", "D104"]
+"**/{tests,docs,tools}/*" = ["D103", "E501", "D100", "D104", "ARG001"]
+"ci/*" = ["D103", "D104", "INP001"]
 
 
 [tool.setuptools_scm]
