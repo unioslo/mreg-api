@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +11,9 @@ from mreg_api.models.models import Host
 from mreg_api.models.models import Network
 from mreg_api.models.models import Zone
 
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
+
 pytestmark = [pytest.mark.integration]
 
 
@@ -19,7 +21,7 @@ pytestmark = [pytest.mark.integration]
 def host(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> Host:
     hostname = f"{test_prefix}h.{zone.name}"
@@ -29,14 +31,14 @@ def host(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
 
 
 def test_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> None:
     hostname = f"{test_prefix}hc.{zone.name}"
@@ -46,7 +48,7 @@ def test_create(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     assert str(h.name).endswith(zone.name)
 
 
@@ -179,7 +181,7 @@ def test_rename(
 def test_get_by_ip(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> None:
     ip = "10.0.99.1"
@@ -191,7 +193,7 @@ def test_get_by_ip(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     result = integration_client.host.get_by_ip(ip)
     assert result is not None
     assert result.id == h.id
@@ -200,7 +202,7 @@ def test_get_by_ip(
 def test_get_networks(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
     test_network: str,
 ) -> None:
@@ -213,7 +215,7 @@ def test_get_networks(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     networks = integration_client.host.networks(h)
     assert isinstance(networks, dict)
     assert len(networks) >= 1

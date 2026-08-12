@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -9,6 +8,9 @@ from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Label
+
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -22,7 +24,7 @@ def client(integration_client: MregClient) -> MregClient:
 def label(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> Label:
     name = f"{test_prefix}lbl"
     integration_client.label.create(
@@ -31,14 +33,14 @@ def label(
     )
     lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
-    resource_tracker.append(lambda: integration_client.label.delete(lbl))
+    resource_tracker.add(lambda: integration_client.label.delete(lbl))
     return lbl
 
 
 def test_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     name = f"{test_prefix}lc"
     integration_client.label.create(
@@ -47,7 +49,7 @@ def test_create(
     )
     lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
-    resource_tracker.append(lambda: integration_client.label.delete(lbl))
+    resource_tracker.add(lambda: integration_client.label.delete(lbl))
     assert lbl.name == f"{test_prefix}lc"
 
 
@@ -176,7 +178,7 @@ def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
 def test_ensure_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     name = f"{test_prefix}lea"
     integration_client.label.create(
@@ -185,6 +187,6 @@ def test_ensure_absent_existing(
     )
     lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
-    resource_tracker.append(lambda: integration_client.label.delete(lbl))
+    resource_tracker.add(lambda: integration_client.label.delete(lbl))
     with pytest.raises(EntityAlreadyExists):
         integration_client.label.ensure_absent(lbl.id)

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 import pytest
@@ -12,6 +11,9 @@ from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
 from mreg_api.models.models import Atom
+
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -25,7 +27,7 @@ def client(integration_client: MregClient) -> MregClient:
 def atom(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> Atom:
     atm = integration_client.atom.create(
         name=f"{test_prefix}atm",
@@ -33,14 +35,14 @@ def atom(
         fetch_after_create=True,
     )
     assert atm is not None
-    resource_tracker.append(lambda: integration_client.atom.delete(atm))
+    resource_tracker.add(lambda: integration_client.atom.delete(atm))
     return atm
 
 
 def test_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     atm = integration_client.atom.create(
         name=f"{test_prefix}ac",
@@ -48,7 +50,7 @@ def test_create(
         fetch_after_create=True,
     )
     assert atm is not None
-    resource_tracker.append(lambda: integration_client.atom.delete(atm))
+    resource_tracker.add(lambda: integration_client.atom.delete(atm))
     assert atm.name == f"{test_prefix}ac"
 
 
@@ -74,7 +76,7 @@ def test_create(
 def test_create_various_names(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     name: str,
 ) -> None:
     """Test atom creation with various valid name formats."""
@@ -85,7 +87,7 @@ def test_create_various_names(
         fetch_after_create=True,
     )
     assert atm is not None
-    resource_tracker.append(lambda: integration_client.atom.delete(atm))
+    resource_tracker.add(lambda: integration_client.atom.delete(atm))
     assert atm.name == atom_name
     # Check that we can fetch these atoms by name as well
     assert integration_client.atom.get_by_name(atom_name)
@@ -230,7 +232,7 @@ def test_delete_by_object(integration_client: MregClient, test_prefix: str) -> N
 def test_set_description(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     atm = integration_client.atom.create(
         name=f"{test_prefix}asd",
@@ -238,7 +240,7 @@ def test_set_description(
         fetch_after_create=True,
     )
     assert atm is not None
-    resource_tracker.append(lambda: integration_client.atom.delete(atm))
+    resource_tracker.add(lambda: integration_client.atom.delete(atm))
     integration_client.atom.set_description(atm, "new desc")
     updated = integration_client.atom.get(atm.name)
     assert updated is not None
@@ -301,7 +303,7 @@ def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
 def test_ensure_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     atm = integration_client.atom.create(
         name=f"{test_prefix}aea",
@@ -309,6 +311,6 @@ def test_ensure_absent_existing(
         fetch_after_create=True,
     )
     assert atm is not None
-    resource_tracker.append(lambda: integration_client.atom.delete(atm))
+    resource_tracker.add(lambda: integration_client.atom.delete(atm))
     with pytest.raises(EntityAlreadyExists):
         integration_client.atom.ensure_absent(atm.name)

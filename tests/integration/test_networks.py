@@ -1,9 +1,8 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from ipaddress import IPv4Address
 from ipaddress import IPv6Address
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +11,9 @@ from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Community
 from mreg_api.models.models import Network
+
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -23,7 +25,7 @@ pytestmark = [pytest.mark.integration]
 
 def test_create(
     integration_client: MregClient,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     net = integration_client.network.create(
         network="198.51.100.0/29",
@@ -31,7 +33,7 @@ def test_create(
         fetch_after_create=True,
     )
     assert net is not None
-    resource_tracker.append(lambda: integration_client.network.delete(net))
+    resource_tracker.add(lambda: integration_client.network.delete(net))
     assert net.network == "198.51.100.0/29"
 
 
@@ -87,7 +89,7 @@ def test_get_nonexistent_raises(integration_client: MregClient) -> None:
 
 def test_get_by_ip(
     integration_client: MregClient,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     net = integration_client.network.create(
         network="198.51.100.16/29",
@@ -95,7 +97,7 @@ def test_get_by_ip(
         fetch_after_create=True,
     )
     assert net is not None
-    resource_tracker.append(lambda: integration_client.network.delete(net))
+    resource_tracker.add(lambda: integration_client.network.delete(net))
     result = integration_client.network.get_by_ip("198.51.100.17")
     assert result is not None
     assert result.network == "198.51.100.16/29"
@@ -125,7 +127,7 @@ def test_delete_by_object(integration_client: MregClient) -> None:
 
 def test_list(
     integration_client: MregClient,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     net = integration_client.network.create(
         network="198.51.100.40/29",
@@ -133,7 +135,7 @@ def test_list(
         fetch_after_create=True,
     )
     assert net is not None
-    resource_tracker.append(lambda: integration_client.network.delete(net))
+    resource_tracker.add(lambda: integration_client.network.delete(net))
     results = integration_client.network.list()
     assert net.id in {r.id for r in results}
 

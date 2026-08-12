@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -10,6 +9,9 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import NetworkPolicy
 from mreg_api.models.models import NetworkPolicyAttribute
 
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
+
 pytestmark = [pytest.mark.integration]
 
 
@@ -17,7 +19,7 @@ pytestmark = [pytest.mark.integration]
 def attr(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> NetworkPolicyAttribute:
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attr",
@@ -25,7 +27,7 @@ def attr(
         fetch_after_create=True,
     )
     assert obj is not None
-    resource_tracker.append(lambda: integration_client.networkpolicyattribute.delete(obj))
+    resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(obj))
     return obj
 
 
@@ -33,7 +35,7 @@ def attr(
 def policy(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> NetworkPolicy:
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}pol",
@@ -41,7 +43,7 @@ def policy(
         fetch_after_create=True,
     )
     assert obj is not None
-    resource_tracker.append(lambda: integration_client.networkpolicy.delete(obj))
+    resource_tracker.add(lambda: integration_client.networkpolicy.delete(obj))
     return obj
 
 
@@ -53,7 +55,7 @@ def policy(
 def test_attr_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attrc",
@@ -61,7 +63,7 @@ def test_attr_create(
         fetch_after_create=True,
     )
     assert obj is not None
-    resource_tracker.append(lambda: integration_client.networkpolicyattribute.delete(obj))
+    resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(obj))
     assert obj.name == f"{test_prefix}attrc"
 
 
@@ -86,7 +88,7 @@ def test_attr_get_by_name(
 def test_attr_get_by_name_case_insensitive(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     mixed_name = f"{test_prefix}CiAttr"
     obj = integration_client.networkpolicyattribute.create(
@@ -95,7 +97,7 @@ def test_attr_get_by_name_case_insensitive(
         fetch_after_create=True,
     )
     assert obj is not None
-    resource_tracker.append(lambda: integration_client.networkpolicyattribute.delete(obj))
+    resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(obj))
     result = integration_client.networkpolicyattribute.get_by_name(mixed_name.upper())
     assert result is not None
     assert result.id == obj.id
@@ -213,7 +215,7 @@ def test_attr_rename(
 def test_policy_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}polc",
@@ -221,7 +223,7 @@ def test_policy_create(
         fetch_after_create=True,
     )
     assert obj is not None
-    resource_tracker.append(lambda: integration_client.networkpolicy.delete(obj))
+    resource_tracker.add(lambda: integration_client.networkpolicy.delete(obj))
     assert obj.name == f"{test_prefix}polc"
 
 
@@ -350,7 +352,7 @@ def test_policy_rename(
 def test_policy_add_remove_attribute(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     pol = integration_client.networkpolicy.create(
         name=f"{test_prefix}polattr",
@@ -358,7 +360,7 @@ def test_policy_add_remove_attribute(
         fetch_after_create=True,
     )
     assert pol is not None
-    resource_tracker.append(lambda: integration_client.networkpolicy.delete(pol))
+    resource_tracker.add(lambda: integration_client.networkpolicy.delete(pol))
 
     test_attr = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}paattr",
@@ -366,7 +368,7 @@ def test_policy_add_remove_attribute(
         fetch_after_create=True,
     )
     assert test_attr is not None
-    resource_tracker.append(lambda: integration_client.networkpolicyattribute.delete(test_attr))
+    resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(test_attr))
 
     updated = integration_client.networkpolicy.add_attribute(pol, test_attr, True)
     assert any(a.name == test_attr.name for a in updated.attributes)

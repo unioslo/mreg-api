@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import pytest
 
 from mreg_api.client import MregClient
@@ -7,13 +9,16 @@ from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
+
 pytestmark = pytest.mark.integration
 
 
 def test_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-c"
@@ -21,19 +26,19 @@ def test_create(
     assert role is not None
     assert role.name == name
     assert role.description == "integration test role"
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
 
 
 def test_get_by_id(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-gbid"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     fetched = client.role.get(role.id)
     assert fetched is not None
     assert fetched.id == role.id
@@ -43,13 +48,13 @@ def test_get_by_id(
 def test_get_by_name(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-gbn"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     fetched = client.role.get(name)
     assert fetched is not None
     assert fetched.name == name
@@ -58,13 +63,13 @@ def test_get_by_name(
 def test_get_by_object(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-gbo"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     fetched = client.role.get_by_name(role.name)
     assert fetched is not None
     assert fetched.id == role.id
@@ -118,13 +123,13 @@ def test_delete_by_object(integration_client: MregClient, test_prefix: str) -> N
 def test_list(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-list"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     roles = client.role.list()
     assert any(r.name == name for r in roles)
 
@@ -132,13 +137,13 @@ def test_list(
 def test_list_by_name_regex(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-rgx"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     results = client.role.list_by_name_regex(f"{test_prefix}role-rgx")
     assert any(r.name == name for r in results)
 
@@ -146,13 +151,13 @@ def test_list_by_name_regex(
 def test_count(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-cnt"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     count = client.role.count()
     assert count >= 1
 
@@ -160,13 +165,13 @@ def test_count(
 def test_first(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-fst"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     result = client.role.first(required=False)
     assert result is not None
 
@@ -174,14 +179,14 @@ def test_first(
 def test_rename(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     old_name = f"{test_prefix}role-rn-old"
     new_name = f"{test_prefix}role-rn-new"
     role = client.role.create(name=old_name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(new_name))
+    resource_tracker.add(lambda: client.role.delete(new_name))
     renamed = client.role.rename(role, new_name)
     assert renamed.name == new_name
     assert client.role.get(old_name, required=False) is None
@@ -196,13 +201,13 @@ def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
 def test_ensure_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     name = f"{test_prefix}role-ea"
     role = client.role.create(name=name, description="test role")
     assert role is not None
-    resource_tracker.append(lambda: client.role.delete(name))
+    resource_tracker.add(lambda: client.role.delete(name))
     with pytest.raises(EntityAlreadyExists):
         client.role.ensure_absent(name)
 
@@ -210,7 +215,7 @@ def test_ensure_absent_existing(
 def test_add_remove_atom(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     atom_name = f"{test_prefix}atom-ar"
@@ -223,8 +228,8 @@ def test_add_remove_atom(
     assert role is not None
 
     # Cleanup: role first (atoms don't block role deletion), then atom
-    resource_tracker.append(lambda: client.atom.delete(atom_name))
-    resource_tracker.append(lambda: client.role.delete(role_name))
+    resource_tracker.add(lambda: client.atom.delete(atom_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
 
     client.role.add_atom(role, atom)
     fresh = client.role.get_by_name(role_name)
@@ -238,7 +243,7 @@ def test_add_remove_atom(
 def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     host_name = f"{test_prefix}rh.example.com"
@@ -249,9 +254,9 @@ def test_add_remove_host(
     assert host is not None
     assert role is not None
 
-    resource_tracker.append(lambda: client.host.delete(host_name))
-    resource_tracker.append(lambda: client.role.delete(role_name))
-    resource_tracker.append(lambda: client.role.remove_host(role.id, host_name))
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
+    resource_tracker.add(lambda: client.role.remove_host(role.id, host_name))
 
     client.role.add_host(role, host)
     fresh = client.role.get_by_name(role_name)
@@ -265,7 +270,7 @@ def test_add_remove_host(
 def test_add_remove_label(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     label_name = f"{test_prefix}lbl-ar"
@@ -277,8 +282,8 @@ def test_add_remove_label(
     assert label is not None
     assert role is not None
 
-    resource_tracker.append(lambda: client.label.delete(label_name))
-    resource_tracker.append(lambda: client.role.delete(role_name))
+    resource_tracker.add(lambda: client.label.delete(label_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
 
     updated_role = client.role.add_label(role, label)
     lbs = client.role.list_labels(updated_role)
@@ -292,7 +297,7 @@ def test_add_remove_label(
 def test_delete_role_with_hosts_raises(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list,
+    resource_tracker: ResourceTracker,
 ) -> None:
     client = integration_client
     zone = client.zone.get("example.com", required=False)
@@ -310,9 +315,9 @@ def test_delete_role_with_hosts_raises(
     client.role.add_host(role, host)
 
     # Cleanup: remove membership first, then role, then host
-    resource_tracker.append(lambda: client.host.delete(host_name))
-    resource_tracker.append(lambda: client.role.delete(role_name))
-    resource_tracker.append(lambda: client.role.remove_host(role.id, host_name))
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
+    resource_tracker.add(lambda: client.role.remove_host(role.id, host_name))
 
     with pytest.raises(DeleteError):
         client.role.delete(role_name)

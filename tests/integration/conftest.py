@@ -119,21 +119,35 @@ def test_prefix() -> str:
     return f"mrgtest{datetime.now().strftime('%H%M%S')}"
 
 
+class ResourceTracker:
+    """Ordered registry of zero-arg cleanup callables."""
+
+    def __init__(self) -> None:  # noqa: D107
+        self._cleanups: list[Callable[[], Any]] = []
+
+    def add(self, cleanup: Callable[[], Any]) -> None:
+        """Register a zero-arg callable to run at teardown."""
+        self._cleanups.append(cleanup)
+
+    def _run_cleanups(self) -> None:
+        for cleanup in reversed(self._cleanups):
+            with suppress(Exception):
+                cleanup()
+
+
 @pytest.fixture(scope="session")
-def resource_tracker() -> Generator[list[Callable[[], Any]], None, None]:
-    """Session-scoped list of zero-arg cleanup callables.
+def resource_tracker() -> Generator[ResourceTracker, None, None]:
+    """Session-scoped cleanup registry.
 
     Register cleanup for each created resource:
-        resource_tracker.append(lambda: client.label.delete(label))
+        resource_tracker.add(lambda: client.label.delete(label))
 
     Runs all cleanups in reverse order on session teardown, swallowing
     individual exceptions so one failure doesn't block the rest.
     """
-    cleanups: list[Callable[[], Any]] = []
-    yield cleanups
-    for cleanup in reversed(cleanups):
-        with suppress(Exception):
-            cleanup()
+    tracker = ResourceTracker()
+    yield tracker
+    tracker._run_cleanups()
 
 
 MAIN_ZONE = "example.com"
@@ -142,7 +156,7 @@ assert MAIN_ZONE in TEST_ZONE  # Sanity check
 
 
 @pytest.fixture(scope="session")
-def seed_main_zone(integration_client: MregClient, resource_tracker: list[Callable[[], Any]]) -> None:
+def seed_main_zone(integration_client: MregClient, resource_tracker: ResourceTracker) -> None:
     """Ensure example.com exists; required parent zone for test zone we pass around."""
     if integration_client.zone.get(MAIN_ZONE, required=False) is None:
         zone = integration_client.zone.create(
@@ -152,12 +166,12 @@ def seed_main_zone(integration_client: MregClient, resource_tracker: list[Callab
             force=True,
         )
         if zone is not None:
-            resource_tracker.append(lambda: integration_client.zone.delete(MAIN_ZONE, force=True))
+            resource_tracker.add(lambda: integration_client.zone.delete(MAIN_ZONE, force=True))
 
 
 @pytest.fixture(scope="module")
 def zone(
-    integration_client: MregClient, seed_main_zone: None, resource_tracker: list[Callable[[], Any]]
+    integration_client: MregClient, seed_main_zone: None, resource_tracker: ResourceTracker
 ) -> Generator[Zone, None, None]:
     """Create test zone before the module runs and tear it down after."""
     if (zone := integration_client.zone.get(TEST_ZONE, required=False)) is None:
@@ -171,7 +185,7 @@ def zone(
     # Should never happen, but `zone.create` is not _guaranteed_ to return a Zone object...
     if not zone:
         pytest.exit(f"Failed to create or fetch test zone {TEST_ZONE}; aborting integration tests")
-    resource_tracker.append(lambda: integration_client.zone.delete(TEST_ZONE, force=True))
+    resource_tracker.add(lambda: integration_client.zone.delete(TEST_ZONE, force=True))
 
     yield zone
 
@@ -180,7 +194,7 @@ def zone(
 def seed_test_network(
     request: pytest.FixtureRequest,
     test_network: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> Generator[None, None, None]:
     """Create the shared test network before integration tests run.
 
@@ -203,7 +217,7 @@ def seed_test_network(
                 description="Integration test seed network",
             )
             if net is not None:
-                resource_tracker.append(lambda: client.network.delete(net))
+                resource_tracker.add(lambda: client.network.delete(net))
         except PostError:
             pass  # overlaps with existing subnets from a previous run; acceptable
     yield

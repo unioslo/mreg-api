@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -10,6 +9,9 @@ from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Permission
 
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
+
 pytestmark = [pytest.mark.integration]
 
 
@@ -17,7 +19,7 @@ pytestmark = [pytest.mark.integration]
 def permission(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> Permission:
     group = f"{test_prefix}grp"
     range_ = "10.0.0.0/8"
@@ -29,14 +31,14 @@ def permission(
     )
     perm = integration_client.permission.get_by_triplet(group, range_, regex)
     assert perm is not None
-    resource_tracker.append(lambda: integration_client.permission.delete(perm))
+    resource_tracker.add(lambda: integration_client.permission.delete(perm))
     return perm
 
 
 def test_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     group = f"{test_prefix}grpc"
     range_ = "10.0.0.0/8"
@@ -48,7 +50,7 @@ def test_create(
     )
     perm = integration_client.permission.get_by_triplet(group, range_, regex)
     assert perm is not None
-    resource_tracker.append(lambda: integration_client.permission.delete(perm))
+    resource_tracker.add(lambda: integration_client.permission.delete(perm))
     assert perm.group == f"{test_prefix}grpc"
 
 
@@ -151,7 +153,7 @@ def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
 def test_ensure_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     group = f"{test_prefix}grpea"
     range_ = "10.0.0.0/8"
@@ -163,7 +165,7 @@ def test_ensure_absent_existing(
     )
     perm = integration_client.permission.get_by_triplet(group, range_, regex)
     assert perm is not None
-    resource_tracker.append(lambda: integration_client.permission.delete(perm))
+    resource_tracker.add(lambda: integration_client.permission.delete(perm))
     with pytest.raises(EntityAlreadyExists):
         integration_client.permission.ensure_absent(perm.id)
 
@@ -171,7 +173,7 @@ def test_ensure_absent_existing(
 def test_add_remove_label(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     group = f"{test_prefix}grplbl"
     range_ = "10.0.0.0/8"
@@ -183,7 +185,7 @@ def test_add_remove_label(
     )
     perm = integration_client.permission.get_by_triplet(group, range_, regex)
     assert perm is not None
-    resource_tracker.append(lambda: integration_client.permission.delete(perm))
+    resource_tracker.add(lambda: integration_client.permission.delete(perm))
 
     integration_client.label.create(
         name=f"{test_prefix}plbl",
@@ -191,7 +193,7 @@ def test_add_remove_label(
     )
     lbl = integration_client.label.get_by_name(f"{test_prefix}plbl")
     assert lbl is not None
-    resource_tracker.append(lambda: integration_client.label.delete(lbl))
+    resource_tracker.add(lambda: integration_client.label.delete(lbl))
 
     updated = integration_client.permission.add_label(perm, lbl)
     assert lbl.id in updated.labels

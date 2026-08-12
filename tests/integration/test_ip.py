@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,6 +10,9 @@ from mreg_api.models.models import Host
 from mreg_api.models.models import IPAddress
 from mreg_api.models.models import Zone
 
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
+
 pytestmark = [pytest.mark.integration]
 
 
@@ -18,7 +20,7 @@ pytestmark = [pytest.mark.integration]
 def host(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> Host:
     hostname = f"{test_prefix}iph.{zone.name}"
@@ -28,7 +30,7 @@ def host(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
 
 
@@ -36,20 +38,20 @@ def host(
 def ip(
     integration_client: MregClient,
     host: Host,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> IPAddress:
     addr = "10.0.99.10"
     integration_client.ipaddress.create(ipaddress=addr, host=host)
     created = integration_client.ipaddress.get(addr)
     assert created is not None
-    resource_tracker.append(lambda: integration_client.ipaddress.delete(created))
+    resource_tracker.add(lambda: integration_client.ipaddress.delete(created))
     return created
 
 
 def test_create(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> None:
     hostname = f"{test_prefix}ipc.{zone.name}"
@@ -59,12 +61,12 @@ def test_create(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     addr = "10.0.99.20"
     integration_client.ipaddress.create(ipaddress=addr, host=h)
     created = integration_client.ipaddress.get(addr)
     assert created is not None
-    resource_tracker.append(lambda: integration_client.ipaddress.delete(created))
+    resource_tracker.add(lambda: integration_client.ipaddress.delete(created))
     assert str(created.ipaddress) == addr
 
 
@@ -99,7 +101,7 @@ def test_get_nonexistent_raises(integration_client: MregClient) -> None:
 def test_delete_by_id(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> None:
     hostname = f"{test_prefix}ipdid.{zone.name}"
@@ -109,7 +111,7 @@ def test_delete_by_id(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     addr = "10.0.99.11"
     integration_client.ipaddress.create(ipaddress=addr, host=h)
     created = integration_client.ipaddress.get(addr)
@@ -121,7 +123,7 @@ def test_delete_by_id(
 def test_delete_by_object(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> None:
     hostname = f"{test_prefix}ipdobj.{zone.name}"
@@ -131,7 +133,7 @@ def test_delete_by_object(
         fetch_after_create=True,
     )
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     addr = "10.0.99.12"
     integration_client.ipaddress.create(ipaddress=addr, host=h)
     created = integration_client.ipaddress.get(addr)

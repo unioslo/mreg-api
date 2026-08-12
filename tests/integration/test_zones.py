@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -12,6 +11,9 @@ from mreg_api.models.models import ForwardZone
 from mreg_api.models.models import ForwardZoneDelegation
 from mreg_api.models.models import NameServer
 from mreg_api.models.models import Zone
+
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
 
 pytestmark = [pytest.mark.integration]
 
@@ -28,7 +30,7 @@ def seed_ns(zone: Zone) -> str:
 def test_zone(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     seed_ns: str,
 ) -> ForwardZone:
     zone_name = f"{test_prefix}.example.com"
@@ -39,7 +41,7 @@ def test_zone(
         force=True,
     )
     assert zone is not None
-    resource_tracker.append(lambda: integration_client.zone.delete(zone_name, force=True))
+    resource_tracker.add(lambda: integration_client.zone.delete(zone_name, force=True))
     assert isinstance(zone, ForwardZone)
     return zone
 
@@ -49,7 +51,7 @@ def delegation(
     integration_client: MregClient,
     test_zone: ForwardZone,
     seed_ns: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> ForwardZoneDelegation:
     deleg_name = f"deleg.{test_zone.name}"
     d = integration_client.delegation.create(
@@ -59,7 +61,7 @@ def delegation(
         force=True,
     )
     assert d is not None
-    resource_tracker.append(lambda: integration_client.delegation.delete(test_zone, deleg_name))
+    resource_tracker.add(lambda: integration_client.delegation.delete(test_zone, deleg_name))
     assert isinstance(d, ForwardZoneDelegation)
     return d
 

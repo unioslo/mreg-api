@@ -1,7 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING
 
 import pytest
 
@@ -11,6 +10,9 @@ from mreg_api.models.models import CNAME
 from mreg_api.models.models import Host
 from mreg_api.models.models import Zone
 
+if TYPE_CHECKING:
+    from tests.integration.conftest import ResourceTracker
+
 pytestmark = [pytest.mark.integration]
 
 
@@ -18,13 +20,13 @@ pytestmark = [pytest.mark.integration]
 def host(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}cnameh.{zone.name}"
     h = integration_client.host.create(name=name, fetch_after_create=True)
     assert h is not None
-    resource_tracker.append(lambda: integration_client.host.delete(h))
+    resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
 
 
@@ -38,12 +40,12 @@ def cname(
     integration_client: MregClient,
     host: Host,
     alias_fqdn: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> CNAME:
     integration_client.cname.create(host=host, name=alias_fqdn)
     c = integration_client.cname.get_by_name(alias_fqdn)
     assert c is not None
-    resource_tracker.append(lambda: integration_client.cname.delete(c))
+    resource_tracker.add(lambda: integration_client.cname.delete(c))
     return c
 
 
@@ -52,13 +54,13 @@ def test_create(
     host: Host,
     zone: Zone,
     test_prefix: str,
-    resource_tracker: list[Callable[[], Any]],
+    resource_tracker: ResourceTracker,
 ) -> None:
     alias = f"{test_prefix}aliasc.{zone.name}"
     integration_client.cname.create(host=host, name=alias)
     c = integration_client.cname.get_by_name(alias)
     assert c is not None
-    resource_tracker.append(lambda: integration_client.cname.delete(c))
+    resource_tracker.add(lambda: integration_client.cname.delete(c))
     assert c.name
     assert c.host == host.id
 
