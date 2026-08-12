@@ -296,11 +296,11 @@ def test_rename(
                 pass
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.atom.ensure_absent(99999999)
+def test_assert_absent_nonexistent(integration_client: MregClient) -> None:
+    integration_client.atom.assert_absent(99999999)
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
@@ -313,4 +313,4 @@ def test_ensure_absent_existing(
     assert atm is not None
     resource_tracker.add(lambda: integration_client.atom.delete(atm))
     with pytest.raises(EntityAlreadyExists):
-        integration_client.atom.ensure_absent(atm.name)
+        integration_client.atom.assert_absent(atm.name)

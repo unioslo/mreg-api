@@ -194,12 +194,12 @@ def test_rename(
     assert client.role.get(new_name, required=False) is not None
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
+def test_assert_absent_nonexistent(integration_client: MregClient) -> None:
     client = integration_client
-    client.role.ensure_absent("zzz-no-such-role-xyzzy")
+    client.role.assert_absent("zzz-no-such-role-xyzzy")
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
@@ -210,7 +210,7 @@ def test_ensure_absent_existing(
     assert role is not None
     resource_tracker.add(lambda: client.role.delete(name))
     with pytest.raises(EntityAlreadyExists):
-        client.role.ensure_absent(name)
+        client.role.assert_absent(name)
 
 
 def test_add_remove_atom(

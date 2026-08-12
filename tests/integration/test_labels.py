@@ -171,11 +171,11 @@ def test_rename(
                 pass
 
 
-def test_ensure_absent_nonexistent(integration_client: MregClient) -> None:
-    integration_client.label.ensure_absent(99999999)
+def test_assert_absent_nonexistent(integration_client: MregClient) -> None:
+    integration_client.label.assert_absent(99999999)
 
 
-def test_ensure_absent_existing(
+def test_assert_absent_existing(
     integration_client: MregClient,
     test_prefix: str,
     resource_tracker: ResourceTracker,
@@ -189,4 +189,4 @@ def test_ensure_absent_existing(
     assert lbl is not None
     resource_tracker.add(lambda: integration_client.label.delete(lbl))
     with pytest.raises(EntityAlreadyExists):
-        integration_client.label.ensure_absent(lbl.id)
+        integration_client.label.assert_absent(lbl.id)
