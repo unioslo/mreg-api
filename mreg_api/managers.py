@@ -6,7 +6,7 @@ Managers are bound to an `MregClient` instance.
 As a baseline, each manager exposes:
 - `get`
 - `list`
-- `assert_absent`  (TODO: rename)
+- `assert_absent`  (NOTE: may be removed in a future version)
 
 Additionally, managers for resources that support name-based lookups:
 - `get_by_name`
