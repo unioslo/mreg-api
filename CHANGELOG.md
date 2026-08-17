@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `MregClient.community` property to access the `CommunityManager` for managing communities.
   - Still exists via `MregClient.network.community`.
+- `EventLog.get(subject=..., kind=..., level=..., min_level=...)` method to support retrieving events and filtering by a combination of subject, kind, and level. This replaces the existing `get_for`, `get_by_kind`, `get_by_level`, and `get_at_or_above` methods, and allows one to combine all their filters in a single call. Currently, only intersections of filters are supported (i.e. events must match all filters to be returned). Future releases may support unions of filters (i.e. events matching any filter will be returned).
 
 ### Changed
 
@@ -26,7 +27,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING:** `create(fetch_after_create)` parameter. No longer has any meaning as each endpoint returns a valid object representation in the response body after creation.
 
+### Deprecated
 
+- `EventLog.get_all()` -> `EventLog.get()`
+- `EventLog.get_for()` -> `EventLog.get(subject=...)`
+- `EventLog.get_by_kind()` -> `EventLog.get(kind=...)`
+- `EventLog.get_by_level()` -> `EventLog.get(level=...)`
+- `EventLog.get_at_or_above()` -> `EventLog.get(min_level=...)`
 
 ## [0.3.0](https://github.com/unioslo/mreg-api/releases/tag/0.3.0) - 2026-08-12
 

@@ -108,7 +108,7 @@ def test_eventlog_clear():
 
     log.clear()
     assert len(log) == 0
-    assert log.get_all() == []
+    assert log.get() == []
 
 
 def test_eventlog_max_size() -> None:
@@ -123,7 +123,7 @@ def test_eventlog_max_size() -> None:
     for event in [event1, event2, event3]:
         log.record(event)
 
-    all_events = log.get_all()
+    all_events = log.get()
     assert len(all_events) == 2
     assert all_events[0] is event2
     assert all_events[1] is event3
@@ -144,12 +144,12 @@ def test_eventlog_get_for() -> None:
     for event in [event1, event2, event3]:
         log.record(event)
 
-    events_for_ref1 = log.get_for(ref1)
+    events_for_ref1 = log.get(subject=ref1)
     assert len(events_for_ref1) == 2
     assert event1 in events_for_ref1
     assert event3 in events_for_ref1
 
-    events_for_ref2 = log.get_for(ref2)
+    events_for_ref2 = log.get(subject=ref2)
     assert len(events_for_ref2) == 2
     assert event2 in events_for_ref2
     assert event3 in events_for_ref2
@@ -166,10 +166,10 @@ def test_eventlog_get_for() -> None:
     log.record(ptr_event)
 
     # Not passing in field name returns 0 hits
-    assert len(log.get_for(ObjectRef("PTR_override", "192.168.0.1"))) == 0
+    assert len(log.get(subject=ObjectRef("PTR_override", "192.168.0.1"))) == 0
 
     # Using the correct field name (`ipaddress`) returns hits
-    ptr_events = log.get_for(ptr_ref)
+    ptr_events = log.get(subject=ptr_ref)
     assert len(ptr_events) == 1
     assert ptr_events[0] == ptr_event
 
@@ -195,16 +195,16 @@ def test_get_by_kind() -> None:
     for event in [notice_event1, notice_event2, resolution_event, mutation_event]:
         log.record(event)
 
-    notice_events = log.get_by_kind(EventKind.NOTICE)
+    notice_events = log.get(kind=EventKind.NOTICE)
     assert len(notice_events) == 2
     assert notice_event1 in notice_events
     assert notice_event2 in notice_events
 
-    resolution_events = log.get_by_kind(EventKind.RESOLUTION)
+    resolution_events = log.get(kind=EventKind.RESOLUTION)
     assert len(resolution_events) == 1
     assert resolution_event in resolution_events
 
-    mutation_events = log.get_by_kind(EventKind.MUTATION)
+    mutation_events = log.get(kind=EventKind.MUTATION)
     assert len(mutation_events) == 1
     assert mutation_event in mutation_events
 
@@ -240,29 +240,29 @@ def test_get_by_level() -> None:
     for event in [debug_event, info_event, warning_event, error_event]:
         log.record(event)
 
-    debug_events = log.get_by_level(EventLevel.DEBUG)
+    debug_events = log.get(level=EventLevel.DEBUG)
     assert len(debug_events) == 1
     assert debug_event in debug_events
 
-    info_events = log.get_by_level(EventLevel.INFO)
+    info_events = log.get(level=EventLevel.INFO)
     assert len(info_events) == 1
     assert info_event in info_events
 
-    warning_events = log.get_by_level(EventLevel.WARNING)
+    warning_events = log.get(level=EventLevel.WARNING)
     assert len(warning_events) == 1
     assert warning_event in warning_events
 
-    error_events = log.get_by_level(EventLevel.ERROR)
+    error_events = log.get(level=EventLevel.ERROR)
     assert len(error_events) == 1
     assert error_event in error_events
 
     # Test retrieval of events at or above a certain level
-    warning_and_above = log.get_at_or_above(EventLevel.WARNING)
+    warning_and_above = log.get(min_level=EventLevel.WARNING)
     assert len(warning_and_above) == 2
     assert warning_event in warning_and_above
     assert error_event in warning_and_above
 
-    all_events = log.get_at_or_above(EventLevel.DEBUG)
+    all_events = log.get(min_level=EventLevel.DEBUG)
     assert len(all_events) == 4
     assert debug_event in all_events
     assert info_event in all_events

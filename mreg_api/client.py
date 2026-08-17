@@ -266,32 +266,36 @@ class MregClient:
     methods for making API requests.
 
     Authentication modes:
-    1. Token: Provide token directly via set_token()
-    2. Username/password: Call login() with credentials
+
+    1. Username/password: Call login() with credentials
+    2. Token: Provide token directly via set_token()
 
     Example:
-        >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
-        >>> client.login("username", "password")
-        >>> hosts = client.host.list()
 
-        Or with token:
-        >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
-        >>> client.set_token("your-token-here")
-    """
+    ```pycon
+    >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
+    >>> client.login("username", "password")
+    >>> hosts = client.host.list()
+
+    # Or with token:
+    >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
+    >>> client.set_token("your-token-here")
+    ```
+    """  # noqa: D412
 
     @functools.cached_property
     def atom(self) -> AtomManager:
-        """Manager for host policy atom resources."""
+        """Manage host policy atoms."""
         return AtomManager(self)
 
     @functools.cached_property
     def bacnetid(self) -> BacnetIDManager:
-        """Manager for BACnet ID resources."""
+        """Manage BACnet IDs."""
         return BacnetIDManager(self)
 
     @functools.cached_property
     def cname(self) -> CNAMEManager:
-        """Manager for CNAME resources."""
+        """Manage CNAME records."""
         return CNAMEManager(self)
 
     @functools.cached_property
@@ -301,122 +305,122 @@ class MregClient:
 
     @functools.cached_property
     def delegation(self) -> DelegationManager:
-        """Manager for zone delegation resources."""
+        """Manage zone delegations."""
         return DelegationManager(self)
 
     @functools.cached_property
     def dhcphostipv4(self) -> DhcpHostIPv4Manager:
-        """Manager for IPv4 DHCP host records."""
+        """Manage IPv4 DHCP host records."""
         return DhcpHostIPv4Manager(self)
 
     @functools.cached_property
     def dhcphostipv6(self) -> DhcpHostIPv6Manager:
-        """Manager for IPv6 DHCP host records."""
+        """Manage IPv6 DHCP host records."""
         return DhcpHostIPv6Manager(self)
 
     @functools.cached_property
     def dhcphostipv6byipv4(self) -> DhcpHostIPv6ByIPv4Manager:
-        """Manager for IPv6-via-IPv4 DHCP host records."""
+        """Manage IPv6 DHCP host records by IPv4 address."""
         return DhcpHostIPv6ByIPv4Manager(self)
 
     @functools.cached_property
     def hinfo(self) -> HInfoManager:
-        """Manager for HINFO resources."""
+        """Manage HINFO records."""
         return HInfoManager(self)
 
     @functools.cached_property
     def host(self) -> HostManager:
-        """Manager for host resources."""
+        """Manage hosts."""
         return HostManager(self)
 
     @functools.cached_property
     def hostgroup(self) -> HostGroupManager:
-        """Manager for host group resources."""
+        """Manage host groups."""
         return HostGroupManager(self)
 
     @functools.cached_property
     def ipaddress(self) -> IPAddressManager:
-        """Manager for IP address resources."""
+        """Manage IP addresses."""
         return IPAddressManager(self)
 
     @functools.cached_property
     def label(self) -> LabelManager:
-        """Manager for label resources."""
+        """Manage labels."""
         return LabelManager(self)
 
     @functools.cached_property
     def location(self) -> LocationManager:
-        """Manager for location resources."""
+        """Manage locations."""
         return LocationManager(self)
 
     @functools.cached_property
     def meta(self) -> MetaManagerNamespace:
-        """Manager for meta endpoints."""
+        """Access server metadata and health endpoints."""
         return MetaManagerNamespace(self)
 
     @functools.cached_property
     def mx(self) -> MXManager:
-        """Manager for MX record resources."""
+        """Manage MX records."""
         return MXManager(self)
 
     @functools.cached_property
     def nameserver(self) -> NameServerManager:
-        """Manager for nameserver resources (read-only)."""
+        """Manage nameservers."""
         return NameServerManager(self)
 
     @functools.cached_property
     def naptr(self) -> NAPTRManager:
-        """Manager for NAPTR record resources."""
+        """Manage NAPTR records."""
         return NAPTRManager(self)
 
     @functools.cached_property
     def network(self) -> NetworkManager:
-        """Manager for network resources."""
+        """Manage networks."""
         return NetworkManager(self)
 
     @functools.cached_property
     def networkpolicy(self) -> NetworkPolicyManager:
-        """Manager for network policy resources."""
+        """Manage network policies."""
         return NetworkPolicyManager(self)
 
     @functools.cached_property
     def networkpolicyattribute(self) -> NetworkPolicyAttributeManager:
-        """Manager for network policy attribute resources."""
+        """Manage network policy attributes."""
         return NetworkPolicyAttributeManager(self)
 
     @functools.cached_property
     def permission(self) -> PermissionManager:
-        """Manager for permission resources."""
+        """Manage permissions."""
         return PermissionManager(self)
 
     @functools.cached_property
     def ptroverride(self) -> PTROverrideManager:
-        """Manager for PTR override resources."""
+        """Manage PTR overrides."""
         return PTROverrideManager(self)
 
     @functools.cached_property
     def role(self) -> RoleManager:
-        """Manager for host policy role resources."""
+        """Manage host policy roles."""
         return RoleManager(self)
 
     @functools.cached_property
     def srv(self) -> SrvManager:
-        """Manager for SRV record resources."""
+        """Manage SRV records."""
         return SrvManager(self)
 
     @functools.cached_property
     def sshfp(self) -> SSHFPManager:
-        """Manager for SSHFP record resources."""
+        """Manage SSHFP records."""
         return SSHFPManager(self)
 
     @functools.cached_property
     def txt(self) -> TXTManager:
-        """Manager for TXT record resources."""
+        """Manage TXT records."""
         return TXTManager(self)
 
     @functools.cached_property
     def zone(self) -> ZoneManager:
-        """Manager for forward/reverse zone resources."""
+        """Manage forward and reverse zones."""
         return ZoneManager(self)
 
     def __init__(

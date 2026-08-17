@@ -13,6 +13,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 from typing import Self
 
+from typing_extensions import deprecated
 from typing_extensions import override
 
 if TYPE_CHECKING:
@@ -176,25 +177,57 @@ class EventLog:
         """Remove a previously registered callback."""
         self._handlers.remove(handler)
 
+    def get(
+        self,
+        subject: ObjectRef | None = None,
+        kind: EventKind | None = None,
+        level: EventLevel | None = None,
+        min_level: EventLevel | None = None,
+    ) -> list[Event]:
+        """Return all recorded events, optionally filtered by subject, kind, or level.
+
+        Args:
+            subject: If provided, only events where this object is the subject or involved are returned.
+            kind: If provided, only events of this kind are returned.
+            level: If provided, only events with exactly this level are returned.
+            min_level: If provided, only events with this level or higher are returned.
+
+        Returns:
+            A list of events matching the specified filters.
+        """
+        return [
+            e
+            for e in self._events
+            if (subject is None or e.subject == subject or subject in e.related)
+            and (kind is None or e.kind == kind)
+            and (level is None or e.level == level)
+            and (min_level is None or e.level >= min_level)
+        ]
+
+    @deprecated('Use "get()" instead')
     def get_all(self) -> list[Event]:
         """Return all recorded events."""
-        return list(self._events)
+        return self.get()
 
+    @deprecated('Use "get(subject=)" instead')
     def get_for(self, ref: ObjectRef) -> list[Event]:
         """Return all events where *ref* is the subject or an involved object."""
-        return [e for e in self._events if e.subject == ref or ref in e.related]
+        return self.get(subject=ref)
 
+    @deprecated('Use "get(kind=)" instead')
     def get_by_kind(self, kind: EventKind) -> list[Event]:
         """Return all events of the given kind."""
-        return [e for e in self._events if e.kind == kind]
+        return self.get(kind=kind)
 
+    @deprecated('Use "get(level=)" instead')
     def get_by_level(self, level: EventLevel) -> list[Event]:
         """Return all events with exactly the given level."""
-        return [e for e in self._events if e.level == level]
+        return self.get(level=level)
 
+    @deprecated('Use "get(min_level=)" instead')
     def get_at_or_above(self, level: EventLevel) -> list[Event]:
         """Return all events at or above the given severity level."""
-        return [e for e in self._events if e.level >= level]
+        return self.get(min_level=level)
 
     def clear(self) -> None:
         """Remove all recorded events."""
