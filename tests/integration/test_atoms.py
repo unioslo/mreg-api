@@ -69,7 +69,7 @@ def test_create(
             # The server doesn't quote the name in the Location header,
             # and neither does the client. So this is just a disaster all around.
             "name/with/slashes",
-            marks=pytest.mark.xfail(raises=GetError),
+            marks=pytest.mark.xfail(raises=GetError, strict=True),
         ),
     ],
 )
@@ -148,8 +148,9 @@ def test_create_name_with_slashes_location_header_invalid(
 
     assert resp.status_code == 201
 
-    # Location header contains URL with slashes in atom name, which is invalid.
-    assert resp.headers["Location"] == f"{Endpoint.HostPolicyAtoms}{atom_name_2}"
+    # Location header contains quoted name, but server fails to look it up
+    quoted_name = quote(atom_name_2, safe="")
+    assert resp.headers["Location"] == f"{Endpoint.HostPolicyAtoms}{quoted_name}"
 
     # We can't fetch atom directly, but we can still list it via querying all atoms.
     # We should still be able to see it if we fetch _all_ atoms
