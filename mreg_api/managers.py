@@ -534,6 +534,9 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         # Resolve by name search if we have a str arg and the API resource path
         # does not identify the resource by name, e.g.:
         # `/labels/{id}` -> must search by name -> `/labels?name={name}`
+        # TODO: only labels endpoints defines a separate `<resource>/name` endpoint
+        #       all others can be looked up via name. It makes more sense to override
+        #       this method in `LabelManager` and just use the name endpoint there.
         if isinstance(ref, str) and self._path_param_field != self.name_field:
             return self.get_by_name(ref)
         return super()._resolve(ref)
@@ -4407,11 +4410,7 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
 
 
 class NameServerManager(NamedResourceManager[NameServer]):
-    """Access to :class:`~mreg_api.models.NameServer` resources (`client.nameserver`).
-
-    Nameservers are created and deleted implicitly through zone and delegation
-    operations; this manager exposes listing and lookup.
-    """
+    """Access to :class:`~mreg_api.models.NameServer` resources (`client.nameserver`)."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -4424,6 +4423,27 @@ class NameServerManager(NamedResourceManager[NameServer]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.Nameservers
+
+    def create(
+        self,
+        *,
+        name: str,
+        ttl: int | None | UNSET = UNSET,
+        fetch_after_create: bool = True,
+    ) -> NameServer | None:
+        """Create a nameserver.
+
+        NOTE: this endpoint does _not_ return the resource after creation.
+
+        Args:
+            name (str): The nameserver name to create.
+            ttl (int | None | UNSET): Optional TTL for the nameserver. If None, uses default TTL.
+            fetch_after_create (bool): Whether to fetch the nameserver after creation.
+        """
+        data: dict[str, Any] = {"name": self._client.fqdn(name)}
+        if ttl is not UNSET:
+            data["ttl"] = ttl
+        return self._create(data, fetch_after_create=fetch_after_create)
 
 
 class MetaManagerNamespace:
