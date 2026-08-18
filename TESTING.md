@@ -45,11 +45,22 @@ Flags:
 | `--unit-only` | Skip integration tests (no containers started) |
 | `--integration-only` | Skip unit tests |
 | `--no-cov` | Disable coverage. Used in CI |
+| `-h`, `--help` | Show usage |
+| `-- ARGS...` | Pass everything after `--` to pytest |
 
-```bash
-# Fast run without coverage
-bash ci/run_tests.sh --no-cov
-```
+Unknown flags are an error (exit code 2) — the script never silently ignores them.
+
+Container setup (`ci/run_tests.sh` only, not read by pytest):
+
+| Env var | Default | Description |
+|---|---|---|
+| `MREG_IMAGE` | `ghcr.io/unioslo/mreg:master` | mreg container image |
+| `MREG_IMAGE_PULL_POLICY` | `missing` | Compose pull policy: `missing`, `always`, `never` |
+| `MREG_PORT` | `8000` | Host port the mreg container is exposed on |
+
+`master` is a mutable tag, so a local image can go stale. Use `MREG_IMAGE_PULL_POLICY=always` to pull the current one.
+
+
 
 ### Running manually against a local server
 
@@ -88,18 +99,23 @@ uv run pytest tests/integration/ \
 CLI flags take precedence over env vars.
 
 
-### Subset runs
+### Subset and extra arguments
+
 
 ```bash
-# Read-only tests only (safe against staging/production)
-uv run pytest tests/integration/ -m readonly
+# Fast run without coverage
+bash ci/run_tests.sh --no-cov
 
-# Single resource type
-uv run pytest tests/integration/test_labels.py
+# Single module
+bash ci/run_tests.sh --integration-only -- tests/integration/test_labels.py
 
-# Specific test
-uv run pytest tests/integration/test_labels.py::test_delete_by_name
+# Stop on first failure, filter by name
+bash ci/run_tests.sh --integration-only -- -x -k labels
 ```
+
+Each pass selects its tests by marker (`-m integration` / `-m "not integration"`) rather than by
+path, so a path after `--` narrows the run. When both suites run, the arguments go to both pytest
+invocations.
 
 ## Coverage
 
