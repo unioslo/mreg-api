@@ -70,15 +70,13 @@ hosts = client.host.list(name__startswith="test-")
 
 ### Creating
 
-`create` takes keyword arguments matching the model's fields. Endpoints aren't
-guaranteed to return the created resource, so the return type is `T | None`. Pass
-`fetch_after_create=True` to attempt to fetch the newly created resource.
+`create` takes keyword arguments matching the model's fields. The method returns the created object upon successful creation.
 
 ```py
 new_host = client.host.create(
     name="newhost.example.com",
     comment="Created via the API",
-    fetch_after_create=True,
+
 )
 ```
 

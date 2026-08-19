@@ -24,7 +24,6 @@ def attr(
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attr",
         description="integration test attribute",
-        fetch_after_create=True,
     )
     assert obj is not None
     resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(obj))
@@ -40,7 +39,6 @@ def policy(
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}pol",
         description="integration test policy",
-        fetch_after_create=True,
     )
     assert obj is not None
     resource_tracker.add(lambda: integration_client.networkpolicy.delete(obj))
@@ -60,7 +58,6 @@ def test_attr_create(
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attrc",
         description="create test",
-        fetch_after_create=True,
     )
     assert obj is not None
     resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(obj))
@@ -94,7 +91,6 @@ def test_attr_get_by_name_case_insensitive(
     obj = integration_client.networkpolicyattribute.create(
         name=mixed_name,
         description="case insensitivity test",
-        fetch_after_create=True,
     )
     assert obj is not None
     resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(obj))
@@ -129,7 +125,6 @@ def test_attr_delete_by_id(
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attrdid",
         description="delete by id test",
-        fetch_after_create=True,
     )
     assert obj is not None
     integration_client.networkpolicyattribute.delete(obj.id)
@@ -143,7 +138,6 @@ def test_attr_delete_by_name(
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attrdn",
         description="delete by name test",
-        fetch_after_create=True,
     )
     assert obj is not None
     integration_client.networkpolicyattribute.delete(obj.name)
@@ -157,7 +151,6 @@ def test_attr_delete_by_object(
     obj = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}attrdo",
         description="delete by object test",
-        fetch_after_create=True,
     )
     assert obj is not None
     integration_client.networkpolicyattribute.delete(obj)
@@ -192,7 +185,6 @@ def test_attr_rename(
     obj = integration_client.networkpolicyattribute.create(
         name=old_name,
         description="rename test",
-        fetch_after_create=True,
     )
     assert obj is not None
     try:
@@ -220,7 +212,6 @@ def test_policy_create(
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}polc",
         description="create test",
-        fetch_after_create=True,
     )
     assert obj is not None
     resource_tracker.add(lambda: integration_client.networkpolicy.delete(obj))
@@ -271,7 +262,6 @@ def test_policy_delete_by_id(
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}poldid",
         description="delete by id test",
-        fetch_after_create=True,
     )
     assert obj is not None
     integration_client.networkpolicy.delete(obj.id)
@@ -285,7 +275,6 @@ def test_policy_delete_by_name(
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}poldn",
         description="delete by name test",
-        fetch_after_create=True,
     )
     assert obj is not None
     integration_client.networkpolicy.delete(obj.name)
@@ -299,7 +288,6 @@ def test_policy_delete_by_object(
     obj = integration_client.networkpolicy.create(
         name=f"{test_prefix}poldo",
         description="delete by object test",
-        fetch_after_create=True,
     )
     assert obj is not None
     integration_client.networkpolicy.delete(obj)
@@ -334,7 +322,6 @@ def test_policy_rename(
     obj = integration_client.networkpolicy.create(
         name=old_name,
         description="rename test",
-        fetch_after_create=True,
     )
     assert obj is not None
     try:
@@ -357,7 +344,6 @@ def test_policy_add_remove_attribute(
     pol = integration_client.networkpolicy.create(
         name=f"{test_prefix}polattr",
         description="add remove attribute test",
-        fetch_after_create=True,
     )
     assert pol is not None
     resource_tracker.add(lambda: integration_client.networkpolicy.delete(pol))
@@ -365,7 +351,6 @@ def test_policy_add_remove_attribute(
     test_attr = integration_client.networkpolicyattribute.create(
         name=f"{test_prefix}paattr",
         description="policy attribute test",
-        fetch_after_create=True,
     )
     assert test_attr is not None
     resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(test_attr))

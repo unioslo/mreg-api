@@ -24,7 +24,7 @@ def host(
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}cnameh.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     return h

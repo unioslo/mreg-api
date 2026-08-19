@@ -27,11 +27,10 @@ def label(
     resource_tracker: ResourceTracker,
 ) -> Label:
     name = f"{test_prefix}lbl"
-    integration_client.label.create(
+    lbl = integration_client.label.create(
         name=name,
         description="integration test label",
     )
-    lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
     resource_tracker.add(lambda: integration_client.label.delete(lbl))
     return lbl
@@ -43,11 +42,10 @@ def test_create(
     resource_tracker: ResourceTracker,
 ) -> None:
     name = f"{test_prefix}lc"
-    integration_client.label.create(
+    lbl = integration_client.label.create(
         name=name,
         description="create test",
     )
-    lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
     resource_tracker.add(lambda: integration_client.label.delete(lbl))
     assert lbl.name == f"{test_prefix}lc"
@@ -88,11 +86,11 @@ def test_get_by_name_nonexistent_returns_none(integration_client: MregClient) ->
 
 def test_delete_by_id(integration_client: MregClient, test_prefix: str) -> None:
     name = f"{test_prefix}ldid"
-    integration_client.label.create(
+    lbl = integration_client.label.create(
         name=name,
         description="delete by id test",
     )
-    lbl = integration_client.label.get_by_name(name)
+    integration_client.label.get_by_name(name)
     assert lbl is not None
     integration_client.label.delete(lbl.id)
     assert integration_client.label.get(lbl.id, required=False) is None
@@ -100,11 +98,10 @@ def test_delete_by_id(integration_client: MregClient, test_prefix: str) -> None:
 
 def test_delete_by_name(integration_client: MregClient, test_prefix: str) -> None:
     name = f"{test_prefix}ldn"
-    integration_client.label.create(
+    lbl = integration_client.label.create(
         name=name,
         description="delete by name test",
     )
-    lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
     integration_client.label.delete(lbl.name)
     assert integration_client.label.get(lbl.id, required=False) is None
@@ -112,11 +109,10 @@ def test_delete_by_name(integration_client: MregClient, test_prefix: str) -> Non
 
 def test_delete_by_object(integration_client: MregClient, test_prefix: str) -> None:
     name = f"{test_prefix}ldo"
-    integration_client.label.create(
+    lbl = integration_client.label.create(
         name=name,
         description="delete by object test",
     )
-    lbl = integration_client.label.get_by_name(name)
     assert lbl is not None
     integration_client.label.delete(lbl)
     assert integration_client.label.get(lbl.id, required=False) is None
@@ -133,7 +129,7 @@ def test_list_by_name_regex(
     test_prefix: str,
 ) -> None:
     results = integration_client.label.list_by_name_regex(test_prefix)
-    assert label in results
+    assert label.id in {r.id for r in results}
 
 
 def test_count(integration_client: MregClient) -> None:
@@ -150,14 +146,14 @@ def test_first(integration_client: MregClient) -> None:
 def test_rename(
     integration_client: MregClient,
     test_prefix: str,
+    resource_tracker: ResourceTracker,
 ) -> None:
     old_name = f"{test_prefix}lold"
     new_name = f"{test_prefix}lnew"
-    integration_client.label.create(
+    lbl = integration_client.label.create(
         name=old_name,
         description="rename test",
     )
-    lbl = integration_client.label.get_by_name(old_name)
     assert lbl is not None
     try:
         integration_client.label.rename(lbl, new_name)
@@ -165,10 +161,7 @@ def test_rename(
         assert integration_client.label.get_by_name(old_name, required=False) is None
     finally:
         for name in [new_name, old_name]:
-            try:
-                integration_client.label.delete(name)
-            except Exception:
-                pass
+            resource_tracker.add(lambda n=name: integration_client.label.delete(n))
 
 
 def test_assert_absent_nonexistent(integration_client: MregClient) -> None:

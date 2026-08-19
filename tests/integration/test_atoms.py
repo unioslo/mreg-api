@@ -9,7 +9,6 @@ from mreg_api.client import MregClient
 from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.exceptions import GetError
 from mreg_api.models.models import Atom
 
 if TYPE_CHECKING:
@@ -32,7 +31,6 @@ def atom(
     atm = integration_client.atom.create(
         name=f"{test_prefix}atm",
         description="integration test atom",
-        fetch_after_create=True,
     )
     assert atm is not None
     resource_tracker.add(lambda: integration_client.atom.delete(atm))
@@ -47,7 +45,6 @@ def test_create(
     atm = integration_client.atom.create(
         name=f"{test_prefix}ac",
         description="create test",
-        fetch_after_create=True,
     )
     assert atm is not None
     resource_tracker.add(lambda: integration_client.atom.delete(atm))
@@ -63,13 +60,11 @@ def test_create(
         "name+with+pluses",
         "name9with9numbers",
         pytest.param(
-            # NOTE: it is actually upon receiving the `Location` header
-            # that we get a 400 Bad Request, not on the POST itself,
-            # hence the `GetError` instead of `PostError` here.
-            # The server doesn't quote the name in the Location header,
-            # and neither does the client. So this is just a disaster all around.
+            # NOTE: it is actually upon trying to fetch the atom that this fails,
+            # not upon creation. The server is not able to handle
+            # names with slashes in the name, even when quoted.
             "name/with/slashes",
-            marks=pytest.mark.xfail(raises=GetError, strict=True),
+            marks=pytest.mark.xfail(raises=EntityNotFound, strict=True),
         ),
     ],
 )
@@ -84,10 +79,9 @@ def test_create_various_names(
     atm = integration_client.atom.create(
         name=atom_name,
         description="create test",
-        fetch_after_create=True,
     )
     assert atm is not None
-    resource_tracker.add(lambda: integration_client.atom.delete(atm))
+    resource_tracker.add(lambda: integration_client.atom.delete(atm.id))
     assert atm.name == atom_name
     # Check that we can fetch these atoms by name as well
     assert integration_client.atom.get_by_name(atom_name)
@@ -100,24 +94,19 @@ def test_create_name_with_slashes(
     """Test atom creation with a name containing slashes.
 
     This is a case where it is possible to create the Atom, but
-    automatic retrieval fails, and the API library does not quote the name
-    in `get()`, so it just becomes almost impossible to retrieve unless
-    the name is manually quoted when passing the argument to `get()`.
+    retrieval fails, and the server implements no way to fetch the atom
+    by name, other than querying it.
 
     `Endpoint.with_id` does not quote `/` because it is a valid character
     in a path parameter for networks (i.e. `/networks/10.0.0.0/24`), so MREG
     clients have historically never quoted `/` in path parameters.
     """
-    #
     atom_name_1 = f"{test_prefix}name/with/slashes1"
-    atm = integration_client.atom.create(
-        name=atom_name_1,
-        description="create test",
-        # We MUST not fetch after create, because the server returns
-        # an invalid Location header for this atom.
-        fetch_after_create=False,
-    )
-    assert atm is None  # nothing returned
+
+    # Atom is created and it is returned in the response body
+    atm = integration_client.atom.create(name=atom_name_1, description="create test")
+    assert atm is not None
+    assert atm.name == atom_name_1
 
     # Trying to fetch it (with or without quoting) will fail
     with pytest.raises(EntityNotFound):
@@ -135,33 +124,35 @@ def test_create_name_with_slashes_location_header_invalid(
     Verifies that the Location header is invalid, and that the atom
     is still created, even though it cannot be fetched via conventional means.
     """
-    # Creating an atom with fetch_after_create=True will fail,
-    # but the atom is still created!
-
-    atom_name_2 = f"{test_prefix}name/with/slashes2"
-    assert integration_client.atom.get_by_name(atom_name_2, required=False) is None
+    atom_name = f"{test_prefix}name/with/slashes2"
+    assert integration_client.atom.get_by_name(atom_name, required=False) is None
 
     resp = integration_client.post(
         Endpoint.HostPolicyAtoms,
-        json={"name": atom_name_2, "description": "create test"},
+        json={"name": atom_name, "description": "create test"},
     )
 
     assert resp.status_code == 201
 
     # Location header contains quoted name, but server fails to look it up
-    quoted_name = quote(atom_name_2, safe="")
+    quoted_name = quote(atom_name, safe="")
     assert resp.headers["Location"] == f"{Endpoint.HostPolicyAtoms}{quoted_name}"
 
     # We can't fetch atom directly, but we can still list it via querying all atoms.
     # We should still be able to see it if we fetch _all_ atoms
     all_atoms = integration_client.atom.list()
-    atom = next((a for a in all_atoms if a.name == atom_name_2), None)
+    atom = next((a for a in all_atoms if a.name == atom_name), None)
     assert atom is not None
 
-    # Try to fetch our atom by ID
+    # Query by quoted name
+    queried_atoms = integration_client.atom.list(name=atom_name)
+    atom = next((a for a in queried_atoms if a.name == atom_name), None)
+    assert atom is not None
+
+    # Get by ID
     fetched = integration_client.atom.get(atom.id)
     assert fetched is not None
-    assert fetched.name == atom_name_2
+    assert fetched.name == atom_name
 
 
 def test_get_by_id(integration_client: MregClient, atom: Atom) -> None:
@@ -201,7 +192,6 @@ def test_delete_by_id(integration_client: MregClient, test_prefix: str) -> None:
     atm = integration_client.atom.create(
         name=f"{test_prefix}adid",
         description="delete by id test",
-        fetch_after_create=True,
     )
     assert atm is not None
     integration_client.atom.delete(atm.id)
@@ -212,7 +202,6 @@ def test_delete_by_name(integration_client: MregClient, test_prefix: str) -> Non
     atm = integration_client.atom.create(
         name=f"{test_prefix}adn",
         description="delete by name test",
-        fetch_after_create=True,
     )
     assert atm is not None
     integration_client.atom.delete(atm.name)
@@ -223,7 +212,6 @@ def test_delete_by_object(integration_client: MregClient, test_prefix: str) -> N
     atm = integration_client.atom.create(
         name=f"{test_prefix}ado",
         description="delete by object test",
-        fetch_after_create=True,
     )
     assert atm is not None
     integration_client.atom.delete(atm)
@@ -238,7 +226,6 @@ def test_set_description(
     atm = integration_client.atom.create(
         name=f"{test_prefix}asd",
         description="original description",
-        fetch_after_create=True,
     )
     assert atm is not None
     resource_tracker.add(lambda: integration_client.atom.delete(atm))
@@ -282,7 +269,6 @@ def test_rename(
     atm = integration_client.atom.create(
         name=old_name,
         description="rename test",
-        fetch_after_create=True,
     )
     assert atm is not None
     try:
@@ -309,7 +295,6 @@ def test_assert_absent_existing(
     atm = integration_client.atom.create(
         name=f"{test_prefix}aea",
         description="ensure absent test",
-        fetch_after_create=True,
     )
     assert atm is not None
     resource_tracker.add(lambda: integration_client.atom.delete(atm))

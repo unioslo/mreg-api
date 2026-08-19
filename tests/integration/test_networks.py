@@ -30,7 +30,6 @@ def test_create(
     net = integration_client.network.create(
         network="198.51.100.0/29",
         description="integration test create",
-        fetch_after_create=True,
     )
     assert net is not None
     resource_tracker.add(lambda: integration_client.network.delete(net))
@@ -50,7 +49,6 @@ def test_get_by_id(integration_client: MregClient) -> None:
     net = integration_client.network.create(
         network="198.51.100.8/29",
         description="integration test get by id",
-        fetch_after_create=True,
     )
     assert net is not None
     try:
@@ -94,7 +92,6 @@ def test_get_by_ip(
     net = integration_client.network.create(
         network="198.51.100.16/29",
         description="integration test get_by_ip",
-        fetch_after_create=True,
     )
     assert net is not None
     resource_tracker.add(lambda: integration_client.network.delete(net))
@@ -107,7 +104,6 @@ def test_delete_by_id(integration_client: MregClient) -> None:
     net = integration_client.network.create(
         network="198.51.100.24/29",
         description="integration test delete by id",
-        fetch_after_create=True,
     )
     assert net is not None
     integration_client.network.delete(net.id)
@@ -118,7 +114,6 @@ def test_delete_by_object(integration_client: MregClient) -> None:
     net = integration_client.network.create(
         network="198.51.100.32/29",
         description="integration test delete by object",
-        fetch_after_create=True,
     )
     assert net is not None
     integration_client.network.delete(net)
@@ -132,7 +127,6 @@ def test_list(
     net = integration_client.network.create(
         network="198.51.100.40/29",
         description="integration test list",
-        fetch_after_create=True,
     )
     assert net is not None
     resource_tracker.add(lambda: integration_client.network.delete(net))

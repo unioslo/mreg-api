@@ -27,7 +27,6 @@ def host(
     h = integration_client.host.create(
         name=hostname,
         comment="integration test host for ip tests",
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
@@ -58,7 +57,6 @@ def test_create(
     h = integration_client.host.create(
         name=hostname,
         comment="ip create test host",
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
@@ -108,7 +106,6 @@ def test_delete_by_id(
     h = integration_client.host.create(
         name=hostname,
         comment="ip delete by id test host",
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
@@ -130,7 +127,6 @@ def test_delete_by_object(
     h = integration_client.host.create(
         name=hostname,
         comment="ip delete by object test host",
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
