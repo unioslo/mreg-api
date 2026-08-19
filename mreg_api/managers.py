@@ -920,7 +920,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         contacts: list[str] | None = None,
         ipaddress: IP_AddressT | str | None = None,
         network: IP_NetworkT | str | None = None,
-    ) -> Host | None:
+    ) -> Host:
         """Create a host.
 
         Args:
@@ -931,7 +931,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             network (IP_NetworkT | str | None, optional): Network of the host.
 
         Returns:
-            Host | None: The created host, or None if creation failed.
+            Host: The created host.
         """
         data: dict[str, Any] = {"name": self._client.fqdn(name)}
         if comment:
@@ -1077,13 +1077,15 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         *,
         name: str,
         description: str | UNSET = UNSET,
-    ) -> HostGroup | None:
+    ) -> HostGroup:
         """Create a host group.
 
         Args:
             name (str): Name of the host group.
             description (str | UNSET): Description of the group. Omit to leave unset.
 
+        Returns:
+            HostGroup: The created host group.
         """
         data: dict[str, Any] = {"name": name}
         if description is not UNSET:
@@ -1279,12 +1281,15 @@ class LabelManager(NamedResourceManager[Label]):
         *,
         name: str,
         description: str,
-    ) -> Label | None:
+    ) -> Label:
         """Create a label.
 
         Args:
             name (str): Name of the label.
             description (str): Description of the label.
+
+        Returns:
+            Label: The created label.
         """
         return self._create({"name": name, "description": description})
 
@@ -1361,13 +1366,15 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         *,
         name: str,
         description: str = "",
-    ) -> Role | None:
+    ) -> Role:
         """Create a role.
 
         Args:
             name (str): Name of the role.
             description (str): Description of the role. Defaults to "".
 
+        Returns:
+            Role: The created role.
         """
         return self._create({"name": name, "description": description})
 
@@ -1602,13 +1609,15 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         *,
         name: str,
         description: str = "",
-    ) -> Atom | None:
+    ) -> Atom:
         """Create an atom.
 
         Args:
             name (str): Name of the atom.
             description (str): Description of the atom. Defaults to "".
 
+        Returns:
+            Atom: The created atom.
         """
         return self._create({"name": name, "description": description})
 
@@ -1677,7 +1686,7 @@ class PermissionManager(WriteResourceManager[Permission]):
         range: str,  # noqa: A002
         regex: str,
         labels: list[int] | None = None,
-    ) -> Permission | None:
+    ) -> Permission:
         """Create a permission.
 
         Args:
@@ -1685,6 +1694,9 @@ class PermissionManager(WriteResourceManager[Permission]):
             range: The network range (CIDR) the permission covers.
             regex: The host regex pattern for the permission.
             labels: Optional list of label IDs to attach.
+
+        Returns:
+            Permission: The created permission.
         """
         data: dict[str, Any] = {"group": group, "range": range, "regex": regex}
 
@@ -1831,13 +1843,15 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         *,
         name: str,
         description: str,
-    ) -> NetworkPolicyAttribute | None:
+    ) -> NetworkPolicyAttribute:
         """Create a network policy attribute.
 
         Args:
             name (str): Name of the attribute (lowercased).
             description (str): Description of the attribute.
 
+        Returns:
+            NetworkPolicyAttribute: The created network policy attribute.
         """
         return self._create({"name": name, "description": description})
 
@@ -1920,7 +1934,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         description: str = "",
         attributes: list[NetworkPolicyAttributeValue] | None = None,
         community_template_pattern: str | None | UNSET = UNSET,
-    ) -> NetworkPolicy | None:
+    ) -> NetworkPolicy:
         """Create a network policy.
 
         Args:
@@ -1928,6 +1942,9 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             description: Optional description.
             attributes: Optional list of attribute name/value pairs to attach at creation.
             community_template_pattern: Optional community name template pattern.
+
+        Returns:
+            NetworkPolicy: The created network policy.
         """
         data: dict[str, Any] = {"name": name, "description": description}
         if attributes is not None:
@@ -2212,20 +2229,23 @@ class CommunityManager:
 
     # NOTE: this API should change! `network` is the last param in other methods,
     # but here it comes first.
-    def create(self, network: str | int | Network, *, name: str, description: str) -> bool:
+    def create(self, network: str | int | Network, *, name: str, description: str) -> Community:
         """Create a community in a network.
 
         Args:
             network (str | int | Network): Network reference (address, ID, or Network instance).
             name (str): Name of the community.
             description (str): Description of the community.
+
+        Returns:
+            Community: The created community.
         """
         addr = self._resolve_network_address(network)
         resp = self._client.post(
             Endpoint.NetworkCommunities.with_params(addr),
             json={"name": name, "description": description},
         )
-        return resp.is_success if resp else False
+        return validate_response(Community, resp)
 
     def delete(self, community: int | str | Community, network: str | int | Network) -> None:
         """Delete a community from a network.
@@ -2369,7 +2389,7 @@ class NetworkManager(WriteResourceManager[Network]):
         location: str | UNSET = UNSET,
         frozen: bool | UNSET = UNSET,
         reserved: int | UNSET = UNSET,
-    ) -> Network | None:
+    ) -> Network:
         """Create a network.
 
         Args:
@@ -2382,6 +2402,8 @@ class NetworkManager(WriteResourceManager[Network]):
             frozen (bool | UNSET): Whether the network is frozen. Omit to leave unchanged.
             reserved (int | UNSET): Number of reserved addresses. Omit to leave unchanged.
 
+        Returns:
+            Network: The created network.
         """
         data: dict[str, Any] = {"network": network, "description": description}
         if vlan is not UNSET:
@@ -2648,7 +2670,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         ipaddress: str | IP_AddressT,
         host: int | str | Host | None = None,
         macaddress: str | MacAddress | None = None,
-    ) -> IPAddress | None:
+    ) -> IPAddress:
         """Create an IP address record.
 
         Args:
@@ -2656,6 +2678,8 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             host (int | str | Host): Host instance, name, or numeric ID.
             macaddress (str | MacAddress | None): Optional MAC address to associate. Pass None to omit.
 
+        Returns:
+            IPAddress: The created IP address record.
         """
         data: dict[str, Any] = {"ipaddress": str(ipaddress)}
         if macaddress is not None:
@@ -2784,13 +2808,15 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         *,
         host: int | str | Host,
         name: str | HostName,
-    ) -> CNAME | None:
+    ) -> CNAME:
         """Create a CNAME record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             name (str | HostName): The alias name for the CNAME.
 
+        Returns:
+            CNAME: The created CNAME record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create({"host": str(host_id), "name": self._client.fqdn(name)})
@@ -2896,7 +2922,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
         host: int | str | Host,
         cpu: str,
         os: str,
-    ) -> HInfo | None:
+    ) -> HInfo:
         """Create an HInfo record.
 
         Args:
@@ -2904,6 +2930,8 @@ class HInfoManager(WriteResourceManager[HInfo]):
             cpu (str): CPU hardware type string.
             os (str): Operating system string.
 
+        Returns:
+            HInfo: The created HInfo record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "cpu": cpu, "os": os})
@@ -2965,13 +2993,15 @@ class TXTManager(WriteResourceManager[TXT]):
         *,
         host: int | str | Host,
         txt: str,
-    ) -> TXT | None:
+    ) -> TXT:
         """Create a TXT record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             txt (str): The TXT record value.
 
+        Returns:
+            TXT: The created TXT record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "txt": txt})
@@ -3029,7 +3059,7 @@ class MXManager(WriteResourceManager[MX]):
         host: int | str | Host,
         mx: str,
         priority: int,
-    ) -> MX | None:
+    ) -> MX:
         """Create an MX record.
 
         Args:
@@ -3037,6 +3067,8 @@ class MXManager(WriteResourceManager[MX]):
             mx (str): The mail exchange hostname.
             priority (int): The MX priority value.
 
+        Returns:
+            MX: The created MX record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create(
@@ -3160,7 +3192,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
         service: str = "",
         regex: str = "",
         replacement: str,
-    ) -> NAPTR | None:
+    ) -> NAPTR:
         """Create a NAPTR record.
 
         Args:
@@ -3172,6 +3204,8 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             regex (str): The NAPTR regular expression. Defaults to "".
             replacement (str): The NAPTR replacement string.
 
+        Returns:
+            NAPTR: The created NAPTR record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create(
@@ -3392,7 +3426,7 @@ class SrvManager(WriteResourceManager[Srv]):
         weight: int,
         port: int,
         ttl: int | None | UNSET = UNSET,
-    ) -> Srv | None:
+    ) -> Srv:
         """Create a SRV record.
 
         Args:
@@ -3403,6 +3437,8 @@ class SrvManager(WriteResourceManager[Srv]):
             port (int): The SRV port number.
             ttl (int | None | UNSET): TTL. Pass None to use default, omit to leave unchanged.
 
+        Returns:
+            Srv: The created SRV record.
         """
         host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {
@@ -3478,13 +3514,15 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         *,
         host: int | str | Host,
         ipaddress: IP_AddressT | str,
-    ) -> PTR_override | None:
+    ) -> PTR_override:
         """Create a PTR override record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             ipaddress (IP_AddressT | str): The IP address for the PTR override.
 
+        Returns:
+            PTR_override: The created PTR override record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create(
@@ -3546,7 +3584,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         hash_type: int,
         fingerprint: str,
         ttl: int | None | UNSET = UNSET,
-    ) -> SSHFP | None:
+    ) -> SSHFP:
         """Create an SSHFP record.
 
         Args:
@@ -3556,6 +3594,8 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
             fingerprint (str): The SSH key fingerprint.
             ttl (int | None | UNSET): TTL. Pass None to use default, omit to leave unchanged.
 
+        Returns:
+            SSHFP: The created SSHFP record.
         """
         host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {
@@ -3626,12 +3666,15 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
         *,
         host: str | HostName | Host,
         id: int,  # noqa: A002
-    ) -> BacnetID | None:
+    ) -> BacnetID:
         """Create a BacnetID record.
 
         Args:
             host: The host to create a BacnetID for.
             id: The BACnet id.
+
+        Returns:
+            BacnetID: The created BacnetID record.
         """
         return self._create(
             {"hostname": resolve_host_name(host, self._client), "id": id},
@@ -3685,13 +3728,15 @@ class LocationManager(WriteResourceManager[Location]):
         *,
         host: int | str | Host,
         loc: str,
-    ) -> Location | None:
+    ) -> Location:
         """Create a LOC record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             loc (str): The LOC record value.
 
+        Returns:
+            Location: The created LOC record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create({"host": host_id, "loc": loc})
@@ -3817,7 +3862,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         name: str,
         email: str,
         primary_ns: list[VerifiedNS],
-    ) -> _ZoneT | None:
+    ) -> _ZoneT:
         """Create a zone of this manager's type. Caller verifies nameservers/absence.
 
         Args:
@@ -3825,6 +3870,8 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
             email (str): The zone admin email address.
             primary_ns (list[VerifiedNS]): List of primary nameserver names.
 
+        Returns:
+            _ZoneT: The created zone.
         """
         return self._create(
             {"name": name, "email": email, "primary_ns": primary_ns},
@@ -4087,7 +4134,7 @@ class ZoneManager:
         email: str,
         primary_ns: list[str],
         force: bool = False,
-    ) -> ForwardZone | ReverseZone | None:
+    ) -> ForwardZone | ReverseZone:
         """Create a forward or reverse zone (type chosen by name shape).
 
         Verifies the nameservers and that no zone with this name exists first.
@@ -4098,6 +4145,8 @@ class ZoneManager:
             primary_ns (list[str]): List of primary nameserver names.
             force (bool): When True, skip safety checks on nameservers.
 
+        Returns:
+            ForwardZone | ReverseZone: The created zone.
         """
         verified_ns = self.verify_nameservers(primary_ns, force=force)
         sub = self._sub_for_name(name)
@@ -4298,7 +4347,7 @@ class DelegationManager:
         nameservers: list[str],
         comment: str = "",
         force: bool = False,
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
         """Create a delegation in `zone`.
 
         Verifies the delegation name is within the zone and the nameservers exist.
@@ -4312,6 +4361,8 @@ class DelegationManager:
             comment (str): Optional comment for the delegation. Defaults to "".
             force (bool): When True, skip safety checks.
 
+        Returns:
+            ForwardZoneDelegation | ReverseZoneDelegation: The created zone delegation.
         """
         self._ensure_in_zone(zone, name)
         verified_ns = _verify_nameservers(self._client, nameservers, force=force)
@@ -4472,7 +4523,7 @@ class NameServerManager(NamedResourceManager[NameServer]):
         *,
         name: str,
         ttl: int | None | UNSET = UNSET,
-    ) -> NameServer | None:
+    ) -> NameServer:
         """Create a nameserver.
 
         NOTE: this endpoint does _not_ return the resource after creation.
@@ -4480,6 +4531,9 @@ class NameServerManager(NamedResourceManager[NameServer]):
         Args:
             name (str): The nameserver name to create.
             ttl (int | None | UNSET): Optional TTL for the nameserver. If None, uses default TTL.
+
+        Returns:
+            NameServer: The created nameserver.
         """
         data: dict[str, Any] = {"name": self._client.fqdn(name)}
         if ttl is not UNSET:
