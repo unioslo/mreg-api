@@ -2052,13 +2052,13 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
     @functools.cached_property
     def attribute(self) -> NetworkPolicyAttributeManager:
-        """Manager for network policy attributes (`client.network.policy.attribute`)."""
+        """Manager for network policy attributes."""
         return NetworkPolicyAttributeManager(self._client)
 
 
 # NOTE: WHY does this not inherit from the regular ResourceManager?
 class CommunityManager:
-    """Operations on network communities (`client.network.communities`).
+    """Operations on network communities.
 
     Communities are always scoped to a network — every method takes a network
     reference (address string or :class:`~mreg_api.models.Network` instance).
@@ -2351,12 +2351,12 @@ class NetworkManager(WriteResourceManager[Network]):
     # NOTE: expose as properties so we don't need to override __init__ and call `super()`
     @functools.cached_property
     def policy(self) -> NetworkPolicyManager:
-        """Manager for network policies (`client.network.policy`)."""
+        """Manager for network policies."""
         return NetworkPolicyManager(self._client)
 
     @functools.cached_property
     def community(self) -> CommunityManager:
-        """Manager for network community (`client.network.community`)."""
+        """Manager for network community."""
         return CommunityManager(self._client, self)
 
     @overload
@@ -4039,7 +4039,7 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
 # sub managers public, because their methods expect verified nameserver arguments (`VeriifedNS`),
 # which we only produce through a private function (_verify_nameservers).
 class ZoneManager:
-    """Public facade over the forward/reverse zone managers (`client.zone`).
+    """Public facade over the forward/reverse zone managers.
 
     Zones split into forward/reverse, but are otherwise very similar in their APIs.
     This manager delegates to the correct forward/reverse manager based on the name
@@ -4270,17 +4270,15 @@ class ZoneManager:
 
     @functools.cached_property
     def delegations(self) -> DelegationManager:
-        """Manager for zone delegations (`client.zone.delegations`)."""
+        """Manager for zone delegations."""
         return DelegationManager(self._client)
 
 
 class DelegationManager:
-    """Operations on zone delegations (`client.delegation`).
+    """Operations on zone delegations.
 
     Delegations have no standalone endpoint; their type (forward/reverse) is derived
     from the parent zone, so every method takes the parent zone as its first argument.
-    Kept separate from :class:`ZoneManager` to stay composition-ready (a future
-    `client.zone.delegations`).
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -4445,7 +4443,7 @@ class DelegationManager:
 
 
 class DhcpHostManager(ResourceManager[T], ABC):
-    """Read-only manager for DHCP host records (`client.dhcphost`).
+    """Read-only manager for DHCP host records.
 
     This is a generic base class for the IPv4, IPv6, and IPv6-via-IPv4 managers.
     Cannot be instantiated directly; use one of the concrete subclasses instead.
@@ -4465,7 +4463,7 @@ class DhcpHostManager(ResourceManager[T], ABC):
 
 
 class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
-    """Read-only manager for IPv4 DHCP host records (`client.dhcphostipv4`)."""
+    """Read-only manager for IPv4 DHCP host records."""
 
     @property
     @override
@@ -4479,7 +4477,7 @@ class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
 
 
 class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
-    """Read-only manager for IPv6 DHCP host records (`client.dhcphostipv6`)."""
+    """Read-only manager for IPv6 DHCP host records."""
 
     @property
     @override
@@ -4493,7 +4491,7 @@ class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
 
 
 class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
-    """Read-only manager for IPv6-via-IPv4 DHCP host records (`client.dhcphostipv6byipv4`)."""
+    """Read-only manager for IPv6-via-IPv4 DHCP host records."""
 
     @property
     @override
@@ -4507,7 +4505,7 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
 
 
 class NameServerManager(NamedResourceManager[NameServer]):
-    """Access to :class:`~mreg_api.models.NameServer` resources (`client.nameserver`)."""
+    """Access to :class:`~mreg_api.models.NameServer` resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -4615,7 +4613,7 @@ class GetManager(Generic[T], ABC):
 
 
 class ServerVersionManager(GetManager[ServerVersion]):
-    """Access to server version metadata (`client.serverversion`)."""
+    """Access to server version metadata."""
 
     @property
     @override
@@ -4639,7 +4637,7 @@ class ServerVersionManager(GetManager[ServerVersion]):
 
 
 class ServerLibrariesManager:
-    """Access to server library metadata (`client.serverlibraries`)."""
+    """Access to server library metadata."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4663,7 +4661,7 @@ class ServerLibrariesManager:
 
 
 class UserInfoManager(GetManager[UserInfo]):
-    """Access to user information (`client.userinfo`)."""
+    """Access to user information."""
 
     @property
     @override
@@ -4692,7 +4690,7 @@ class UserInfoManager(GetManager[UserInfo]):
 
 
 class LDAPHealthManager(GetManager[LDAPHealth]):
-    """Access to LDAP health status (`client.ldaphealth`)."""
+    """Access to LDAP health status."""
 
     @property
     @override
@@ -4723,7 +4721,7 @@ class LDAPHealthManager(GetManager[LDAPHealth]):
 
 
 class HeartbeatHealthManager(GetManager[HeartbeatHealth]):
-    """Access to heartbeat health status (`client.heartbeathealth`)."""
+    """Access to heartbeat health status."""
 
     @property
     @override
@@ -4748,7 +4746,7 @@ class HeartbeatHealthManager(GetManager[HeartbeatHealth]):
 
 
 class HealthManager(GetManager[HealthInfo]):
-    """Access to combined health information (`client.health`)."""
+    """Access to combined health information."""
 
     @property
     @override
