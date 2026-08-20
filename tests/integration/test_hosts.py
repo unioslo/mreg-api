@@ -28,7 +28,6 @@ def host(
     h = integration_client.host.create(
         name=hostname,
         comment="integration test host",
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
@@ -45,7 +44,6 @@ def test_create(
     h = integration_client.host.create(
         name=hostname,
         comment="create test",
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
@@ -62,6 +60,7 @@ def test_get_by_id(integration_client: MregClient, host: Host) -> None:
     result = integration_client.host.get_by_id(host.id)
     assert result is not None
     assert result.id == host.id
+    assert integration_client.host.get(host.id) == result
 
 
 def test_get_by_object(integration_client: MregClient, host: Host) -> None:
@@ -89,7 +88,6 @@ def test_delete_by_id(
     h = integration_client.host.create(
         name=hostname,
         comment="delete by id test",
-        fetch_after_create=True,
     )
     assert h is not None
     integration_client.host.delete(h.id)
@@ -105,7 +103,6 @@ def test_delete_by_name(
     h = integration_client.host.create(
         name=hostname,
         comment="delete by name test",
-        fetch_after_create=True,
     )
     assert h is not None
     integration_client.host.delete(hostname)
@@ -121,7 +118,6 @@ def test_delete_by_object(
     h = integration_client.host.create(
         name=hostname,
         comment="delete by object test",
-        fetch_after_create=True,
     )
     assert h is not None
     integration_client.host.delete(h)
@@ -163,7 +159,6 @@ def test_rename(
     h = integration_client.host.create(
         name=old_name,
         comment="rename test",
-        fetch_after_create=True,
     )
     assert h is not None
     try:
@@ -190,7 +185,6 @@ def test_get_by_ip(
         name=hostname,
         comment="get by ip test",
         ipaddress=ip,
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
@@ -212,7 +206,6 @@ def test_get_networks(
         name=hostname,
         comment="get networks test",
         ipaddress=ip,
-        fetch_after_create=True,
     )
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))

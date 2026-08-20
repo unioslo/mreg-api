@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 from inline_snapshot import snapshot
 
+from mreg_api import MregClient
 from mreg_api.exceptions import InternalError
 from mreg_api.managers import ResourceManager
 from mreg_api.models.abstracts import MregModel
@@ -127,5 +128,46 @@ def test_get_resource_managers_snapshot() -> None:
             "TXTManager",
             "_ForwardZoneManager",
             "_ReverseZoneManager",
+        ]
+    )
+
+
+def test_manager_model_name_snapshot(client: MregClient) -> None:
+    """Snapshot test for ResourceManager.model_name output."""
+    managers_list = get_resource_managers()
+    assert isinstance(managers_list, list)  # func has Sequence type for variance
+    # Sort by manager name for consistent ordering
+    managers_list.sort(key=lambda x: x[0])
+    # Match manager name with model name
+    managers = [manager_t(client) for _, manager_t in managers_list]
+    man_names = [(m.__class__.__name__, m.model_name) for m in managers]
+
+    # NOTE: The "idiosyncratic" managers (i.e. those that do not inherit from ResourceManager),
+    # such as `CommunityManager` & `DelegationManager` not included in this snapshot test.
+    assert man_names == snapshot(
+        [
+            ("AtomManager", "Atom"),
+            ("BacnetIDManager", "BacnetID"),
+            ("CNAMEManager", "CNAME"),
+            ("HInfoManager", "HInfo"),
+            ("HostGroupManager", "HostGroup"),
+            ("HostManager", "Host"),
+            ("IPAddressManager", "IPAddress"),
+            ("LabelManager", "Label"),
+            ("LocationManager", "Location"),
+            ("MXManager", "MX"),
+            ("NAPTRManager", "NAPTR"),
+            ("NameServerManager", "NameServer"),
+            ("NetworkManager", "Network"),
+            ("NetworkPolicyAttributeManager", "NetworkPolicyAttribute"),
+            ("NetworkPolicyManager", "NetworkPolicy"),
+            ("PTROverrideManager", "PTR_override"),
+            ("PermissionManager", "Permission"),
+            ("RoleManager", "Role"),
+            ("SSHFPManager", "SSHFP"),
+            ("SrvManager", "Srv"),
+            ("TXTManager", "TXT"),
+            ("_ForwardZoneManager", "ForwardZone"),
+            ("_ReverseZoneManager", "ReverseZone"),
         ]
     )

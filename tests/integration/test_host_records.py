@@ -22,7 +22,7 @@ def host(
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}rech.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
@@ -36,7 +36,7 @@ def hinfo_host(
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}hinfo.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
@@ -50,7 +50,7 @@ def ptr_host(
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}ptr.{zone.name}"
-    h = integration_client.host.create(name=name, ipaddress="10.0.1.50", fetch_after_create=True)
+    h = integration_client.host.create(name=name, ipaddress="10.0.1.50")
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
@@ -64,7 +64,7 @@ def bacnet_host(
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}bacnet.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
@@ -78,7 +78,7 @@ def loc_host(
     zone: Zone,
 ) -> Host:
     name = f"{test_prefix}loc.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     return h
@@ -126,7 +126,7 @@ def test_hinfo_delete_by_id(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}hinfodid.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     integration_client.hinfo.create(host=h, cpu="x86_64", os="Linux")
@@ -143,7 +143,7 @@ def test_hinfo_delete_by_object(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}hinfodo.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     integration_client.hinfo.create(host=h, cpu="x86_64", os="Linux")
@@ -194,7 +194,7 @@ def test_txt_delete_by_id(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}txth.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     txt_content = "delete by id test"
@@ -212,7 +212,7 @@ def test_txt_delete_by_object(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}txto.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     txt_content = "delete by object test"
@@ -676,7 +676,7 @@ def test_bacnetid_delete_by_id(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}bacnetdid.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     integration_client.bacnetid.create(host=h, id=9002)
@@ -693,7 +693,7 @@ def test_bacnetid_delete_by_object(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}bacnetdo.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     integration_client.bacnetid.create(host=h, id=9003)
@@ -746,7 +746,7 @@ def test_location_delete_by_id(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}locdid.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     integration_client.location.create(host=h, loc=_LOC_VALUE)
@@ -763,7 +763,7 @@ def test_location_delete_by_object(
     zone: Zone,
 ) -> None:
     name = f"{test_prefix}locdo.{zone.name}"
-    h = integration_client.host.create(name=name, fetch_after_create=True)
+    h = integration_client.host.create(name=name)
     assert h is not None
     resource_tracker.add(lambda: integration_client.host.delete(h))
     integration_client.location.create(host=h, loc=_LOC_VALUE)

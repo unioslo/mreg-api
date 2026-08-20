@@ -1186,21 +1186,21 @@ class HostGroup(MregModelWithTimestamps):
 class UserDjangoStatus(BaseModel):
     """Model for Django status in the user response."""
 
-    superuser: bool
-    staff: bool
-    active: bool
+    superuser: bool = False
+    staff: bool = False
+    active: bool = False
 
 
 class UserMregStatus(BaseModel):
     """Model for Mreg status in the user response."""
 
-    superuser: bool
-    admin: bool
-    group_admin: bool
-    network_admin: bool
-    hostpolicy_admin: bool
-    dns_wildcard_admin: bool
-    underscore_admin: bool
+    superuser: bool = False
+    admin: bool = False
+    group_admin: bool = False
+    network_admin: bool = False
+    hostpolicy_admin: bool = False
+    dns_wildcard_admin: bool = False
+    underscore_admin: bool = False
 
 
 class UserPermission(BaseModel):
@@ -1211,7 +1211,11 @@ class UserPermission(BaseModel):
     regex: str
     labels: list[str]
 
-    # NOTE: _needs_ to be a computed field in order to use it in
+    # FIXME: mreg-cli relic here! This formatting should be defined over there.
+    # Subclass if necessary.
+    #
+    # XXX OLD COMMENT:
+    # This _needs_ to be a computed field in order to use it in
     # OutputManager.add_formatted_table, since we dump the model to a dict
     # inside that method.
     @computed_field
@@ -1256,16 +1260,16 @@ class UserInfo(BaseModel):
     username: str
     last_login: str | None = None
     token: TokenInfo | None = None
-    django_status: UserDjangoStatus
-    mreg_status: UserMregStatus
-    groups: list[str]
-    permissions: list[UserPermission]
+    django_status: UserDjangoStatus = Field(default_factory=UserDjangoStatus)
+    mreg_status: UserMregStatus = Field(default_factory=UserMregStatus)
+    groups: list[str] = Field(default_factory=list)
+    permissions: list[UserPermission] = Field(default_factory=list)
 
 
 class LDAPHealth(BaseModel):
     """Model for LDAP health endpoint."""
 
-    status: str
+    status: Literal["OK", "Down", "Unknown"]
 
 
 class HeartbeatHealth(BaseModel):

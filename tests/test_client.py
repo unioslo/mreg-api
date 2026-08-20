@@ -744,6 +744,7 @@ def test_client_manager_composition_snapshot(client: MregClient) -> None:
             "atom (AtomManager)",
             "bacnetid (BacnetIDManager)",
             "cname (CNAMEManager)",
+            "community (CommunityManager)",
             "delegation (DelegationManager)",
             "dhcphostipv4 (DhcpHostIPv4Manager)",
             "dhcphostipv6 (DhcpHostIPv6Manager)",

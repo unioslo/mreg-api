@@ -30,6 +30,10 @@ def test_userinfo(integration_client: MregClient) -> None:
 
 
 def test_userinfo_for_user(integration_client: MregClient) -> None:
+    # TODO: ensure we try to fetch the created test user here
+    # and perhaps add another user we can try to fetch as well!
+    # NOTE: user may need an active session in order to be fetchable
+    # by this endpoint! Or maybe that's just for LDAP users?
     result = integration_client.meta.userinfo.get(user="test")
     assert isinstance(result, UserInfo)
 

@@ -35,6 +35,9 @@ from typing import Literal
 from typing import TypeVar
 from typing import overload
 
+from httpx import Response
+from pydantic import BaseModel
+from pydantic import ValidationError
 from typing_extensions import Sentinel
 from typing_extensions import deprecated
 from typing_extensions import override
@@ -52,6 +55,7 @@ from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import PostError
 from mreg_api.exceptions import UnexpectedDataError
 from mreg_api.models import CNAME
 from mreg_api.models import MX
@@ -91,12 +95,9 @@ from mreg_api.models import Role
 from mreg_api.models import ServerLibraries
 from mreg_api.models import ServerVersion
 from mreg_api.models import Srv
-from mreg_api.models import UserDjangoStatus
 from mreg_api.models import UserInfo
-from mreg_api.models import UserMregStatus
 from mreg_api.models import Zone
 from mreg_api.models import ZoneFile
-from mreg_api.models.abstracts import MregModel
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import MacAddress
 from mreg_api.models.fields import VerifiedNS
@@ -104,6 +105,7 @@ from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.models.models import is_reverse_zone_name
 from mreg_api.types import IP_AddressT
+from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
 from mreg_api.types import get_type_adapter
 from mreg_api.utilities.shared import convert_wildcard_to_regex
@@ -119,7 +121,56 @@ logger = logging.getLogger(__name__)
 UNSET = Sentinel("UNSET")
 
 
-T = TypeVar("T", bound=MregModel)
+T = TypeVar("T", bound=BaseModel)
+
+
+# ---- Various functions shared between managers that do not necessarily share the same base ---
+
+
+def model_name(model: type[object] | object) -> str:
+    """Get the name of the model for a manager."""
+    if isinstance(model, type):
+        return model.__name__
+    return model.__class__.__name__
+
+
+def validate_response(model: type[T], response: Response) -> T:
+    """Attempt to construct the manager's model type from an HTTP response.
+
+    Args:
+        model (type[T]): The model class to construct.
+        response (Response): The HTTP response object containing JSON data.
+
+    Returns:
+        T: An instance of the manager's model type.
+    """
+    return validate_json(model, response.text)
+
+
+def validate_json(model: type[T], data: str) -> T:
+    """Attempt to construct the manager's model type from JSON data.
+
+    Args:
+        model (type[T]): The model class to construct.
+        data (str): JSON data to construct model with.
+
+    Returns:
+        T: An instance of the manager's model type.
+    """
+    return get_type_adapter(model).validate_json(data)
+
+
+def validate(model: type[T], data: Any) -> T:
+    """Attempt to construct the manager's model type from data.
+
+    Args:
+        model (type[T]): The model class to construct.
+        data (Any): Data to construct model with. Usually a dict.
+
+    Returns:
+        T: An instance of the manager's model type.
+    """
+    return get_type_adapter(model).validate_python(data)
 
 
 def resolve_host_id(host: int | str | Host, client: MregClient) -> int:
@@ -222,6 +273,11 @@ class ResourceManager(Generic[T], ABC):
         """Return the API endpoint for this manager's resource type."""
         ...
 
+    @property
+    def model_name(self) -> str:
+        """The canonical name of the manager's model."""
+        return model_name(self.model)
+
     def _fetch(self, ref: str | int) -> T | None:
         """Fetch by a resource reference (ID or string identifier).
 
@@ -250,17 +306,17 @@ class ResourceManager(Generic[T], ABC):
         """
         if isinstance(ref, self.model):
             return ref
-        elif isinstance(ref, MregModel):  # MregModel but not the manager's bound type
+        elif isinstance(ref, BaseModel):  # MregModel but not the manager's bound type
             # Technically, type checker should prevent this class of errors, but
             # but in cases where the wrong model type is passed to this method
             # we have this runtime check to raise a more helpful error message than
             # some arcane error stemming from passing a model instance to `_fetch()`
-            raise TypeError(f"{self.__class__.__name__} cannot resolve {ref.__class__.__name__} instances.")
+            raise TypeError(f"{self.model_name} cannot resolve {model_name(ref)} instances.")
 
         # ref narrowed to int | str
         obj = self._fetch(ref)
         if obj is None:
-            raise EntityNotFound(f"{self.model.__name__} with {self._path_param_field} {ref!r} not found.")
+            raise EntityNotFound(f"{model_name(self.model)} with {self._path_param_field} {ref!r} not found.")
         return obj
 
     def _resolve_hostname(self, host: str | HostName | Host) -> str:
@@ -283,6 +339,17 @@ class ResourceManager(Generic[T], ABC):
             return label.id
         return LabelManager(self._client).get_by_name(str(label), required=True).id
 
+    def _validate_response(self, response: Response) -> T:
+        """Attempt to construct the manager's model type from an HTTP response.
+
+        Args:
+            response (Response): The HTTP response object containing JSON data.
+
+        Returns:
+            T: An instance of the manager's model type.
+        """
+        return validate_response(self.model, response)
+
     def _validate_json(self, data: str) -> T:
         """Attempt to construct the manager's model type from JSON data.
 
@@ -291,22 +358,23 @@ class ResourceManager(Generic[T], ABC):
 
         Returns:
             T: An instance of the manager's model type.
-
         """
-        return get_type_adapter(self.model).validate_json(data)
+        return validate_json(self.model, data)
 
-    def _validate(self, data: Any) -> T:
-        """Attempt to construct the manager's model type from data.
+    def _validate(self, data: JsonMapping) -> T:
+        """Attempt to construct the manager's model type from a JSON mapping.
 
         Args:
-            data (Any): Data to construct model with. Usually a dict.
+            data (JsonMapping): Data to construct model with. Usually a dict.
 
         Returns:
             T: An instance of the manager's model type.
-
         """
-        return get_type_adapter(self.model).validate_python(data)
+        return validate(self.model, data)
 
+    # NOTE: does this need to be a method that takes an input?
+    # Yes, it allows us to more easily test it, but its type is `T`
+    # which means in practice we only operate on the manager's declared type.
     def _path_param_value(self, obj: T) -> str | int:
         """Return the value of `obj`'s path parameter field (its URL path segment).
 
@@ -318,7 +386,7 @@ class ResourceManager(Generic[T], ABC):
             return getattr(obj, self._path_param_field)
         except AttributeError as e:
             raise InternalError(
-                f"{type(obj).__name__} has no path parameter field {self._path_param_field!r}."
+                f"{model_name(obj)} has no path parameter field {self._path_param_field!r}."
             ) from e
 
     def _endpoint_with_path_param(self, obj: T) -> str:
@@ -370,7 +438,7 @@ class ResourceManager(Generic[T], ABC):
         else:
             fresh = self._fetch_by_path(self._path_param_value(obj))
         if fresh is None:
-            raise GetError(f"Could not refetch {self.model.__name__}.")
+            raise GetError(f"Could not refetch {self.model_name}.")
         return fresh
 
     @overload
@@ -412,7 +480,7 @@ class ResourceManager(Generic[T], ABC):
         """
         ident = self._normalize_path_param(ident)
         if self._fetch_by_field(self._path_param_field, ident) is not None:
-            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
+            raise EntityAlreadyExists(f"{self.model_name} {ident!r} already exists.")
 
     def list(
         self,
@@ -458,7 +526,7 @@ class ResourceManager(Generic[T], ABC):
         if res is None:
             if required:
                 # TODO: add query to error message if defined
-                raise EntityNotFound(f"No {self.model.__name__} found.")
+                raise EntityNotFound(f"No {self.model_name} found.")
             else:
                 return None
         return get_type_adapter(self.model).validate_python(res)
@@ -478,18 +546,25 @@ class ResourceManager(Generic[T], ABC):
 class WriteResourceManager(ResourceManager[T], ABC):
     """Manager for performing CRUD operations on an API resource type."""
 
-    def _create(self, data: dict[str, Any], *, fetch_after_create: bool = True) -> T | None:
-        """POST `data` to the resource endpoint, optionally fetching the result.
+    def _create(self, data: dict[str, Any]) -> T:
+        """POST `data` to the resource endpoint, returning the created object.
 
-        Raises :class:`PostError` (from the client) if the server rejects the create.
-        Returns `None` when the create succeeds but the server provides no
-        `Location` header to refetch from (many endpoints don't), or when
-        `fetch_after_create` is `False`.
+        Args:
+            data (dict[str, Any]): The data to POST to the resource endpoint.
+
+        Returns:
+            T: The created resource object.
         """
         response = self._client.post(self.endpoint, json=data)
-        if fetch_after_create and "Location" in response.headers:
+        # Prefer bundled object
+        if response.content:
+            try:
+                return self._validate_response(response)
+            except ValidationError:  # NOTE: can it raise other types of errors?
+                pass
+        if "Location" in response.headers:
             return self._client.get_typed(response.headers["Location"], self.model)
-        return None
+        raise PostError(f"Failed to fetch {self.model_name} after creation.")
 
     def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> T:
         """PATCH `obj` with `data` and return the refetched object.
@@ -558,7 +633,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
             return
         # If we have a string, delegate to internal get_by_name method
         if self.get_by_name(ident, required=False) is not None:
-            raise EntityAlreadyExists(f"{self.model.__name__} {ident!r} already exists.")
+            raise EntityAlreadyExists(f"{self.model_name} {ident!r} already exists.")
 
     # XXX:  Do we actually need an explicit name based lookup?
     #       Can we just override `get()` and use `fetch_by_field()` there, falling
@@ -601,7 +676,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         name = self._normalize_name(name)
         obj = self._fetch_by_field(self.name_field, name)
         if required and obj is None:
-            raise EntityNotFound(f"{self.model.__name__} {name!r} not found.")
+            raise EntityNotFound(f"{self.model_name} {name!r} not found.")
         return obj
 
     @override
@@ -845,8 +920,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         contacts: list[str] | None = None,
         ipaddress: IP_AddressT | str | None = None,
         network: IP_NetworkT | str | None = None,
-        fetch_after_create: bool = True,
-    ) -> Host | None:
+    ) -> Host:
         """Create a host.
 
         Args:
@@ -855,10 +929,9 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             contacts (list[str] | None, optional): List of contacts for the host.
             ipaddress (IP_AddressT | str | None, optional): IP address of the host.
             network (IP_NetworkT | str | None, optional): Network of the host.
-            fetch_after_create (bool, optional): Whether to fetch the host after creation.
 
         Returns:
-            Host | None: The created host, or None if creation failed.
+            Host: The created host.
         """
         data: dict[str, Any] = {"name": self._client.fqdn(name)}
         if comment:
@@ -869,7 +942,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             data["ipaddress"] = str(ipaddress)
         if network:
             data["network"] = str(network)
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -1004,19 +1077,20 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         *,
         name: str,
         description: str | UNSET = UNSET,
-        fetch_after_create: bool = True,
-    ) -> HostGroup | None:
+    ) -> HostGroup:
         """Create a host group.
 
         Args:
             name (str): Name of the host group.
             description (str | UNSET): Description of the group. Omit to leave unset.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            HostGroup: The created host group.
         """
         data: dict[str, Any] = {"name": name}
         if description is not UNSET:
             data["description"] = description
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     # Not much to update here, but we implement update for future expansion + consistent interface
     def update(
@@ -1207,19 +1281,17 @@ class LabelManager(NamedResourceManager[Label]):
         *,
         name: str,
         description: str,
-        fetch_after_create: bool = False,  # pyright: ignore[reportUnusedParameter]  # noqa: ARG002
-    ) -> Label | None:
+    ) -> Label:
         """Create a label.
-
-        NOTE: The API does not return a Location header for label creation, fetching after creation
-        is not supported.
 
         Args:
             name (str): Name of the label.
             description (str): Description of the label.
-            fetch_after_create (bool): Ignored; the API does not support fetching after creation.
+
+        Returns:
+            Label: The created label.
         """
-        return self._create({"name": name, "description": description}, fetch_after_create=False)
+        return self._create({"name": name, "description": description})
 
     def update(
         self,
@@ -1294,16 +1366,17 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         *,
         name: str,
         description: str = "",
-        fetch_after_create: bool = True,
-    ) -> Role | None:
+    ) -> Role:
         """Create a role.
 
         Args:
             name (str): Name of the role.
             description (str): Description of the role. Defaults to "".
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            Role: The created role.
         """
-        return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
+        return self._create({"name": name, "description": description})
 
     def update(
         self,
@@ -1536,16 +1609,17 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         *,
         name: str,
         description: str = "",
-        fetch_after_create: bool = True,
-    ) -> Atom | None:
+    ) -> Atom:
         """Create an atom.
 
         Args:
             name (str): Name of the atom.
             description (str): Description of the atom. Defaults to "".
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            Atom: The created atom.
         """
-        return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
+        return self._create({"name": name, "description": description})
 
     def update(
         self,
@@ -1612,8 +1686,7 @@ class PermissionManager(WriteResourceManager[Permission]):
         range: str,  # noqa: A002
         regex: str,
         labels: list[int] | None = None,
-        fetch_after_create: bool = True,
-    ) -> Permission | None:
+    ) -> Permission:
         """Create a permission.
 
         Args:
@@ -1621,7 +1694,9 @@ class PermissionManager(WriteResourceManager[Permission]):
             range: The network range (CIDR) the permission covers.
             regex: The host regex pattern for the permission.
             labels: Optional list of label IDs to attach.
-            fetch_after_create: Whether to fetch and return the created object.
+
+        Returns:
+            Permission: The created permission.
         """
         data: dict[str, Any] = {"group": group, "range": range, "regex": regex}
 
@@ -1629,7 +1704,7 @@ class PermissionManager(WriteResourceManager[Permission]):
         # TODO: also accept Label objects?
         if labels is not None:
             data["labels"] = labels
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -1768,16 +1843,17 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         *,
         name: str,
         description: str,
-        fetch_after_create: bool = True,
-    ) -> NetworkPolicyAttribute | None:
+    ) -> NetworkPolicyAttribute:
         """Create a network policy attribute.
 
         Args:
             name (str): Name of the attribute (lowercased).
             description (str): Description of the attribute.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            NetworkPolicyAttribute: The created network policy attribute.
         """
-        return self._create({"name": name, "description": description}, fetch_after_create=fetch_after_create)
+        return self._create({"name": name, "description": description})
 
     def update(
         self,
@@ -1858,8 +1934,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         description: str = "",
         attributes: list[NetworkPolicyAttributeValue] | None = None,
         community_template_pattern: str | None | UNSET = UNSET,
-        fetch_after_create: bool = True,
-    ) -> NetworkPolicy | None:
+    ) -> NetworkPolicy:
         """Create a network policy.
 
         Args:
@@ -1867,14 +1942,16 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             description: Optional description.
             attributes: Optional list of attribute name/value pairs to attach at creation.
             community_template_pattern: Optional community name template pattern.
-            fetch_after_create: Whether to fetch and return the created object.
+
+        Returns:
+            NetworkPolicy: The created network policy.
         """
         data: dict[str, Any] = {"name": name, "description": description}
         if attributes is not None:
             data["attributes"] = [{"name": a.name, "value": a.value} for a in attributes]
         if community_template_pattern is not UNSET:
             data["community_template_pattern"] = community_template_pattern
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -1988,6 +2065,11 @@ class CommunityManager:
         """Bind the manager to the client."""
         self._client = client
         self._network_manager = network_manager
+
+    @property
+    def model_name(self) -> str:
+        """The name of the manager's model type."""
+        return model_name(Community)
 
     def _resolve_network_address(self, network: str | int | Network) -> str:
         if isinstance(network, str):
@@ -2147,20 +2229,23 @@ class CommunityManager:
 
     # NOTE: this API should change! `network` is the last param in other methods,
     # but here it comes first.
-    def create(self, network: str | int | Network, *, name: str, description: str) -> bool:
+    def create(self, network: str | int | Network, *, name: str, description: str) -> Community:
         """Create a community in a network.
 
         Args:
             network (str | int | Network): Network reference (address, ID, or Network instance).
             name (str): Name of the community.
             description (str): Description of the community.
+
+        Returns:
+            Community: The created community.
         """
         addr = self._resolve_network_address(network)
         resp = self._client.post(
             Endpoint.NetworkCommunities.with_params(addr),
             json={"name": name, "description": description},
         )
-        return resp.is_success if resp else False
+        return validate_response(Community, resp)
 
     def delete(self, community: int | str | Community, network: str | int | Network) -> None:
         """Delete a community from a network.
@@ -2268,7 +2353,7 @@ class NetworkManager(WriteResourceManager[Network]):
 
     @functools.cached_property
     def community(self) -> CommunityManager:
-        """Manager for network communities (`client.network.communities`)."""
+        """Manager for network community (`client.network.community`)."""
         return CommunityManager(self._client, self)
 
     @overload
@@ -2304,8 +2389,7 @@ class NetworkManager(WriteResourceManager[Network]):
         location: str | UNSET = UNSET,
         frozen: bool | UNSET = UNSET,
         reserved: int | UNSET = UNSET,
-        fetch_after_create: bool = True,
-    ) -> Network | None:
+    ) -> Network:
         """Create a network.
 
         Args:
@@ -2317,7 +2401,9 @@ class NetworkManager(WriteResourceManager[Network]):
             location (str | UNSET): Network location. Omit to leave unchanged.
             frozen (bool | UNSET): Whether the network is frozen. Omit to leave unchanged.
             reserved (int | UNSET): Number of reserved addresses. Omit to leave unchanged.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            Network: The created network.
         """
         data: dict[str, Any] = {"network": network, "description": description}
         if vlan is not UNSET:
@@ -2332,7 +2418,7 @@ class NetworkManager(WriteResourceManager[Network]):
             data["frozen"] = frozen
         if reserved is not UNSET:
             data["reserved"] = reserved
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -2584,22 +2670,23 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         ipaddress: str | IP_AddressT,
         host: int | str | Host | None = None,
         macaddress: str | MacAddress | None = None,
-        fetch_after_create: bool = True,
-    ) -> IPAddress | None:
+    ) -> IPAddress:
         """Create an IP address record.
 
         Args:
             ipaddress (str | IP_AddressT): The IP address to assign.
             host (int | str | Host): Host instance, name, or numeric ID.
             macaddress (str | MacAddress | None): Optional MAC address to associate. Pass None to omit.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            IPAddress: The created IP address record.
         """
         data: dict[str, Any] = {"ipaddress": str(ipaddress)}
         if macaddress is not None:
             data["macaddress"] = str(macaddress)
         if host is not None:
             data["host"] = resolve_host_id(host, self._client)
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -2721,20 +2808,18 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         *,
         host: int | str | Host,
         name: str | HostName,
-        fetch_after_create: bool = True,
-    ) -> CNAME | None:
+    ) -> CNAME:
         """Create a CNAME record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             name (str | HostName): The alias name for the CNAME.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            CNAME: The created CNAME record.
         """
         host_id = resolve_host_id(host, self._client)
-        return self._create(
-            {"host": str(host_id), "name": self._client.fqdn(name)},
-            fetch_after_create=fetch_after_create,
-        )
+        return self._create({"host": str(host_id), "name": self._client.fqdn(name)})
 
     def update(
         self,
@@ -2837,18 +2922,19 @@ class HInfoManager(WriteResourceManager[HInfo]):
         host: int | str | Host,
         cpu: str,
         os: str,
-        fetch_after_create: bool = True,
-    ) -> HInfo | None:
+    ) -> HInfo:
         """Create an HInfo record.
 
         Args:
             host (int | str | Host): Host ID, name or instance.
             cpu (str): CPU hardware type string.
             os (str): Operating system string.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            HInfo: The created HInfo record.
         """
         host_id = resolve_host_id(host, self._client)
-        return self._create({"host": host_id, "cpu": cpu, "os": os}, fetch_after_create=fetch_after_create)
+        return self._create({"host": host_id, "cpu": cpu, "os": os})
 
     def update(
         self,
@@ -2907,17 +2993,18 @@ class TXTManager(WriteResourceManager[TXT]):
         *,
         host: int | str | Host,
         txt: str,
-        fetch_after_create: bool = True,
-    ) -> TXT | None:
+    ) -> TXT:
         """Create a TXT record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             txt (str): The TXT record value.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            TXT: The created TXT record.
         """
         host_id = resolve_host_id(host, self._client)
-        return self._create({"host": host_id, "txt": txt}, fetch_after_create=fetch_after_create)
+        return self._create({"host": host_id, "txt": txt})
 
     # NOTE: This method does not follow the naming convention of other manager methods
     # due to name collision with own field. The first positional arg is usually
@@ -2972,20 +3059,20 @@ class MXManager(WriteResourceManager[MX]):
         host: int | str | Host,
         mx: str,
         priority: int,
-        fetch_after_create: bool = True,
-    ) -> MX | None:
+    ) -> MX:
         """Create an MX record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             mx (str): The mail exchange hostname.
             priority (int): The MX priority value.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            MX: The created MX record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create(
             {"host": host_id, "mx": mx, "priority": priority},
-            fetch_after_create=fetch_after_create,
         )
 
     def update(
@@ -3105,8 +3192,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
         service: str = "",
         regex: str = "",
         replacement: str,
-        fetch_after_create: bool = True,
-    ) -> NAPTR | None:
+    ) -> NAPTR:
         """Create a NAPTR record.
 
         Args:
@@ -3117,7 +3203,9 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             service (str): The NAPTR service. Defaults to "".
             regex (str): The NAPTR regular expression. Defaults to "".
             replacement (str): The NAPTR replacement string.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            NAPTR: The created NAPTR record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create(
@@ -3130,7 +3218,6 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
                 "regex": regex,
                 "replacement": replacement,
             },
-            fetch_after_create=fetch_after_create,
         )
 
     def update(
@@ -3339,8 +3426,7 @@ class SrvManager(WriteResourceManager[Srv]):
         weight: int,
         port: int,
         ttl: int | None | UNSET = UNSET,
-        fetch_after_create: bool = True,
-    ) -> Srv | None:
+    ) -> Srv:
         """Create a SRV record.
 
         Args:
@@ -3350,7 +3436,9 @@ class SrvManager(WriteResourceManager[Srv]):
             weight (int): The SRV weight value.
             port (int): The SRV port number.
             ttl (int | None | UNSET): TTL. Pass None to use default, omit to leave unchanged.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            Srv: The created SRV record.
         """
         host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {
@@ -3362,7 +3450,7 @@ class SrvManager(WriteResourceManager[Srv]):
         }
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -3426,19 +3514,19 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         *,
         host: int | str | Host,
         ipaddress: IP_AddressT | str,
-        fetch_after_create: bool = True,
-    ) -> PTR_override | None:
+    ) -> PTR_override:
         """Create a PTR override record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             ipaddress (IP_AddressT | str): The IP address for the PTR override.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            PTR_override: The created PTR override record.
         """
         host_id = resolve_host_id(host, self._client)
         return self._create(
             {"host": host_id, "ipaddress": str(ipaddress)},
-            fetch_after_create=fetch_after_create,
         )
 
     def update(
@@ -3496,8 +3584,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         hash_type: int,
         fingerprint: str,
         ttl: int | None | UNSET = UNSET,
-        fetch_after_create: bool = True,
-    ) -> SSHFP | None:
+    ) -> SSHFP:
         """Create an SSHFP record.
 
         Args:
@@ -3506,7 +3593,9 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
             hash_type (int): The SSHFP hash type number.
             fingerprint (str): The SSH key fingerprint.
             ttl (int | None | UNSET): TTL. Pass None to use default, omit to leave unchanged.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            SSHFP: The created SSHFP record.
         """
         host_id = resolve_host_id(host, self._client)
         data: dict[str, Any] = {
@@ -3517,7 +3606,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         }
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
     def update(
         self,
@@ -3577,18 +3666,18 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
         *,
         host: str | HostName | Host,
         id: int,  # noqa: A002
-        fetch_after_create: bool = True,
-    ) -> BacnetID | None:
+    ) -> BacnetID:
         """Create a BacnetID record.
 
         Args:
             host: The host to create a BacnetID for.
             id: The BACnet id.
-            fetch_after_create: Whether to fetch and return the created object.
+
+        Returns:
+            BacnetID: The created BacnetID record.
         """
         return self._create(
             {"hostname": resolve_host_name(host, self._client), "id": id},
-            fetch_after_create=fetch_after_create,
         )
 
     # NOTE: PATCH and PUT not allowed for this endpoint!
@@ -3639,17 +3728,18 @@ class LocationManager(WriteResourceManager[Location]):
         *,
         host: int | str | Host,
         loc: str,
-        fetch_after_create: bool = True,
-    ) -> Location | None:
+    ) -> Location:
         """Create a LOC record.
 
         Args:
             host (int | str | Host): Host instance or numeric ID.
             loc (str): The LOC record value.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            Location: The created LOC record.
         """
         host_id = resolve_host_id(host, self._client)
-        return self._create({"host": host_id, "loc": loc}, fetch_after_create=fetch_after_create)
+        return self._create({"host": host_id, "loc": loc})
 
     def update(
         self,
@@ -3772,19 +3862,19 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         name: str,
         email: str,
         primary_ns: list[VerifiedNS],
-        fetch_after_create: bool = True,
-    ) -> _ZoneT | None:
+    ) -> _ZoneT:
         """Create a zone of this manager's type. Caller verifies nameservers/absence.
 
         Args:
             name (str): The zone name.
             email (str): The zone admin email address.
             primary_ns (list[VerifiedNS]): List of primary nameserver names.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            _ZoneT: The created zone.
         """
         return self._create(
             {"name": name, "email": email, "primary_ns": primary_ns},
-            fetch_after_create=fetch_after_create,
         )
 
     def update_soa(
@@ -4044,8 +4134,7 @@ class ZoneManager:
         email: str,
         primary_ns: list[str],
         force: bool = False,
-        fetch_after_create: bool = True,
-    ) -> ForwardZone | ReverseZone | None:
+    ) -> ForwardZone | ReverseZone:
         """Create a forward or reverse zone (type chosen by name shape).
 
         Verifies the nameservers and that no zone with this name exists first.
@@ -4055,14 +4144,14 @@ class ZoneManager:
             email (str): The zone admin email address.
             primary_ns (list[str]): List of primary nameserver names.
             force (bool): When True, skip safety checks on nameservers.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            ForwardZone | ReverseZone: The created zone.
         """
         verified_ns = self.verify_nameservers(primary_ns, force=force)
         sub = self._sub_for_name(name)
         sub.assert_absent(name)
-        return sub.create(
-            name=name, email=email, primary_ns=verified_ns, fetch_after_create=fetch_after_create
-        )
+        return sub.create(name=name, email=email, primary_ns=verified_ns)
 
     def update_soa(
         self,
@@ -4238,7 +4327,7 @@ class DelegationManager:
 
     def _get(
         self, endpoint: str, model: type[ForwardZoneDelegation | ReverseZoneDelegation]
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
         return self._client.get_typed(endpoint, model)
 
     def list_by_zone(self, zone: Zone) -> list[ForwardZoneDelegation | ReverseZoneDelegation]:
@@ -4258,8 +4347,7 @@ class DelegationManager:
         nameservers: list[str],
         comment: str = "",
         force: bool = False,
-        fetch_after_create: bool = True,
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
         """Create a delegation in `zone`.
 
         Verifies the delegation name is within the zone and the nameservers exist.
@@ -4272,7 +4360,9 @@ class DelegationManager:
             nameservers (list[str]): List of nameserver names for the delegation.
             comment (str): Optional comment for the delegation. Defaults to "".
             force (bool): When True, skip safety checks.
-            fetch_after_create (bool): Whether to fetch and return the created object.
+
+        Returns:
+            ForwardZoneDelegation | ReverseZoneDelegation: The created zone delegation.
         """
         self._ensure_in_zone(zone, name)
         verified_ns = _verify_nameservers(self._client, nameservers, force=force)
@@ -4282,7 +4372,8 @@ class DelegationManager:
             if not delegated:
                 raise InputFailure(f"Zone {name!r} does not exist. Must force.")
             if delegated.is_reverse() != zone.is_reverse():
-                raise InputFailure(f"Delegation {name!r} is not a {type(zone).__name__} zone")
+                # TODO: fix formatting here
+                raise InputFailure(f"Delegation {name!r} is not a {model_name(zone)} zone")
 
         if self.get(zone, name, required=False) is not None:
             raise EntityAlreadyExists(f"Zone {zone.name!r} already has a delegation named {name!r}")
@@ -4292,7 +4383,6 @@ class DelegationManager:
             name=name,
             nameservers=verified_ns,
             comment=comment,
-            fetch_after_create=fetch_after_create,
         )
 
     # TODO: Inherit from WriteResourceManager and override _patch, _create, etc.
@@ -4305,16 +4395,20 @@ class DelegationManager:
         name: str,
         nameservers: list[VerifiedNS],  # ensure we have list of verified nameservers
         comment: str = "",
-        fetch_after_create: bool = True,
-    ) -> ForwardZoneDelegation | ReverseZoneDelegation | None:
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation:
         """Create a zone delegation (with FQDN nameservers)."""
         response = self._client.post(
             self._endpoint_for(zone).with_params(zone.name),
             json={"name": name, "nameservers": nameservers, "comment": comment},
         )
-        if fetch_after_create and (loc := response.headers.get("Location")):
+        if response.content:
+            try:
+                return validate_response(self._model_for(zone), response)
+            except Exception:
+                pass
+        if loc := response.headers.get("Location"):
             return self._get(loc, self._model_for(zone))
-        return None
+        raise PostError(f"Failed to retrieve zone {zone.name!r} after creation")
 
     def delete(self, zone: Zone, name: str) -> None:
         """Delete a delegation from `zone`.
@@ -4429,8 +4523,7 @@ class NameServerManager(NamedResourceManager[NameServer]):
         *,
         name: str,
         ttl: int | None | UNSET = UNSET,
-        fetch_after_create: bool = True,
-    ) -> NameServer | None:
+    ) -> NameServer:
         """Create a nameserver.
 
         NOTE: this endpoint does _not_ return the resource after creation.
@@ -4438,12 +4531,14 @@ class NameServerManager(NamedResourceManager[NameServer]):
         Args:
             name (str): The nameserver name to create.
             ttl (int | None | UNSET): Optional TTL for the nameserver. If None, uses default TTL.
-            fetch_after_create (bool): Whether to fetch the nameserver after creation.
+
+        Returns:
+            NameServer: The created nameserver.
         """
         data: dict[str, Any] = {"name": self._client.fqdn(name)}
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._create(data, fetch_after_create=fetch_after_create)
+        return self._create(data)
 
 
 class MetaManagerNamespace:
@@ -4464,12 +4559,65 @@ class MetaManagerNamespace:
         )
 
 
-class ServerVersionManager:
-    """Access to server version metadata (`client.serverversion`)."""
+# TODO: make GetManager a type that ResourceManager can inherit, so that we
+# have a common interface for these `get`-only managers and the rest of
+# the managers, along with shared convenience methods for validation and formatting.
+#
+# Might need a rename, since I'm not sure if you can override like this:
+# Parent: `get(self, *, required: bool = False) -> T`
+# Child: `get(self, ident: str | int | T, *, required: bool = False) -> T | None`
+#
+# So, instead, maybe something along the lines of `ManagerBase`, which we can then
+# define `MetaManager` from.
+#
+# This would give us the following hierarchies:
+# - BaseManager[T] -> ResourceManager -> WriteResourceManager -> NamedResourceManager -> HostManager, ...
+# - BaseManager[T] -> MetaManager -> ServerVersionManager, ...
+#
+# Is this complexity worth it just to share a few convencience methods and
+# avoid writing interfaces? Who knows.
+#
+# NOTE: The `get` methods of these meta endpoints never returning None
+# is a CLI-specific thing where we want to show some data even when
+# an endpoint doesn't return anything useful. We should consider if these CLI
+# commands should just propagate errors instead of showing dummy data...
+
+
+class GetManager(Generic[T], ABC):
+    """A manager implementing only a `get()` method that fetches a meta-endpoint resource.
+
+    Each of these manager's get method contains some idiosyncratic logic
+    for fetching and validating the resource, and has some built-in
+    error handling for when the resource is not available.
+    """
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
         self._client = client
+
+    @property
+    @abstractmethod
+    def model(self) -> type[T]:
+        """The model type this manager operates on."""
+        raise NotImplementedError
+
+    @abstractmethod
+    def get(self, *, required: bool = False) -> T:
+        """Get the resource from the endpoint."""
+        raise NotImplementedError
+
+    def validate_response(self, response: Response) -> T:
+        """Validate a JSON response and construct the manager's type."""
+        return self.model.model_validate_json(response.text)
+
+
+class ServerVersionManager(GetManager[ServerVersion]):
+    """Access to server version metadata (`client.serverversion`)."""
+
+    @property
+    @override
+    def model(self) -> type[ServerVersion]:
+        return ServerVersion
 
     def get(self, *, required: bool = False) -> ServerVersion:
         """Fetch the server version from the meta endpoint.
@@ -4511,13 +4659,15 @@ class ServerLibrariesManager:
             return ServerLibraries(libraries=[])
 
 
-class UserInfoManager:
+class UserInfoManager(GetManager[UserInfo]):
     """Access to user information (`client.userinfo`)."""
 
-    def __init__(self, client: MregClient) -> None:
-        """Initialize the manager with a client instance."""
-        self._client = client
+    @property
+    @override
+    def model(self) -> type[UserInfo]:
+        return UserInfo
 
+    @override
     def get(self, *, required: bool = False, user: str | None = None) -> UserInfo:
         """Fetch user information from the meta endpoint.
 
@@ -4531,33 +4681,20 @@ class UserInfoManager:
             if user:
                 endpoint = f"{endpoint}?username={user}"
             response = self._client.get(endpoint)
-            return UserInfo.model_validate(response.json())
+            return self.model.model_validate(response.json())
         except Exception:
             if required:
                 raise
-            return UserInfo(
-                username="Unknown",
-                django_status=UserDjangoStatus(superuser=False, staff=False, active=False),
-                mreg_status=UserMregStatus(
-                    superuser=False,
-                    admin=False,
-                    group_admin=False,
-                    network_admin=False,
-                    hostpolicy_admin=False,
-                    dns_wildcard_admin=False,
-                    underscore_admin=False,
-                ),
-                groups=[],
-                permissions=[],
-            )
+            return self.model(username="Unknown")
 
 
-class LDAPHealthManager:
+class LDAPHealthManager(GetManager[LDAPHealth]):
     """Access to LDAP health status (`client.ldaphealth`)."""
 
-    def __init__(self, client: MregClient) -> None:
-        """Initialize the manager with a client instance."""
-        self._client = client
+    @property
+    @override
+    def model(self) -> type[LDAPHealth]:
+        return LDAPHealth
 
     def get(self, *, required: bool = False) -> LDAPHealth:
         """Fetch LDAP health from the health endpoint.
@@ -4567,24 +4704,28 @@ class LDAPHealthManager:
         Args:
             required: When `True`, raise on non-503 errors.
         """
+        # NOTE: this manager just interprets HTTP status codes to build its model
         try:
             self._client.get(Endpoint.HealthLDAP)
             return LDAPHealth(status="OK")
         except GetError as e:
+            # LDAP being down causes a 503 error, which we should
+            # interpret as a valid response, not an error.
+            if e.response and e.response.status_code == 503:
+                return LDAPHealth(status="Down")
             if required:
                 raise
             logger.error("Failed to fetch LDAP health: %s", e)
-            if e.response and e.response.status_code == 503:
-                return LDAPHealth(status="Down")
             return LDAPHealth(status="Unknown")
 
 
-class HeartbeatHealthManager:
+class HeartbeatHealthManager(GetManager[HeartbeatHealth]):
     """Access to heartbeat health status (`client.heartbeathealth`)."""
 
-    def __init__(self, client: MregClient) -> None:
-        """Initialize the manager with a client instance."""
-        self._client = client
+    @property
+    @override
+    def model(self) -> type[HeartbeatHealth]:
+        return HeartbeatHealth
 
     def get(self, *, required: bool = False) -> HeartbeatHealth:
         """Fetch heartbeat health from the health endpoint.
@@ -4594,8 +4735,8 @@ class HeartbeatHealthManager:
                 `HeartbeatHealth(uptime=-1, start_time=0)` on failure.
         """
         try:
-            result = self._client.get(Endpoint.HealthHeartbeat)
-            return HeartbeatHealth.model_validate_json(result.text)
+            resp = self._client.get(Endpoint.HealthHeartbeat)
+            return self.validate_response(resp)
         except Exception as e:
             if required:
                 raise
@@ -4603,8 +4744,13 @@ class HeartbeatHealthManager:
             return HeartbeatHealth(uptime=-1, start_time=0)
 
 
-class HealthManager:
+class HealthManager(GetManager[HealthInfo]):
     """Access to combined health information (`client.health`)."""
+
+    @property
+    @override
+    def model(self) -> type[HealthInfo]:
+        return HealthInfo
 
     def __init__(
         self,
@@ -4616,7 +4762,7 @@ class HealthManager:
 
         Optionally takes in existing heartbeat and LDAP managers to avoid creating new ones.
         """
-        self._client = client
+        super().__init__(client)
         if heartbeat_manager is None:
             heartbeat_manager = HeartbeatHealthManager(client)
         self._heartbeat_manager = heartbeat_manager
