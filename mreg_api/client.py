@@ -275,7 +275,6 @@ class MregClient:
     ```pycon
     >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
     >>> client.login("username", "password")
-    >>> hosts = client.host.list()
 
     # Or with token:
     >>> client = MregClient(url="https://mreg.example.com", domain="example.com")
@@ -504,8 +503,10 @@ class MregClient:
             domain: The domain to use within the context.
 
         Example:
-            >>> with client.domain_override("example.com"):
-            ...     client.fqdn("web")  # → "web.example.com"
+        ```pycon
+        >>> with client.domain_override("example.com"):
+        ...     client.fqdn("web")  # → "web.example.com"
+        ```
         """
         old = self.domain
         self.domain = domain
@@ -558,12 +559,14 @@ class MregClient:
                     If False, disable caching within the context.
 
         Example:
-            >>> with client.caching(enable=True):
-            ...     # caching is enabled here
-            ...     pass
-            >>> with client.caching(enable=False):
-            ...     # caching is disabled here
-            ...     pass
+        ```pycon
+        >>> with client.caching(enable=True):
+        ...     # caching is enabled here
+        ...     pass
+        >>> with client.caching(enable=False):
+        ...     # caching is disabled here
+        ...     pass
+        ```
         """
         was_enabled = self.cache.is_enabled
 
