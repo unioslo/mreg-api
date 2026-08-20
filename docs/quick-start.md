@@ -23,8 +23,7 @@ for more.
 
 ## Resources
 
-Every MREG resource type is an attribute on the client, exposing the same manager
-interface:
+Every MREG resource type is an attribute on the client, exposing the same resource manager interface:
 
 ```python
 client.host     # manage hosts
@@ -35,7 +34,7 @@ client.cname    # manage CNAME records
 
 See [Working with resources](guides/resources.md) for the complete list of managers.
 
-## The manager interface
+## The resource manager interface
 
 | Method | Purpose |
 |---|---|
@@ -46,6 +45,8 @@ See [Working with resources](guides/resources.md) for the complete list of manag
 | `create(**fields)` | Create a resource |
 | `update(target, **fields)` | Update a resource |
 | `delete(target)` | Delete a resource |
+
+This interface is consistent across most resource types, and the methods are documented in the [API reference](reference/client.md).
 
 ## Fetching
 

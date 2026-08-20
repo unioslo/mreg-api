@@ -50,8 +50,8 @@ nav = [
   { "Guides" = [
     { "Client configuration" = "guides/configuration.md" },
     { "Authentication" = "guides/authentication.md" },
+    { "Accessing resources" = "guides/resources.md" },
     { "Caching" = "guides/caching.md" },
-    { "Working with resources" = "guides/resources.md" },
     { "Event Log" = "guides/eventlog.md" },
     { "Request History" = "guides/requesthistory.md" },
   ] },
@@ -386,9 +386,13 @@ paths = ["mreg_api"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
 docstring_style = "google"
+annotations_path = "brief"
 inherited_members = true
 show_source = false
 show_root_heading = true
 show_root_full_path = false
 show_symbol_type_heading = true
 show_symbol_type_toc = true
+separate_signature = true
+show_signature_annotations = true
+signature_crossrefs = true

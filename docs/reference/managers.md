@@ -4,19 +4,17 @@ icon: lucide/boxes
 
 # Managers
 
-Every resource type is reachable as a manager attribute on an
-[`MregClient`][mreg_api.client.MregClient] instance — for example `client.host` or
-`client.network`. These managers are exposed on the client as attributes, so they never need to be instantiated directly.
-
-All managers share the same core interface (`get`, `list`, `create`, `update`,
+Every resource type is reachable as attributes on
+[`MregClient`][mreg_api.client.MregClient] instances — for example [`client.host`][mreg_api.client.MregClient.host] or
+[`client.network`][mreg_api.client.MregClient.network]. These attributes expose a resource manager implementing CRUD methods for interacting with the given resources.Most managers share the same core interface (`get`, `list`, `create`, `update`,
 `delete`, …). That interface, and how to use it, is described in
 [Working with resources](../guides/resources.md). This page is the per-manager API
 reference.
 
-!!! note "Inherited methods"
-    Each manager inherits its base methods from internal base classes. Those base
-    classes are not part of the public API, so the inherited methods are shown inline on
-    each manager below rather than on separate pages.
+Some managers have additional methods, such as [`HostManager.get_by_ip`][mreg_api.managers.HostManager.get_by_ip] or [`PermissionManager.get_by_triplet`][mreg_api.managers.PermissionManager.get_by_triplet].
+
+Other managers, such as the read-only meta-endpoint managers exposed via [`MregClient.meta`][mreg_api.client.MregClient.meta], have a more limited interface, exposing only a `get` method.
+
 
 ## Hosts
 
@@ -105,3 +103,21 @@ Reached through `client.meta` (e.g. `client.meta.version`, `client.meta.health`)
 ::: mreg_api.managers.HeartbeatHealthManager
 
 ::: mreg_api.managers.HealthManager
+
+## Base Manager Classes
+
+::: mreg_api.managers.ResourceManager
+      options:
+        inherited_members: false
+
+::: mreg_api.managers.WriteResourceManager
+      options:
+        inherited_members: false
+
+::: mreg_api.managers.NamedResourceManager
+      options:
+        inherited_members: false
+
+::: mreg_api.managers.HistoryManager
+      options:
+        inherited_members: false
