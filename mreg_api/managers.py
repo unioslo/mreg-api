@@ -2353,7 +2353,7 @@ class NetworkManager(WriteResourceManager[Network]):
 
     @functools.cached_property
     def community(self) -> CommunityManager:
-        """Manager for network communities (`client.network.communities`)."""
+        """Manager for network community (`client.network.community`)."""
         return CommunityManager(self._client, self)
 
     @overload

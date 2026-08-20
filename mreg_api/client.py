@@ -52,6 +52,7 @@ from mreg_api.exceptions import determine_http_error_class
 from mreg_api.managers import AtomManager
 from mreg_api.managers import BacnetIDManager
 from mreg_api.managers import CNAMEManager
+from mreg_api.managers import CommunityManager
 from mreg_api.managers import DelegationManager
 from mreg_api.managers import DhcpHostIPv4Manager
 from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
@@ -292,6 +293,11 @@ class MregClient:
     def cname(self) -> CNAMEManager:
         """Manager for CNAME resources."""
         return CNAMEManager(self)
+
+    @functools.cached_property
+    def community(self) -> CommunityManager:
+        """Manager for network community resources."""
+        return CommunityManager(self, self.network)
 
     @functools.cached_property
     def delegation(self) -> DelegationManager:

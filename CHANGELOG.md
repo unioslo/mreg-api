@@ -7,14 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## Unreleased
 
+### Added
+
+- `MregClient.community` property to access the `CommunityManager` for managing communities.
+  - Still exists via `MregClient.network.community`.
+
 ### Changed
 
-- `create()` semantics and return type changes:
+- `MregClient.*.create()` semantics and return type changes:
   - POST requests now prefer to return the created object found in the response, rather than fetching the object again from the API via the location header. The manager falls back on fetching via location header if the response does not contain the created object.
   - `create()` method return type changed from `T | None` to `T`. Never returns None.
   - `create(fetch_after_create)` parameter removed.
 - `models.LDAPHealth` now defines `status` as a `Literal["OK", "Down", "Unknown"]` type instead of a generic string.
 - `models.UserInfo` now has defaults for all its fields.
+- `MregClient.community.create()` now returns the created `Community` object instead of a boolean indicating success.
 
 ### Removed
 

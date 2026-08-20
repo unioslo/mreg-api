@@ -141,6 +141,9 @@ def test_manager_model_name_snapshot(client: MregClient) -> None:
     # Match manager name with model name
     managers = [manager_t(client) for _, manager_t in managers_list]
     man_names = [(m.__class__.__name__, m.model_name) for m in managers]
+
+    # NOTE: The "idiosyncratic" managers (i.e. those that do not inherit from ResourceManager),
+    # such as `CommunityManager` & `DelegationManager` not included in this snapshot test.
     assert man_names == snapshot(
         [
             ("AtomManager", "Atom"),
