@@ -518,6 +518,9 @@ class ResourceManager(Generic[T], ABC):
 
         Raises:
             EntityNotFound: If `required` is True and no resource is found.
+
+        Returns:
+            The first resource found, or `None` when `required` is False.
         """
         params: QueryParams = dict(query)
 
