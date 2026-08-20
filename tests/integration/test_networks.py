@@ -9,7 +9,6 @@ import pytest
 from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.models.models import Community
 from mreg_api.models.models import Network
 
 if TYPE_CHECKING:
@@ -199,14 +198,7 @@ def test_community_create(
         name=name,
         description="integration test community create",
     )
-    assert isinstance(result, bool)
-    assert result
-    comm = integration_client.network.community.get_by_name(name, test_network, required=False)
-    try:
-        assert comm is not None
-    finally:
-        if comm is not None:
-            integration_client.network.community.delete(comm.id, test_network)
+    integration_client.network.community.delete(result.id, test_network)
 
 
 def test_community_get_by_name(
@@ -235,18 +227,14 @@ def test_community_get_by_id(
     test_network: str,
 ) -> None:
     name = f"{test_prefix}commgbi"
-    integration_client.network.community.create(
+    created = integration_client.network.community.create(
         test_network,
         name=name,
         description="integration test get_by_id",
     )
     comm = integration_client.network.community.get_by_name(name, test_network)
-    try:
-        result = integration_client.network.community.get_by_id(comm.id, test_network)
-        assert result is not None
-        assert result.id == comm.id
-    finally:
-        integration_client.network.community.delete(comm.id, test_network)
+    assert comm == created
+    integration_client.network.community.delete(comm.id, test_network)
 
 
 def test_community_get_by_object(
@@ -255,19 +243,14 @@ def test_community_get_by_object(
     test_network: str,
 ) -> None:
     name = f"{test_prefix}commgbo"
-    integration_client.network.community.create(
+    created = integration_client.network.community.create(
         test_network,
         name=name,
         description="integration test get by object",
     )
     comm = integration_client.network.community.get_by_name(name, test_network)
-    try:
-        result = integration_client.network.community.get(comm.id, test_network)
-        assert result is not None
-        assert result.id == comm.id
-        assert isinstance(result, Community)
-    finally:
-        integration_client.network.community.delete(comm.id, test_network)
+    assert comm == created
+    integration_client.network.community.delete(comm.id, test_network)
 
 
 def test_community_delete_by_id(
@@ -276,12 +259,11 @@ def test_community_delete_by_id(
     test_network: str,
 ) -> None:
     name = f"{test_prefix}commdid"
-    integration_client.network.community.create(
+    comm = integration_client.network.community.create(
         test_network,
         name=name,
         description="integration test delete by id",
     )
-    comm = integration_client.network.community.get_by_name(name, test_network)
     integration_client.network.community.delete(comm.id, test_network)
     assert integration_client.network.community.get_by_name(name, test_network, required=False) is None
 
@@ -292,12 +274,11 @@ def test_community_delete_by_name(
     test_network: str,
 ) -> None:
     name = f"{test_prefix}commdname"
-    integration_client.network.community.create(
+    comm = integration_client.network.community.create(
         test_network,
         name=name,
         description="integration test delete by name",
     )
-    comm = integration_client.network.community.get_by_name(name, test_network)
     integration_client.network.community.delete(comm.name, test_network)
     assert integration_client.network.community.get_by_name(name, test_network, required=False) is None
 
@@ -308,11 +289,10 @@ def test_community_delete_by_object(
     test_network: str,
 ) -> None:
     name = f"{test_prefix}commdobj"
-    integration_client.network.community.create(
+    comm = integration_client.network.community.create(
         test_network,
         name=name,
         description="integration test delete by object",
     )
-    comm = integration_client.network.community.get_by_name(name, test_network)
     integration_client.network.community.delete(comm, test_network)
     assert integration_client.network.community.get_by_name(name, test_network, required=False) is None
