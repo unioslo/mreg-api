@@ -572,7 +572,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
     def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> T:
         """PATCH `obj` with `data` and return the refetched object.
 
-        Raises :class:`PatchError` (from the client) if the server rejects the patch.
+        Raises `PatchError` (from the client) if the server rejects the patch.
         """
         _ = self._client.patch(self._endpoint_with_path_param(obj), json=data, params=params)
         return self._refetch(obj)
@@ -744,11 +744,11 @@ class HistoryManager(ResourceManager[T], ABC):
     def history(self, name: str) -> list[HistoryItem]:
         """Get the audit history for a named resource.
 
-        Relocated from the former `HistoryItem.get`: fetches history through the
-        owning client and constructs :class:`HistoryItem` models from the result.
-
         Args:
             name (str): The name of the resource to fetch history for.
+
+        Returns:
+            A list of `HistoryItem` objects.
         """
         name = self._normalize_history_name(name)
         resource = self.history_resource
@@ -768,7 +768,7 @@ class HistoryManager(ResourceManager[T], ABC):
 
 
 class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
-    """Operations on :class:`~mreg_api.models.Host` resources."""
+    """Operations on Host resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1056,7 +1056,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
 
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
-    """Operations on :class:`~mreg_api.models.HostGroup` resources."""
+    """Operations on HostGroup resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1262,7 +1262,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
 
 
 class LabelManager(NamedResourceManager[Label]):
-    """Operations on :class:`~mreg_api.models.Label` resources."""
+    """Operations on Label resources."""
 
     # NOTE: the regular labels endpoint uses IDs for lookups, but it is possible
     # to fetch by name when using the /labels/name endpoint.
@@ -1326,7 +1326,7 @@ class LabelManager(NamedResourceManager[Label]):
 
 
 class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
-    """Operations on :class:`~mreg_api.models.Role` resources."""
+    """Operations on Role resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1588,7 +1588,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
 
 
 class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
-    """Operations on :class:`~mreg_api.models.Atom` resources."""
+    """Operations on Atom resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1670,7 +1670,7 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
 
 
 class PermissionManager(WriteResourceManager[Permission]):
-    """Operations on :class:`~mreg_api.models.Permission` resources."""
+    """Operations on Permission resources."""
 
     @property
     @override
@@ -1827,7 +1827,7 @@ class PermissionManager(WriteResourceManager[Permission]):
 
 
 class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]):
-    """Operations on :class:`~mreg_api.models.NetworkPolicyAttribute` resources."""
+    """Operations on NetworkPolicyAttribute resources."""
 
     name_lowercase: ClassVar[bool] = True
 
@@ -1916,7 +1916,7 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
 
 
 class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
-    """Operations on :class:`~mreg_api.models.NetworkPolicy` resources."""
+    """Operations on NetworkPolicy resources."""
 
     name_lowercase: ClassVar[bool] = True
 
@@ -2061,7 +2061,7 @@ class CommunityManager:
     """Operations on network communities.
 
     Communities are always scoped to a network — every method takes a network
-    reference (address string or :class:`~mreg_api.models.Network` instance).
+    reference (address string or `Network` instance).
     """
 
     def __init__(self, client: MregClient, network_manager: NetworkManager) -> None:
@@ -2334,7 +2334,7 @@ class CommunityManager:
 
 
 class NetworkManager(WriteResourceManager[Network]):
-    """Operations on :class:`~mreg_api.models.Network` resources."""
+    """Operations on Network resources."""
 
     _path_param_field: ClassVar[str] = "network"
 
@@ -2630,7 +2630,7 @@ class NetworkManager(WriteResourceManager[Network]):
 
 
 class IPAddressManager(WriteResourceManager[IPAddress]):
-    """Operations on :class:`~mreg_api.models.IPAddress` resources."""
+    """Operations on IPAddress resources."""
 
     @property
     @override
@@ -2783,7 +2783,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
 
 
 class CNAMEManager(NamedResourceManager[CNAME]):
-    """Operations on :class:`~mreg_api.models.CNAME` resources."""
+    """Operations on CNAME resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -2902,7 +2902,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
 
 
 class HInfoManager(WriteResourceManager[HInfo]):
-    """Operations on :class:`~mreg_api.models.HInfo` resources.
+    """Operations on HInfo resources.
 
     HInfo is a 1-per-host record; the path parameter is the host ID (not a numeric row id).
     """
@@ -2979,7 +2979,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
 
 
 class TXTManager(WriteResourceManager[TXT]):
-    """Operations on :class:`~mreg_api.models.TXT` resources."""
+    """Operations on TXT resources."""
 
     @property
     @override
@@ -3044,7 +3044,7 @@ class TXTManager(WriteResourceManager[TXT]):
 
 
 class MXManager(WriteResourceManager[MX]):
-    """Operations on :class:`~mreg_api.models.MX` resources."""
+    """Operations on MX resources."""
 
     @property
     @override
@@ -3173,7 +3173,7 @@ class MXManager(WriteResourceManager[MX]):
 
 
 class NAPTRManager(WriteResourceManager[NAPTR]):
-    """Operations on :class:`~mreg_api.models.NAPTR` resources."""
+    """Operations on NAPTR resources."""
 
     @property
     @override
@@ -3354,7 +3354,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
 
 
 class SrvManager(WriteResourceManager[Srv]):
-    """Operations on :class:`~mreg_api.models.Srv` resources."""
+    """Operations on Srv resources."""
 
     @property
     @override
@@ -3500,7 +3500,7 @@ class SrvManager(WriteResourceManager[Srv]):
 
 
 class PTROverrideManager(WriteResourceManager[PTR_override]):
-    """Operations on :class:`~mreg_api.models.PTR_override` resources."""
+    """Operations on PTR_override resources."""
 
     @property
     @override
@@ -3567,7 +3567,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
 
 
 class SSHFPManager(WriteResourceManager[SSHFP]):
-    """Operations on :class:`~mreg_api.models.SSHFP` resources."""
+    """Operations on SSHFP resources."""
 
     @property
     @override
@@ -3652,7 +3652,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
 
 
 class BacnetIDManager(WriteResourceManager[BacnetID]):
-    """Operations on :class:`~mreg_api.models.BacnetID` resources."""
+    """Operations on BacnetID resources."""
 
     @property
     @override
@@ -3712,7 +3712,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
 
 
 class LocationManager(WriteResourceManager[Location]):
-    """Operations on :class:`~mreg_api.models.Location` resources."""
+    """Operations on Location resources."""
 
     _path_param_field: ClassVar[str] = "host"
 
@@ -3848,11 +3848,10 @@ _ZoneT = TypeVar("_ZoneT", bound=Zone)
 
 
 class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
-    """Private single-endpoint manager shared by the forward/reverse zone managers.
+    """Base class for forward/reverse Zone managers.
 
-    Each concrete subclass binds one model (hence one endpoint), honoring the
-    one-endpoint invariant of the base. The public surface is :class:`ZoneManager`,
-    which dispatches to these by zone-name shape.
+    Each concrete subclass binds a zone subclass (and unique endpoint).
+    Accessed via the `ZoneManager` by zone-name or concrete `Zone` subclass type.
     """
 
     _path_param_field: ClassVar[str] = "name"
