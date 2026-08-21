@@ -518,6 +518,9 @@ class ResourceManager(Generic[T], ABC):
 
         Raises:
             EntityNotFound: If `required` is True and no resource is found.
+
+        Returns:
+            The first resource found, or `None` when `required` is False.
         """
         params: QueryParams = dict(query)
 
@@ -569,7 +572,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
     def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> T:
         """PATCH `obj` with `data` and return the refetched object.
 
-        Raises :class:`PatchError` (from the client) if the server rejects the patch.
+        Raises `PatchError` (from the client) if the server rejects the patch.
         """
         _ = self._client.patch(self._endpoint_with_path_param(obj), json=data, params=params)
         return self._refetch(obj)
@@ -741,11 +744,11 @@ class HistoryManager(ResourceManager[T], ABC):
     def history(self, name: str) -> list[HistoryItem]:
         """Get the audit history for a named resource.
 
-        Relocated from the former `HistoryItem.get`: fetches history through the
-        owning client and constructs :class:`HistoryItem` models from the result.
-
         Args:
             name (str): The name of the resource to fetch history for.
+
+        Returns:
+            A list of `HistoryItem` objects.
         """
         name = self._normalize_history_name(name)
         resource = self.history_resource
@@ -765,7 +768,7 @@ class HistoryManager(ResourceManager[T], ABC):
 
 
 class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
-    """Operations on :class:`~mreg_api.models.Host` resources."""
+    """Operations on Host resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1053,7 +1056,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
 
 class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup]):
-    """Operations on :class:`~mreg_api.models.HostGroup` resources."""
+    """Operations on HostGroup resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1259,7 +1262,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
 
 
 class LabelManager(NamedResourceManager[Label]):
-    """Operations on :class:`~mreg_api.models.Label` resources."""
+    """Operations on Label resources."""
 
     # NOTE: the regular labels endpoint uses IDs for lookups, but it is possible
     # to fetch by name when using the /labels/name endpoint.
@@ -1322,8 +1325,18 @@ class LabelManager(NamedResourceManager[Label]):
         return self.update(label, description=description)
 
 
+class HostPolicyManagerNamespace:
+    """Namespace for grouping related host policy managers."""
+
+    def __init__(self, client: MregClient) -> None:  # noqa: D107
+        self._client = client
+        self.role: RoleManager = client.role
+        self.label: LabelManager = client.label
+        self.atom: AtomManager = client.atom
+
+
 class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
-    """Operations on :class:`~mreg_api.models.Role` resources."""
+    """Operations on Role resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1585,7 +1598,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
 
 
 class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
-    """Operations on :class:`~mreg_api.models.Atom` resources."""
+    """Operations on Atom resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -1667,7 +1680,7 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
 
 
 class PermissionManager(WriteResourceManager[Permission]):
-    """Operations on :class:`~mreg_api.models.Permission` resources."""
+    """Operations on Permission resources."""
 
     @property
     @override
@@ -1824,7 +1837,7 @@ class PermissionManager(WriteResourceManager[Permission]):
 
 
 class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]):
-    """Operations on :class:`~mreg_api.models.NetworkPolicyAttribute` resources."""
+    """Operations on NetworkPolicyAttribute resources."""
 
     name_lowercase: ClassVar[bool] = True
 
@@ -1913,7 +1926,7 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
 
 
 class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
-    """Operations on :class:`~mreg_api.models.NetworkPolicy` resources."""
+    """Operations on NetworkPolicy resources."""
 
     name_lowercase: ClassVar[bool] = True
 
@@ -2049,22 +2062,22 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
     @functools.cached_property
     def attribute(self) -> NetworkPolicyAttributeManager:
-        """Manager for network policy attributes (`client.network.policy.attribute`)."""
+        """Manager for network policy attributes."""
         return NetworkPolicyAttributeManager(self._client)
 
 
 # NOTE: WHY does this not inherit from the regular ResourceManager?
 class CommunityManager:
-    """Operations on network communities (`client.network.communities`).
+    """Operations on network communities.
 
     Communities are always scoped to a network — every method takes a network
-    reference (address string or :class:`~mreg_api.models.Network` instance).
+    reference (address string or `Network` instance).
     """
 
-    def __init__(self, client: MregClient, network_manager: NetworkManager) -> None:
+    def __init__(self, client: MregClient) -> None:
         """Bind the manager to the client."""
         self._client = client
-        self._network_manager = network_manager
+        self._network_manager: NetworkManager = client.network
 
     @property
     def model_name(self) -> str:
@@ -2331,7 +2344,7 @@ class CommunityManager:
 
 
 class NetworkManager(WriteResourceManager[Network]):
-    """Operations on :class:`~mreg_api.models.Network` resources."""
+    """Operations on Network resources."""
 
     _path_param_field: ClassVar[str] = "network"
 
@@ -2348,13 +2361,13 @@ class NetworkManager(WriteResourceManager[Network]):
     # NOTE: expose as properties so we don't need to override __init__ and call `super()`
     @functools.cached_property
     def policy(self) -> NetworkPolicyManager:
-        """Manager for network policies (`client.network.policy`)."""
+        """Manager for network policies."""
         return NetworkPolicyManager(self._client)
 
     @functools.cached_property
     def community(self) -> CommunityManager:
-        """Manager for network community (`client.network.community`)."""
-        return CommunityManager(self._client, self)
+        """Manager for network community."""
+        return CommunityManager(self._client)
 
     @overload
     def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False]) -> Network | None: ...
@@ -2627,7 +2640,7 @@ class NetworkManager(WriteResourceManager[Network]):
 
 
 class IPAddressManager(WriteResourceManager[IPAddress]):
-    """Operations on :class:`~mreg_api.models.IPAddress` resources."""
+    """Operations on IPAddress resources."""
 
     @property
     @override
@@ -2780,7 +2793,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
 
 
 class CNAMEManager(NamedResourceManager[CNAME]):
-    """Operations on :class:`~mreg_api.models.CNAME` resources."""
+    """Operations on CNAME resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -2899,7 +2912,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
 
 
 class HInfoManager(WriteResourceManager[HInfo]):
-    """Operations on :class:`~mreg_api.models.HInfo` resources.
+    """Operations on HInfo resources.
 
     HInfo is a 1-per-host record; the path parameter is the host ID (not a numeric row id).
     """
@@ -2976,7 +2989,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
 
 
 class TXTManager(WriteResourceManager[TXT]):
-    """Operations on :class:`~mreg_api.models.TXT` resources."""
+    """Operations on TXT resources."""
 
     @property
     @override
@@ -3041,7 +3054,7 @@ class TXTManager(WriteResourceManager[TXT]):
 
 
 class MXManager(WriteResourceManager[MX]):
-    """Operations on :class:`~mreg_api.models.MX` resources."""
+    """Operations on MX resources."""
 
     @property
     @override
@@ -3170,7 +3183,7 @@ class MXManager(WriteResourceManager[MX]):
 
 
 class NAPTRManager(WriteResourceManager[NAPTR]):
-    """Operations on :class:`~mreg_api.models.NAPTR` resources."""
+    """Operations on NAPTR resources."""
 
     @property
     @override
@@ -3351,7 +3364,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
 
 
 class SrvManager(WriteResourceManager[Srv]):
-    """Operations on :class:`~mreg_api.models.Srv` resources."""
+    """Operations on Srv resources."""
 
     @property
     @override
@@ -3497,7 +3510,7 @@ class SrvManager(WriteResourceManager[Srv]):
 
 
 class PTROverrideManager(WriteResourceManager[PTR_override]):
-    """Operations on :class:`~mreg_api.models.PTR_override` resources."""
+    """Operations on PTR_override resources."""
 
     @property
     @override
@@ -3564,7 +3577,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
 
 
 class SSHFPManager(WriteResourceManager[SSHFP]):
-    """Operations on :class:`~mreg_api.models.SSHFP` resources."""
+    """Operations on SSHFP resources."""
 
     @property
     @override
@@ -3649,7 +3662,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
 
 
 class BacnetIDManager(WriteResourceManager[BacnetID]):
-    """Operations on :class:`~mreg_api.models.BacnetID` resources."""
+    """Operations on BacnetID resources."""
 
     @property
     @override
@@ -3709,7 +3722,7 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
 
 
 class LocationManager(WriteResourceManager[Location]):
-    """Operations on :class:`~mreg_api.models.Location` resources."""
+    """Operations on Location resources."""
 
     _path_param_field: ClassVar[str] = "host"
 
@@ -3845,11 +3858,10 @@ _ZoneT = TypeVar("_ZoneT", bound=Zone)
 
 
 class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
-    """Private single-endpoint manager shared by the forward/reverse zone managers.
+    """Base class for forward/reverse Zone managers.
 
-    Each concrete subclass binds one model (hence one endpoint), honoring the
-    one-endpoint invariant of the base. The public surface is :class:`ZoneManager`,
-    which dispatches to these by zone-name shape.
+    Each concrete subclass binds a zone subclass (and unique endpoint).
+    Accessed via the `ZoneManager` by zone-name or concrete `Zone` subclass type.
     """
 
     _path_param_field: ClassVar[str] = "name"
@@ -4036,7 +4048,7 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
 # sub managers public, because their methods expect verified nameserver arguments (`VeriifedNS`),
 # which we only produce through a private function (_verify_nameservers).
 class ZoneManager:
-    """Public facade over the forward/reverse zone managers (`client.zone`).
+    """Public facade over the forward/reverse zone managers.
 
     Zones split into forward/reverse, but are otherwise very similar in their APIs.
     This manager delegates to the correct forward/reverse manager based on the name
@@ -4267,17 +4279,15 @@ class ZoneManager:
 
     @functools.cached_property
     def delegations(self) -> DelegationManager:
-        """Manager for zone delegations (`client.zone.delegations`)."""
+        """Manager for zone delegations."""
         return DelegationManager(self._client)
 
 
 class DelegationManager:
-    """Operations on zone delegations (`client.delegation`).
+    """Operations on zone delegations.
 
     Delegations have no standalone endpoint; their type (forward/reverse) is derived
     from the parent zone, so every method takes the parent zone as its first argument.
-    Kept separate from :class:`ZoneManager` to stay composition-ready (a future
-    `client.zone.delegations`).
     """
 
     def __init__(self, client: MregClient) -> None:
@@ -4442,7 +4452,7 @@ class DelegationManager:
 
 
 class DhcpHostManager(ResourceManager[T], ABC):
-    """Read-only manager for DHCP host records (`client.dhcphost`).
+    """Read-only manager for DHCP host records.
 
     This is a generic base class for the IPv4, IPv6, and IPv6-via-IPv4 managers.
     Cannot be instantiated directly; use one of the concrete subclasses instead.
@@ -4462,7 +4472,7 @@ class DhcpHostManager(ResourceManager[T], ABC):
 
 
 class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
-    """Read-only manager for IPv4 DHCP host records (`client.dhcphostipv4`)."""
+    """Read-only manager for IPv4 DHCP host records."""
 
     @property
     @override
@@ -4476,7 +4486,7 @@ class DhcpHostIPv4Manager(DhcpHostManager[DhcpHostIPv4]):
 
 
 class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
-    """Read-only manager for IPv6 DHCP host records (`client.dhcphostipv6`)."""
+    """Read-only manager for IPv6 DHCP host records."""
 
     @property
     @override
@@ -4490,7 +4500,7 @@ class DhcpHostIPv6Manager(DhcpHostManager[DhcpHostIPv6]):
 
 
 class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
-    """Read-only manager for IPv6-via-IPv4 DHCP host records (`client.dhcphostipv6byipv4`)."""
+    """Read-only manager for IPv6-via-IPv4 DHCP host records."""
 
     @property
     @override
@@ -4504,7 +4514,7 @@ class DhcpHostIPv6ByIPv4Manager(DhcpHostManager[DhcpHostIPv6ByIPv4]):
 
 
 class NameServerManager(NamedResourceManager[NameServer]):
-    """Access to :class:`~mreg_api.models.NameServer` resources (`client.nameserver`)."""
+    """Access to :class:`~mreg_api.models.NameServer` resources."""
 
     _path_param_field: ClassVar[str] = "name"
 
@@ -4612,7 +4622,7 @@ class GetManager(Generic[T], ABC):
 
 
 class ServerVersionManager(GetManager[ServerVersion]):
-    """Access to server version metadata (`client.serverversion`)."""
+    """Access to server version metadata."""
 
     @property
     @override
@@ -4636,7 +4646,7 @@ class ServerVersionManager(GetManager[ServerVersion]):
 
 
 class ServerLibrariesManager:
-    """Access to server library metadata (`client.serverlibraries`)."""
+    """Access to server library metadata."""
 
     def __init__(self, client: MregClient) -> None:
         """Initialize the manager with a client instance."""
@@ -4660,7 +4670,7 @@ class ServerLibrariesManager:
 
 
 class UserInfoManager(GetManager[UserInfo]):
-    """Access to user information (`client.userinfo`)."""
+    """Access to user information."""
 
     @property
     @override
@@ -4689,7 +4699,7 @@ class UserInfoManager(GetManager[UserInfo]):
 
 
 class LDAPHealthManager(GetManager[LDAPHealth]):
-    """Access to LDAP health status (`client.ldaphealth`)."""
+    """Access to LDAP health status."""
 
     @property
     @override
@@ -4720,7 +4730,7 @@ class LDAPHealthManager(GetManager[LDAPHealth]):
 
 
 class HeartbeatHealthManager(GetManager[HeartbeatHealth]):
-    """Access to heartbeat health status (`client.heartbeathealth`)."""
+    """Access to heartbeat health status."""
 
     @property
     @override
@@ -4745,7 +4755,7 @@ class HeartbeatHealthManager(GetManager[HeartbeatHealth]):
 
 
 class HealthManager(GetManager[HealthInfo]):
-    """Access to combined health information (`client.health`)."""
+    """Access to combined health information."""
 
     @property
     @override
