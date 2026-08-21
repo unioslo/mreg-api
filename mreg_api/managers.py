@@ -1325,6 +1325,16 @@ class LabelManager(NamedResourceManager[Label]):
         return self.update(label, description=description)
 
 
+class HostPolicyManagerNamespace:
+    """Namespace for grouping related host policy managers."""
+
+    def __init__(self, client: MregClient) -> None:  # noqa: D107
+        self._client = client
+        self.role: RoleManager = client.role
+        self.label: LabelManager = client.label
+        self.atom: AtomManager = client.atom
+
+
 class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
     """Operations on Role resources."""
 
@@ -2064,10 +2074,10 @@ class CommunityManager:
     reference (address string or `Network` instance).
     """
 
-    def __init__(self, client: MregClient, network_manager: NetworkManager) -> None:
+    def __init__(self, client: MregClient) -> None:
         """Bind the manager to the client."""
         self._client = client
-        self._network_manager = network_manager
+        self._network_manager: NetworkManager = client.network
 
     @property
     def model_name(self) -> str:

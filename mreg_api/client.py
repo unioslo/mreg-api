@@ -60,6 +60,7 @@ from mreg_api.managers import DhcpHostIPv6Manager
 from mreg_api.managers import HInfoManager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
+from mreg_api.managers import HostPolicyManagerNamespace
 from mreg_api.managers import IPAddressManager
 from mreg_api.managers import LabelManager
 from mreg_api.managers import LocationManager
@@ -300,7 +301,7 @@ class MregClient:
     @functools.cached_property
     def community(self) -> CommunityManager:
         """Manager for network community resources."""
-        return CommunityManager(self, self.network)
+        return CommunityManager(self)
 
     @functools.cached_property
     def delegation(self) -> DelegationManager:
@@ -391,6 +392,11 @@ class MregClient:
     def permission(self) -> PermissionManager:
         """Manage permissions."""
         return PermissionManager(self)
+
+    @functools.cached_property
+    def policy(self) -> HostPolicyManagerNamespace:
+        """Manage host policy related resources."""
+        return HostPolicyManagerNamespace(self)
 
     @functools.cached_property
     def ptroverride(self) -> PTROverrideManager:

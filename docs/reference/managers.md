@@ -4,12 +4,8 @@ icon: lucide/boxes
 
 # Managers
 
-Every resource type is reachable as attributes on
-[`MregClient`][mreg_api.client.MregClient] instances — for example [`client.host`][mreg_api.client.MregClient.host] or
-[`client.network`][mreg_api.client.MregClient.network]. These attributes expose a resource manager implementing CRUD methods for interacting with the given resources.Most managers share the same core interface (`get`, `list`, `create`, `update`,
-`delete`, …). That interface, and how to use it, is described in
-[Working with resources](../guides/resources.md). This page is the per-manager API
-reference.
+This page describes the per-resource managers exposed on [`MregClient`][mreg_api.client.MregClient] instances.
+A manager is a class that encapsulates the logic for interacting with a specific MREG resource type. Depending on the resource, a manager may implement all CRUD operations (create, read, update, delete) or a subset of them, as well as additional methods for resource-specific operations. The CRUD interface is documented in [Resources](../guides/resources.md). This page is the per-manager API reference.
 
 Some managers have additional methods, such as [`HostManager.get_by_ip`][mreg_api.managers.HostManager.get_by_ip] or [`PermissionManager.get_by_triplet`][mreg_api.managers.PermissionManager.get_by_triplet].
 
@@ -119,5 +115,9 @@ Reached through `client.meta` (e.g. `client.meta.version`, `client.meta.health`)
         inherited_members: false
 
 ::: mreg_api.managers.HistoryManager
+      options:
+        inherited_members: false
+
+::: mreg_api.managers.GetManager
       options:
         inherited_members: false

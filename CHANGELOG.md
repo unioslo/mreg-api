@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `MregClient.community` property to access the `CommunityManager` for managing communities.
   - Still exists via `MregClient.network.community`.
 - `EventLog.get(subject=..., kind=..., level=..., min_level=...)` method to support retrieving events and filtering by a combination of subject, kind, and level. This replaces the existing `get_for`, `get_by_kind`, `get_by_level`, and `get_at_or_above` methods, and allows one to combine all their filters in a single call. Currently, only intersections of filters are supported (i.e. events must match all filters to be returned). Future releases may support unions of filters (i.e. events matching any filter will be returned).
+- `MregClient.policy` property that groups the existing `MregClient.atom`, `MregClient.role`, `MregClient.label` into a common namespace as `MregClient.policy.role`, `MregClient.policy.atom`, and `MregClient.policy.label`.
 
 ### Changed
 
