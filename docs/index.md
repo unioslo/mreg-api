@@ -7,7 +7,9 @@ icon: lucide/house
 `mreg-api` is a Python client library for the [MREG](https://github.com/unioslo/mreg)
 REST API. It gives you a typed, ergonomic interface to every MREG
 resource — hosts, networks, DNS records, zones, and more — through a single client
-object.
+object with scoped namespaces for each resource type.
+
+It provides optional caching of resources, automatic FQDN expansion of hostnames, and a consistent interface for all resource types. The client is compatible with Python 3.11 and later.
 
 ## Install
 
