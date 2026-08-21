@@ -2367,7 +2367,7 @@ class NetworkManager(WriteResourceManager[Network]):
     @functools.cached_property
     def community(self) -> CommunityManager:
         """Manager for network community."""
-        return CommunityManager(self._client, self)
+        return CommunityManager(self._client)
 
     @overload
     def get_by_ip(self, ip: str | IP_AddressT, *, required: Literal[False]) -> Network | None: ...
