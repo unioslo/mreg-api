@@ -11,8 +11,16 @@ object.
 
 ## Install
 
+pip:
+
 ```bash
 pip install mreg-api
+```
+
+uv:
+
+```bash
+uv add mreg-api
 ```
 
 ## Connect
