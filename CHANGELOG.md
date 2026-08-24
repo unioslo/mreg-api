@@ -23,6 +23,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `models.LDAPHealth` now defines `status` as a `Literal["OK", "Down", "Unknown"]` type instead of a generic string.
 - `models.UserInfo` now has defaults for all its fields.
 - `MregClient.community.create()` now returns the created `Community` object instead of a boolean indicating success.
+- Default limit of 500 for `list()` calls has been changed to `None` (unrestricted).
 
 ### Removed
 
@@ -47,7 +48,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **BREAKING**: `MregClient` is no longer a singleton. Each instance is independent and maintains its own state. The `MregClient.get_instance()` method has been removed. Each instantiation of `MregClient` is now independent and maintains its own state, including history, events and cache.
 - `Network.get_community()` now ignores case when searching for communities by name. It returns the first community with the given name, or None if not found.
-
 
 ### Removed
 

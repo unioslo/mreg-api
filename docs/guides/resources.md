@@ -73,11 +73,11 @@ if host is not None:
 
 `list` returns resources of that type. Keyword arguments map to model fields for
 filtering and are forwarded to the API. `list` returns up to `limit` results (default
-500); pass `limit=None` to remove the cap. Fetching all hosts is _very_ slow, and should be avoided at all costs.
+no limit). Fetching all hosts is _very_ slow, and should be avoided at all costs.
 
-```python
-all_hosts = client.host.list(limit=None)
-hosts = client.host.list(name__startswith="test-")
+``` python
+all_hosts = client.host.list()
+hosts = client.host.list(name__startswith="test-", limit=500)
 first = client.host.first(name__startswith="test-")
 n = client.host.count(name__startswith="test-")
 ```

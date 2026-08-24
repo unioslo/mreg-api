@@ -423,7 +423,7 @@ class ResourceManager(Generic[T], ABC):
     def _fetch_list_by_field(self, field: str, value: str | int) -> list[T]:
         """Fetch all objects matching a field, mirroring old APIMixin.get_list_by_field."""
         params: QueryParams = {field: value}
-        return self._client.get_typed(self.endpoint, list[self.model], params=params, limit=500)
+        return self._client.get_typed(self.endpoint, list[self.model], params=params)
 
     # NOTE: add toggleable _refetch behavior? Return None if refetching is disabled?
     def _refetch(self, obj: T) -> T:
@@ -485,13 +485,13 @@ class ResourceManager(Generic[T], ABC):
     def list(
         self,
         *,
-        limit: int | None = 500,
+        limit: int | None = None,
         **query: str | int | float | bool | None,
     ) -> list[T]:
         """List resources, optionally filtered by query parameters.
 
         Args:
-            limit (int | None): Maximum number of results to return. Defaults to 500.
+            limit (int | None): Maximum number of results to return, None means no limit. Defaults to None.
             **query: Optional filter parameters forwarded to the list endpoint.
         """
         params: QueryParams = dict(query)
