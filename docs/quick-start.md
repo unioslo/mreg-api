@@ -18,7 +18,7 @@ client.login(
 ```
 
 The `domain` argument enables automatic FQDN expansion of bare hostnames. See
-[Client configuration](guides/configuration.md) and [Authentication](guides/authentication.md)
+[Client configuration](guides/configuration.md#domain-handling) and [Authentication](guides/authentication.md)
 for more.
 
 ## Resources
@@ -32,7 +32,7 @@ client.cname    # manage CNAME records
 # ...
 ```
 
-See [Working with resources](guides/resources.md) for the complete list of managers.
+See [Working with resources](guides/resources.md) for the complete list of available resources and their methods, and [Managers reference](reference/managers.md) for the per-resoource manager API reference.
 
 ## The resource manager interface
 
