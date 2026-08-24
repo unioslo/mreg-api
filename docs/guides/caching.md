@@ -34,7 +34,7 @@ client = MregClient(
 | `ttl` | `int` | `300` | Time-to-live for cached entries, in seconds. |
 | `tag` | `str` | `"mreg-api"` | Tag used to namespace cache entries. |
 | `timeout` | `int` | `60` | Open timeout for the underlying disk cache. |
-| `directory` | `str \| None` | `None` | Cache directory. `None` uses a system temp directory. |
+| `directory` | `str | None` | `None` | Cache directory. `None` uses a system temp directory. |
 
 ## Controlling the cache at runtime
 
