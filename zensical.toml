@@ -382,7 +382,10 @@ custom_checkbox = true
 ## mkdocstrings-python
 
 [project.plugins.mkdocstrings.handlers.python]
-inventories = ["https://docs.python.org/3/objects.inv"]
+inventories = [
+  "https://docs.python.org/3/objects.inv",
+  "https://pydantic.dev/docs/validation/latest/objects.inv",
+]
 paths = ["mreg_api"]
 
 [project.plugins.mkdocstrings.handlers.python.options]
@@ -397,3 +400,4 @@ show_symbol_type_toc = true
 separate_signature = true
 show_signature_annotations = true
 signature_crossrefs = true
+extensions = [{ griffe_pydantic = { schema = true } }]
