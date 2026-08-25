@@ -5,12 +5,14 @@ icon: lucide/boxes
 # Managers
 
 This page describes the per-resource managers exposed on [`MregClient`][mreg_api.client.MregClient] instances.
-A manager is a class that encapsulates the logic for interacting with a specific MREG resource type. Depending on the resource, a manager may implement all CRUD operations (create, read, update, delete) or a subset of them, as well as additional methods for resource-specific operations. The CRUD interface is documented in [Resources](../guides/resources.md). This page is the per-manager API reference.
+A manager is a class that encapsulates the logic for interacting with a specific MREG resource type.
+Depending on the resource, a manager may implement all CRUD operations (create, read, update, delete)
+or just a subset, in addition to other methods for more granular resource-specific operations.
+The CRUD interface is documented in [Resources](../guides/resources.md).This page is the per-manager API reference.
 
 Some managers have additional methods, such as [`HostManager.get_by_ip`][mreg_api.managers.HostManager.get_by_ip] or [`PermissionManager.get_by_triplet`][mreg_api.managers.PermissionManager.get_by_triplet].
 
 Other managers, such as the read-only meta-endpoint managers exposed via [`MregClient.meta`][mreg_api.client.MregClient.meta], have a more limited interface, exposing only a `get` method.
-
 
 ## Hosts
 

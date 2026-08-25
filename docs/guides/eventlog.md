@@ -14,7 +14,7 @@ The client records an event log of resolutions, mutations, and notices that happ
 
 The event log is accessible via the `client.events` property, which returns an [`EventLog`][mreg_api.events.EventLog] instance. The size of the log is controlled by the `event_log_size` argument to [`MregClient`][mreg_api.client.MregClient].
 
-```python
+``` python
 client = MregClient(...)
 events = client.events.get()
 ```
@@ -23,7 +23,7 @@ events = client.events.get()
 
 Each event is categorized by kind ([`EventKind`][mreg_api.events.EventKind]). You can filter the event log by kind using the `get` method with the `kind` argument:
 
-```python
+``` python
 from mreg_api.events import EventKind
 
 client.events.get(kind=EventKind.RESOLUTION)
@@ -35,7 +35,7 @@ client.events.get(kind=EventKind.NOTICE)
 
 Each event is also categorized by level ([`EventLevel`][mreg_api.events.EventLevel]). You can filter the event log by level using the `get` method with the `level` argument:
 
-```python
+``` python
 from mreg_api.events import EventLevel
 
 client.events.get(level=EventLevel.DEBUG)
@@ -47,6 +47,30 @@ client.events.get(level=EventLevel.CRITICAL)
 
 The `min_level` argument can be used to retrieve events at or above a certain severity level instead of exactly matching a level:
 
-```python
+``` python
 client.events.get(min_level=EventLevel.WARNING)
+```
+
+## Advanced filtering
+
+More advanced filtering can be done using the `where` argument, which takes a callable
+that receives an `Event` instance and returns a boolean indicating whether to
+include the event in the results.
+
+For example, to get all error events that are **_not_** resolution events, you can do:
+
+``` python
+client.events.get(
+    level=EventLevel.ERROR,
+    where=lambda e: e.kind != EventKind.RESOLUTION,
+)
+```
+
+This can also be achieved by supplying a more complex callable to the `where` argument,
+performing all filtering in the predicate function itself:
+
+``` python
+client.events.get(
+    where=lambda e: e.subject == "example.com" and e.level >= EventLevel.WARNING
+)
 ```

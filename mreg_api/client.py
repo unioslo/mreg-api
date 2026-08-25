@@ -5,7 +5,6 @@ from __future__ import annotations
 import functools
 import logging
 import re
-from collections import deque
 from collections.abc import Callable
 from collections.abc import Generator
 from collections.abc import Mapping
@@ -15,7 +14,6 @@ from enum import StrEnum
 from typing import Any
 from typing import Concatenate
 from typing import Literal
-from typing import NamedTuple
 from typing import ParamSpec
 from typing import TypeVar
 from typing import get_origin
@@ -24,12 +22,12 @@ from urllib.parse import urljoin
 from uuid import uuid4
 
 import httpx
-from httpx import Request
 from httpx import Response
 from pydantic import BaseModel
 from pydantic import TypeAdapter
 from pydantic import ValidationError
 from pydantic import field_validator
+from typing_extensions import deprecated
 
 from mreg_api.__about__ import __version__
 from mreg_api.cache import CacheConfig
@@ -49,6 +47,7 @@ from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
+from mreg_api.history import RequestHistory
 from mreg_api.managers import AtomManager
 from mreg_api.managers import BacnetIDManager
 from mreg_api.managers import CNAMEManager
@@ -106,37 +105,6 @@ class Header(StrEnum):
     AUTH = "Authorization"
     CORRELATION_ID = "X-Correlation-ID"
     REQUEST_ID = "X-Request-Id"
-
-
-class RequestRecord(NamedTuple):
-    """A complete record of an HTTP request and its response.
-
-    Captures all relevant details of an API call including the request
-    parameters, response data, and metadata like status code and URL.
-    """
-
-    method: str
-    request: Request
-    response: Response
-    status: int
-    data: JsonMapping | None
-    json: Json | None
-
-    @property
-    def path(self) -> str:
-        """Get the request path (URL without base)."""
-        # TODO: Make this less hacky! Can we get the path + query directly from httpx?
-        parts = [f"{self.response.request.url.scheme}://", self.response.request.url.host]
-
-        if (port_s := f":{self.response.request.url.port}") in self.url:
-            parts.append(port_s)
-
-        return self.url.removeprefix("".join(parts))
-
-    @property
-    def url(self) -> str:
-        """Get the full request URL."""
-        return str(self.request.url)
 
 
 def invalidate_cache(
@@ -463,7 +431,7 @@ class MregClient:
 
         # State setup/reset
         self._token: str | None = None
-        self.history: deque[RequestRecord] = deque(maxlen=history_size)
+        self.history: RequestHistory = RequestHistory(maxsize=history_size)
         self.events: EventLog = EventLog(max_size=event_log_size)
 
     @property
@@ -648,33 +616,17 @@ class MregClient:
         """
         return str(self.session.headers.get(Header.CORRELATION_ID, ""))
 
-    def _add_to_history(
-        self,
-        response: Response,
-        data: JsonMapping | None = None,
-        json: Json | None = None,
-    ) -> None:
-        """Add a request/response pair to the history log."""
-        self.history.append(
-            RequestRecord(
-                method=response.request.method,
-                request=response.request,
-                response=response,
-                status=response.status_code,
-                data=data,
-                json=json,
-            )
-        )
-
-    def get_client_history(self) -> deque[RequestRecord]:
+    @deprecated('Use "history.get()" or "iter(history)" instead.')
+    def get_client_history(self) -> RequestHistory:
         """Get the request/response history for this client.
 
         Returns:
-            List of RequestRecord objects representing the history
+            RequestHistory object containing the history of requests and responses
 
         """
         return self.history
 
+    @deprecated('Use "history.clear()" instead.')
     def clear_client_history(self) -> None:
         """Clear the request/response history for this client."""
         self.history.clear()
@@ -811,7 +763,7 @@ class MregClient:
 
         result = self.session.send(request)
         # Log response in response log
-        self._add_to_history(result, json=json)
+        self.history.add(result, json=json)
 
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:

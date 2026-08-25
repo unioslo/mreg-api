@@ -183,18 +183,28 @@ class EventLog:
         kind: EventKind | None = None,
         level: EventLevel | None = None,
         min_level: EventLevel | None = None,
+        where: Callable[[Event], bool] | None = None,
     ) -> list[Event]:
         """Return all recorded events, optionally filtered by subject, kind, or level.
 
+        Multiple filters can be applied at once, and only events matching
+        all provided filters will be returned.
+
+        More complex filtering can be done by providing a callable to the
+        `where` parameter, which will be called with each event record,
+        and should return True if it should be included in the results.
+
         Args:
-            subject: If provided, only events where this object is the subject or involved are returned.
-            kind: If provided, only events of this kind are returned.
-            level: If provided, only events with exactly this level are returned.
-            min_level: If provided, only events with this level or higher are returned.
+            subject: If given, return only events where this object is the subject or involved.
+            kind: If given, return only events of this kind.
+            level: If given, return only events with exactly this level.
+            min_level: If given, return only events with this level or higher.
+            where: A predicate function that returns True if the event should be included.
 
         Returns:
             A list of events matching the specified filters.
         """
+        where = where or (lambda _: True)
         return [
             e
             for e in self._events
@@ -202,6 +212,7 @@ class EventLog:
             and (kind is None or e.kind == kind)
             and (level is None or e.level == level)
             and (min_level is None or e.level >= min_level)
+            and where(e)
         ]
 
     @deprecated('Use "get()" instead')

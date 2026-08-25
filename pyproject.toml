@@ -49,7 +49,11 @@ dev = [
     "pytest-timeout",
     { include-group = "docs" },
 ]
-docs = ["zensical>=0.0.46", "mkdocstrings-python>=2.0.5"]
+docs = [
+    "zensical>=0.0.46",
+    "mkdocstrings-python>=2.0.5",
+    "griffe-pydantic>=1.3.1",
+]
 
 
 [tool.pytest.ini_options]
@@ -69,20 +73,11 @@ show_missing = true
 [tool.setuptools.packages.find]
 include = ["mreg_api*"]
 
-[tool.black]
-max-line-length = 99
-
 [tool.inline-snapshot]
 format-command = "ruff check --fix-only --stdin-filename {filename} | ruff format --stdin-filename {filename}"
 
-[tool.isort]
-profile = "black"
-line_length = 99
-
 [tool.ruff]
 line-length = 110
-# Assume Python 3.11.
-target-version = "py311"
 
 [tool.ruff.lint.isort]
 # Force one line per import to simplify diffing and merging
@@ -230,13 +225,14 @@ convention = "google"
 "**/{tests,docs,tools}/*" = ["D103", "E501", "D100", "D104", "ARG001"]
 "ci/*" = ["D103", "D104", "INP001"]
 
-
 [tool.setuptools_scm]
 version_file = "mreg_api/_version.py"
 
 [tool.basedpyright]
 pythonVersion = "3.11"
 typeCheckingMode = "recommended"
+include = ["mreg_api", "tests"]
+
 reportUnannotatedClassAttribute = "hint"
 reportUnusedCallResult = "hint"
 reportImplicitOverride = "hint"
