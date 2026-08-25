@@ -5,7 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Added
+
+- `mreg_api.history` module that defines request/response history data structures. This includes the `RequestHistory` class for storing and retrieving request records, as well as filtering capabilities.
+
+### Changed
+
+- Client request history is now stored in a `RequestHistory` instance, accessible via the `MregClient.history` property.
+
+### Deprecated
+
+- `MregClient.get_client_history()` method. Use `MregClient.history.get()` instead.
+- `MregClient.clear_client_history()` method. Use `MregClient.history.clear()` instead.
 
 ## [0.4.0](https://github.com/unioslo/mreg-api/releases/tag/0.4.0) - 2026-08-24
 

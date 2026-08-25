@@ -616,7 +616,7 @@ class MregClient:
         """
         return str(self.session.headers.get(Header.CORRELATION_ID, ""))
 
-    @deprecated('Use "history" instead.')
+    @deprecated('Use "history.get()" or "iter(history)" instead.')
     def get_client_history(self) -> RequestHistory:
         """Get the request/response history for this client.
 
