@@ -6,6 +6,7 @@ from mreg_api import cache
 from mreg_api import endpoints
 from mreg_api import events
 from mreg_api import exceptions
+from mreg_api import history
 from mreg_api import models
 from mreg_api import types
 from mreg_api.__about__ import __version__
@@ -28,6 +29,7 @@ __all__ = [
     "endpoints",
     "events",
     "exceptions",
+    "history",
     "models",
     "types",
 ]

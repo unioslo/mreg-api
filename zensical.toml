@@ -60,6 +60,7 @@ nav = [
     { "Managers" = "reference/managers.md" },
     { "Models" = "reference/models.md" },
     { "Events" = "reference/events.md" },
+    { "History" = "reference/history.md" },
     { "Cache" = "reference/cache.md" },
     { "Exceptions" = "reference/exceptions.md" },
   ] },
