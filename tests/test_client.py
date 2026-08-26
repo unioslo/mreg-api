@@ -516,7 +516,7 @@ def test_client_get_list_limit_paginated_truncates(httpserver: HTTPServer, clien
     events = client.events.get(kind=EventKind.TRUNCATION)
     assert len(events) == 1
     # Message reports the true count (3), not the truncated length.
-    assert events[0].message == snapshot("Too many hits (3), limit is 2. Results are truncated.")
+    assert events[0].message == snapshot("Too many hits (3), limit is 2.")
 
 
 def test_client_get_list_limit_paginated_no_truncation(httpserver: HTTPServer, client: MregClient) -> None:
@@ -543,7 +543,7 @@ def test_client_get_list_limit_non_paginated_truncates(httpserver: HTTPServer, c
     assert resp == snapshot(["a", "b"])
     events = client.events.get(kind=EventKind.TRUNCATION)
     assert len(events) == 1
-    assert events[0].message == snapshot("Too many hits (3), limit is 2. Results are truncated.")
+    assert events[0].message == snapshot("Too many hits (3), limit is 2.")
 
 
 def test_client_get_list_limit_clamps_page_size(httpserver: HTTPServer, client: MregClient) -> None:
