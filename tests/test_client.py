@@ -180,7 +180,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
         ]
     )
     hosts1 = client.host.list()
-    assert len(client.get_client_history()) == 1
+    assert len(client.history) == 1
 
     # Perform same fetches within the context manager - should bypass cache
     with client.caching(enable=False):
@@ -205,7 +205,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
             ]
         )
         hosts2 = client.host.list()
-        assert len(client.get_client_history()) == 2
+        assert len(client.history) == 2
 
         assert len(hosts1) == 1
         assert len(hosts2) == 2
@@ -215,7 +215,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     assert info_pre is not None
 
     hosts3 = client.host.list()
-    assert len(client.get_client_history()) == 2  # History unchanged
+    assert len(client.history) == 2  # History unchanged
     assert len(hosts3) == len(hosts1) == 1
 
     # Compare cache info
@@ -244,7 +244,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             ]
         )
         hosts1 = client.host.list()
-        assert len(client.get_client_history()) == 1
+        assert len(client.history) == 1
 
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
             [
@@ -268,7 +268,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
         )
         # Second fetch should hit the cache - not the new handler
         hosts2 = client.host.list()
-        assert len(client.get_client_history()) == 1
+        assert len(client.history) == 1
         assert len(hosts1) == len(hosts2) == 1
 
     # Fetching outside the context manager should hit the server again
@@ -293,7 +293,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
         ]
     )
     hosts3 = client.host.list()
-    assert len(client.get_client_history()) == 2
+    assert len(client.history) == 2
     assert len(hosts3) == 2
 
 
