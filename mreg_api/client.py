@@ -103,6 +103,7 @@ JsonMappingValidator = TypeAdapter(JsonMapping)
 
 MAX_PAGE_SIZE: Final[int] = 1000
 MIN_PAGE_SIZE: Final[int] = 1
+PAGE_SIZE: Final[str] = "page_size"
 
 
 class Header(StrEnum):
@@ -111,12 +112,6 @@ class Header(StrEnum):
     AUTH = "Authorization"
     CORRELATION_ID = "X-Correlation-ID"
     REQUEST_ID = "X-Request-Id"
-
-
-class Param(StrEnum):
-    """Query parameters used by the MREG API."""
-
-    PAGE_SIZE = "page_size"
 
 
 def invalidate_cache(
@@ -709,7 +704,7 @@ class MregClient:
         try:
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
-                params={"page_size": 1},
+                params={PAGE_SIZE: 1},
                 timeout=self.timeout,
             )
             ret.raise_for_status()
@@ -751,7 +746,7 @@ class MregClient:
             # Only passes default params to GET requests while NOT paginating
             if method == "GET":
                 if self._page_size:
-                    _ = params.setdefault("page_size", self._page_size)
+                    _ = params.setdefault(PAGE_SIZE, self._page_size)
 
         url = urljoin(self.url, path)
 
@@ -1026,7 +1021,7 @@ class MregClient:
             max_size = self._page_size or MAX_PAGE_SIZE
             # Clamp page size to limit, but keep it within the allowed range
             # and respect the (max) page size set on the client.
-            params[Param.PAGE_SIZE] = min(max(limit, MIN_PAGE_SIZE), max_size)
+            params[PAGE_SIZE] = min(max(limit, MIN_PAGE_SIZE), max_size)
         response = self.get(path, params=params)
 
         # Non-paginated endpoints return everything at once (no `count` field).
@@ -1113,7 +1108,7 @@ class MregClient:
 
         # Set a default page size of 1 to minimize data transfer.
         # Callers may override this (but they really shouldn't!)
-        params.setdefault("page_size", 1)
+        params.setdefault(PAGE_SIZE, 1)
 
         response = self.get(path, params=params)
 
@@ -1136,7 +1131,7 @@ class MregClient:
         Returns:
             The count of items.
         """
-        response = self.get(path, params={"page_size": 1})
+        response = self.get(path, params={PAGE_SIZE: 1})
         try:
             resp = validate_paginated_response(response)
             return resp.count
