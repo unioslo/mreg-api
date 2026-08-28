@@ -35,6 +35,9 @@ class EventKind(StrEnum):
     NOTICE = "notice"
     """General informational event."""
 
+    TRUNCATION = "truncation"
+    """A query matched more objects than the limit allowed; the extra results were dropped."""
+
 
 class EventLevel(IntEnum):
     """Severity level of an event.

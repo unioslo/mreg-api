@@ -10,6 +10,7 @@ from httpx import Request
 from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
+from typing_extensions import deprecated
 
 from mreg_api.types import HTTPMethod
 
@@ -219,6 +220,7 @@ class MregValidationError(MregApiBaseError):
         return cls(err_msg, e)
 
 
+@deprecated("Unused. Will be removed in 1.0")
 class TooManyResults(MregApiBaseError):
     """API returned too many results."""
 

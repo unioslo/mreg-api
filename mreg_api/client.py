@@ -13,6 +13,7 @@ from contextvars import ContextVar
 from enum import StrEnum
 from typing import Any
 from typing import Concatenate
+from typing import Final
 from typing import Literal
 from typing import ParamSpec
 from typing import TypeVar
@@ -34,7 +35,10 @@ from mreg_api.cache import CacheConfig
 from mreg_api.cache import CacheInfo
 from mreg_api.cache import MregApiCache
 from mreg_api.endpoints import Endpoint
+from mreg_api.events import Event
+from mreg_api.events import EventKind
 from mreg_api.events import EventLog
+from mreg_api.events import ObjectRef
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
 from mreg_api.exceptions import DeleteError
@@ -45,7 +49,6 @@ from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
-from mreg_api.exceptions import TooManyResults
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.history import RequestHistory
 from mreg_api.managers import AtomManager
@@ -97,6 +100,10 @@ T = TypeVar("T")
 P = ParamSpec("P")
 
 JsonMappingValidator = TypeAdapter(JsonMapping)
+
+MAX_PAGE_SIZE: Final[int] = 1000
+MIN_PAGE_SIZE: Final[int] = 1
+PAGE_SIZE: Final[str] = "page_size"
 
 
 class Header(StrEnum):
@@ -697,7 +704,7 @@ class MregClient:
         try:
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
-                params={"page_size": 1},
+                params={PAGE_SIZE: 1},
                 timeout=self.timeout,
             )
             ret.raise_for_status()
@@ -739,7 +746,7 @@ class MregClient:
             # Only passes default params to GET requests while NOT paginating
             if method == "GET":
                 if self._page_size:
-                    _ = params.setdefault("page_size", self._page_size)
+                    _ = params.setdefault(PAGE_SIZE, self._page_size)
 
         url = urljoin(self.url, path)
 
@@ -993,21 +1000,35 @@ class MregClient:
     ) -> list[Json]:
         """Make a get request that produces a list.
 
-        Will iterate over paginated results and return result as list. If the number of hits is
-        greater than limit, the function will raise an exception.
+        Iterates over paginated results and returns them as a list. If the total number
+        of hits exceeds `limit`, the results are truncated to `limit` and a
+        `EventKind.TRUNCATION` event is recorded on `self.events`.
 
         Args:
             path: The path to the API endpoint.
             params: The parameters to pass to the API endpoint.
             ok404: Whether to allow 404 responses.
-            limit: The maximum number of hits to allow. If the number of hits is greater
-                than this, the function will raise an exception. Set to None to disable
-                this check.
+            limit: The maximum number of hits to return. Results beyond this are
+                dropped (and a truncation event recorded). Set to None for no limit.
 
         Returns:
             A list of dictionaries.
         """
-        return self.get_list_generic(path, params, ok404, limit, expect_one_result=False)
+        if not params:
+            params = {}
+        if limit:
+            limit = abs(limit)  # ensure non-negative
+            max_size = self._page_size or MAX_PAGE_SIZE
+            # Clamp page size to limit, but keep it within the allowed range
+            # and respect the (max) page size set on the client.
+            params[PAGE_SIZE] = min(max(limit, MIN_PAGE_SIZE), max_size)
+        response = self.get(path, params=params)
+
+        # Non-paginated endpoints return everything at once (no `count` field).
+        # FIXME: This heuristic is _very_ brittle. Can we make it more robust?
+        if "count" not in response.text:
+            return self._get_list_non_paginated(response, path, limit)
+        return self._get_list_paginated(response, path, ok404, limit)
 
     def get_list_in(
         self,
@@ -1069,11 +1090,14 @@ class MregClient:
         Returns:
             A single dictionary, or None if no result was found and ok404 is True.
         """
-        ret = self.get_list_generic(path, params, ok404, expect_one_result=True)
+        ret = self.get_list(path, params=params, ok404=ok404)
         if not ret:
             return None
+        if len(ret) > 1 and any(ret[0] != x for x in ret):
+            raise MultipleEntitiesFound(f"Expected a unique result, got {len(ret)} distinct results.")
+
         try:
-            return JsonMappingValidator.validate_python(ret)
+            return JsonMappingValidator.validate_python(ret[0])
         except ValidationError as e:
             raise MregValidationError.from_pydantic(e, "JSON mapping") from e
 
@@ -1084,7 +1108,7 @@ class MregClient:
 
         # Set a default page size of 1 to minimize data transfer.
         # Callers may override this (but they really shouldn't!)
-        params.setdefault("page_size", 1)
+        params.setdefault(PAGE_SIZE, 1)
 
         response = self.get(path, params=params)
 
@@ -1107,7 +1131,7 @@ class MregClient:
         Returns:
             The count of items.
         """
-        response = self.get(path, params={"page_size": 1})
+        response = self.get(path, params={PAGE_SIZE: 1})
         try:
             resp = validate_paginated_response(response)
             return resp.count
@@ -1125,83 +1149,54 @@ class MregClient:
             )
             return len(content)
 
-    @overload
-    def get_list_generic(
-        self,
-        path: str,
-        params: QueryParams | None = ...,
-        ok404: bool = ...,
-        limit: int | None = ...,
-        expect_one_result: Literal[False] = False,
-    ) -> list[Json]: ...
+    def _get_list_non_paginated(self, response: httpx.Response, path: str, limit: int | None) -> list[Json]:
+        """Collect results from a non-paginated endpoint (returns everything at once)."""
+        results = validate_list_response(response)
+        return self._truncate(results, len(results), path, limit)
 
-    @overload
-    def get_list_generic(
-        self,
-        path: str,
-        params: QueryParams | None = ...,
-        ok404: bool = ...,
-        limit: int | None = ...,
-        expect_one_result: Literal[True] = True,
-    ) -> Json: ...
+    def _get_list_paginated(
+        self, response: httpx.Response, path: str, ok404: bool, limit: int | None
+    ) -> list[Json]:
+        """Collect results from a paginated endpoint, following `next` links.
 
-    def get_list_generic(
-        self,
-        path: str,
-        params: QueryParams | None = None,
-        ok404: bool = False,
-        limit: int | None = None,
-        expect_one_result: bool | None = False,
-    ) -> Json | list[Json]:
-        """Make a get request that produces a list.
+        Stops fetching pages once `limit` results have been collected, so we don't
+        over-fetch. Determines the total number of hits via the initial response's
+        `count` field, so we can record a truncation event if necessary.
+        """
+        resp = validate_paginated_response(response)
+        total = resp.count
+        ret: list[Json] = resp.results
+        while resp.next and (not limit or len(ret) < limit):
+            page = self.get(resp.next, ok404=ok404)
+            if page is None:
+                break
+            resp = validate_paginated_response(page)
+            ret.extend(resp.results)
+        return self._truncate(ret, total, path, limit)
 
-        Will iterate over paginated results and return result as list. If the number of hits is
-        greater than limit, the function will raise an exception.
+    def _truncate(self, results: list[Json], total: int, path: str, limit: int | None) -> list[Json]:
+        """Truncate `results` to `limit`, recording a TRUNCATION event if `total` exceeds it.
+
+        `total` is the true match count (`resp.count` for paginated endpoints,
+        `len(results)` for non-paginated ones), so the event message reports the
+        real number of hits even when pagination stopped early.
 
         Args:
-            path: The path to the API endpoint.
-            params: The parameters to pass to the API endpoint.
-            ok404: Whether to allow 404 responses.
-            limit: The maximum number of hits to allow. If the number of hits is greater
-                than this, the function will raise an exception. Set to None to disable
-                this check.
-            expect_one_result: If True, expect exactly one result and return it as a list.
-
-        Raises:
-            MultipleEntitiesFound: If expect_one_result is True and the number of results
-                is greater than one with distinct results.
-            TooManyResults: If the number of hits is greater than limit.
-
-        Returns:
-            A list of dictionaries or a dictionary if expect_one_result is True.
+            results: The list of results to potentially truncate.
+            total: The total number of hits (before truncation).
+            path: The API endpoint path.
+            limit: The maximum number of results to return.
         """
-        response = self.get(path, params=params)
-
-        # Non-paginated results, return them directly
-        if "count" not in response.text:
-            return validate_list_response(response)
-
-        resp = validate_paginated_response(response)
-
-        if limit and resp.count > abs(limit):
-            # TODO: append to error message that limit can be increased/disabled
-            raise TooManyResults(f"Too many hits ({resp.count}), please refine your search criteria.")
-
-        # Iterate over all pages and collect the results
-        ret: list[Json] = resp.results
-        while resp.next:
-            response = self.get(resp.next, ok404=ok404)
-            if response is None:
-                break
-            resp = validate_paginated_response(response)
-            ret.extend(resp.results)
-        if expect_one_result:
-            if len(ret) == 0:
-                return {}
-            if len(ret) > 1 and any(ret[0] != x for x in ret):
-                raise MultipleEntitiesFound(f"Expected a unique result, got {len(ret)} distinct results.")
-            return ret[0]
-        return ret
+        if not limit or total <= limit:
+            return results
+        self.events.record(
+            Event(
+                kind=EventKind.TRUNCATION,
+                message=f"Too many hits ({total}), limit is {limit}.",
+                subject=ObjectRef(type="GET", value=path, field="url"),
+            )
+        )
+        return results[:limit]
 
     def get_typed(
         self,

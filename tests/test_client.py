@@ -16,6 +16,7 @@ from mreg_api.client import MregClient
 from mreg_api.client import check_response
 from mreg_api.client import strip_none
 from mreg_api.endpoints import Endpoint
+from mreg_api.events import EventKind
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import MregValidationError
@@ -179,7 +180,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
         ]
     )
     hosts1 = client.host.list()
-    assert len(client.get_client_history()) == 1
+    assert len(client.history) == 1
 
     # Perform same fetches within the context manager - should bypass cache
     with client.caching(enable=False):
@@ -204,7 +205,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
             ]
         )
         hosts2 = client.host.list()
-        assert len(client.get_client_history()) == 2
+        assert len(client.history) == 2
 
         assert len(hosts1) == 1
         assert len(hosts2) == 2
@@ -214,7 +215,7 @@ def test_client_caching_contextmanager_disabled(httpserver: HTTPServer) -> None:
     assert info_pre is not None
 
     hosts3 = client.host.list()
-    assert len(client.get_client_history()) == 2  # History unchanged
+    assert len(client.history) == 2  # History unchanged
     assert len(hosts3) == len(hosts1) == 1
 
     # Compare cache info
@@ -243,7 +244,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
             ]
         )
         hosts1 = client.host.list()
-        assert len(client.get_client_history()) == 1
+        assert len(client.history) == 1
 
         httpserver.expect_oneshot_request("/api/v1/hosts/", method="GET").respond_with_json(
             [
@@ -267,7 +268,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
         )
         # Second fetch should hit the cache - not the new handler
         hosts2 = client.host.list()
-        assert len(client.get_client_history()) == 1
+        assert len(client.history) == 1
         assert len(hosts1) == len(hosts2) == 1
 
     # Fetching outside the context manager should hit the server again
@@ -292,7 +293,7 @@ def test_client_caching_contextmanager_enabled(httpserver: HTTPServer) -> None:
         ]
     )
     hosts3 = client.host.list()
-    assert len(client.get_client_history()) == 2
+    assert len(client.history) == 2
     assert len(hosts3) == 2
 
 
@@ -498,6 +499,98 @@ def test_client_get_list_non_paginated_invalid_json(httpserver: HTTPServer, clie
         client.get_list("/test_client_get_list_non_paginated_invalid_json")
     exc_msg = exc_info.exconly().replace(httpserver.url_for("/"), "<server_url>/")
     assert "Failed to validate JSON list" in exc_msg
+
+
+def test_client_get_list_limit_paginated_truncates(httpserver: HTTPServer, client: MregClient) -> None:
+    """Paginated results with count > limit are truncated and a TRUNCATION event recorded."""
+    httpserver.expect_oneshot_request("/test_limit_paginated_truncates").respond_with_json(
+        {
+            "results": [{"a": 1}, {"b": 2}, {"c": 3}],
+            "count": 3,
+            "next": None,
+            "previous": None,
+        }
+    )
+    resp = client.get_list("/test_limit_paginated_truncates", limit=2)
+    assert resp == snapshot([{"a": 1}, {"b": 2}])
+    events = client.events.get(kind=EventKind.TRUNCATION)
+    assert len(events) == 1
+    # Message reports the true count (3), not the truncated length.
+    assert events[0].message == snapshot("Too many hits (3), limit is 2.")
+
+
+def test_client_get_list_limit_paginated_no_truncation(httpserver: HTTPServer, client: MregClient) -> None:
+    """Paginated results with count <= limit are returned in full, no event recorded."""
+    httpserver.expect_oneshot_request("/test_limit_paginated_no_truncation").respond_with_json(
+        {
+            "results": [{"a": 1}, {"b": 2}],
+            "count": 2,
+            "next": None,
+            "previous": None,
+        }
+    )
+    resp = client.get_list("/test_limit_paginated_no_truncation", limit=5)
+    assert resp == snapshot([{"a": 1}, {"b": 2}])
+    assert client.events.get(kind=EventKind.TRUNCATION) == []
+
+
+def test_client_get_list_limit_non_paginated_truncates(httpserver: HTTPServer, client: MregClient) -> None:
+    """Non-paginated results longer than limit are truncated; event reports len(results)."""
+    httpserver.expect_oneshot_request("/test_limit_non_paginated_truncates").respond_with_json(
+        ["a", "b", "c"]
+    )
+    resp = client.get_list("/test_limit_non_paginated_truncates", limit=2)
+    assert resp == snapshot(["a", "b"])
+    events = client.events.get(kind=EventKind.TRUNCATION)
+    assert len(events) == 1
+    assert events[0].message == snapshot("Too many hits (3), limit is 2.")
+
+
+def test_client_get_list_limit_clamps_page_size(httpserver: HTTPServer, client: MregClient) -> None:
+    """`limit` clamps the outgoing `page_size` query parameter."""
+    httpserver.expect_oneshot_request(
+        "/test_limit_clamps_page_size", query_string="page_size=5"
+    ).respond_with_json({"results": [{"a": 1}], "count": 1, "next": None, "previous": None})
+    resp = client.get_list("/test_limit_clamps_page_size", limit=5)
+    assert resp == snapshot([{"a": 1}])
+
+
+def test_client_get_list_limit_page_size_capped_by_client(httpserver: HTTPServer) -> None:
+    """`page_size` is capped by the client's configured page size, even for a larger limit."""
+    client = MregClient(url=httpserver.url_for(""), domain="example.com", page_size=3)
+    httpserver.expect_oneshot_request(
+        "/test_limit_page_size_capped", query_string="page_size=3"
+    ).respond_with_json({"results": [{"a": 1}], "count": 1, "next": None, "previous": None})
+    resp = client.get_list("/test_limit_page_size_capped", limit=100)
+    assert resp == snapshot([{"a": 1}])
+
+
+def test_client_get_list_limit_no_overfetch(httpserver: HTTPServer, client: MregClient) -> None:
+    """Pagination stops once `limit` is reached; later pages are not fetched.
+
+    Page 2 is deliberately not registered — fetching it would raise and fail the test.
+    """
+    httpserver.expect_oneshot_request("/test_limit_no_overfetch").respond_with_json(
+        {
+            "results": [{"a": 1}, {"b": 2}],
+            "count": 3,
+            "next": "/test_limit_no_overfetch?page=2",
+            "previous": None,
+        }
+    )
+    resp = client.get_list("/test_limit_no_overfetch", limit=1)
+    assert resp == snapshot([{"a": 1}])  # "b" is truncated client-side
+    assert len(client.events.get(kind=EventKind.TRUNCATION)) == 1
+
+
+def test_client_get_list_no_limit_no_clamp_no_events(httpserver: HTTPServer, client: MregClient) -> None:
+    """With no limit, no `page_size` is sent and no truncation happens."""
+    httpserver.expect_oneshot_request("/test_no_limit", query_string="").respond_with_json(
+        {"results": [{"a": 1}, {"b": 2}], "count": 2, "next": None, "previous": None}
+    )
+    resp = client.get_list("/test_no_limit")
+    assert resp == snapshot([{"a": 1}, {"b": 2}])
+    assert client.events.get(kind=EventKind.TRUNCATION) == []
 
 
 def test_client_get_list_unique_paginated(httpserver: HTTPServer, client: MregClient) -> None:
