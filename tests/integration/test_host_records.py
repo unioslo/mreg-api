@@ -771,3 +771,154 @@ def test_location_delete_by_object(
     assert loc is not None
     integration_client.location.delete(loc)
     assert integration_client.location.get_by_host(h, required=False) is None
+
+
+# ── Update tests ──────────────────────────────────────────────────────────────
+
+
+def test_hinfo_update(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    zone: Zone,
+) -> None:
+    name = f"{test_prefix}hinfoupd.{zone.name}"
+    h = integration_client.host.create(name=name)
+    assert h is not None
+    resource_tracker.add(lambda: integration_client.host.delete(h))
+    integration_client.hinfo.create(host=h, cpu="x86_64", os="Linux")
+    hi = integration_client.hinfo.get_by_host(h)
+    assert hi is not None
+    resource_tracker.add(lambda: integration_client.hinfo.delete(hi))
+    integration_client.hinfo.update(hi, cpu="ARM", os="FreeBSD")
+    refreshed = integration_client.hinfo.refresh(hi)
+    assert refreshed.cpu == "ARM"
+    assert refreshed.os == "FreeBSD"
+
+
+def test_txt_update(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    zone: Zone,
+) -> None:
+    name = f"{test_prefix}txtupd.{zone.name}"
+    h = integration_client.host.create(name=name)
+    assert h is not None
+    resource_tracker.add(lambda: integration_client.host.delete(h))
+    integration_client.txt.create(host=h, txt="original txt")
+    txts = integration_client.txt.list(host=h.id)
+    txt = next(t for t in txts if t.txt == "original txt")
+    resource_tracker.add(lambda: integration_client.txt.delete(txt))
+    integration_client.txt.update(txt, txt="updated txt")
+    refreshed = integration_client.txt.refresh(txt)
+    assert refreshed.txt == "updated txt"
+
+
+def test_mx_update(
+    integration_client: MregClient,
+    host: Host,
+    mx_host: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    integration_client.mx.create(host=host, mx=mx_host, priority=60)
+    mx = integration_client.mx.get_unique(host, mx_host, 60)
+    assert mx is not None
+    resource_tracker.add(lambda: integration_client.mx.delete(mx))
+    integration_client.mx.update(mx, priority=65)
+    refreshed = integration_client.mx.refresh(mx)
+    assert refreshed.priority == 65
+
+
+def test_naptr_update(
+    integration_client: MregClient,
+    host: Host,
+    resource_tracker: ResourceTracker,
+) -> None:
+    integration_client.naptr.create(host=host, preference=60, order=60, replacement=".")
+    naptr = integration_client.naptr.get_unique(host, preference=60, order=60, replacement=".")
+    assert naptr is not None
+    resource_tracker.add(lambda: integration_client.naptr.delete(naptr))
+    integration_client.naptr.update(naptr, preference=65)
+    refreshed = integration_client.naptr.refresh(naptr)
+    assert refreshed.preference == 65
+
+
+def test_srv_update(
+    integration_client: MregClient,
+    host: Host,
+    zone: Zone,
+    resource_tracker: ResourceTracker,
+) -> None:
+    integration_client.srv.create(
+        host=host,
+        name=f"_ftp._tcp.{zone.name}",
+        priority=10,
+        weight=10,
+        port=21,
+    )
+    srv = integration_client.srv.get_unique(
+        name=f"_ftp._tcp.{zone.name}",
+        priority=10,
+        weight=10,
+        port=21,
+        host=host,
+    )
+    assert srv is not None
+    resource_tracker.add(lambda: integration_client.srv.delete(srv))
+    integration_client.srv.update(srv, port=2121)
+    refreshed = integration_client.srv.refresh(srv)
+    assert refreshed.port == 2121
+
+
+def test_ptr_update(
+    integration_client: MregClient,
+    ptr_host: Host,
+    resource_tracker: ResourceTracker,
+) -> None:
+    integration_client.ptroverride.create(host=ptr_host, ipaddress="10.0.1.55")
+    ptrs = integration_client.ptroverride.list(host=ptr_host.id)
+    ptr = next(p for p in ptrs if str(p.ipaddress) == "10.0.1.55")
+    resource_tracker.add(lambda: integration_client.ptroverride.delete(ptr))
+    integration_client.ptroverride.update(ptr, ipaddress="10.0.1.56")
+    refreshed = integration_client.ptroverride.refresh(ptr)
+    assert str(refreshed.ipaddress) == "10.0.1.56"
+
+
+def test_sshfp_update(
+    integration_client: MregClient,
+    host: Host,
+    resource_tracker: ResourceTracker,
+) -> None:
+    integration_client.sshfp.create(
+        host=host,
+        algorithm=1,
+        hash_type=1,
+        fingerprint="aabbccddeeff0055",
+    )
+    sshfps = integration_client.sshfp.list(host=host.id)
+    sshfp = next(s for s in sshfps if s.fingerprint == "aabbccddeeff0055")
+    resource_tracker.add(lambda: integration_client.sshfp.delete(sshfp))
+    integration_client.sshfp.update(sshfp, fingerprint="112233445566aabb")
+    refreshed = integration_client.sshfp.refresh(sshfp)
+    assert refreshed.fingerprint == "112233445566aabb"
+
+
+def test_location_update(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    zone: Zone,
+) -> None:
+    name = f"{test_prefix}locupd.{zone.name}"
+    h = integration_client.host.create(name=name)
+    assert h is not None
+    resource_tracker.add(lambda: integration_client.host.delete(h))
+    integration_client.location.create(host=h, loc=_LOC_VALUE)
+    loc = integration_client.location.get_by_host(h)
+    assert loc is not None
+    resource_tracker.add(lambda: integration_client.location.delete(loc))
+    new_loc = "59 57 00.0 N 10 42 00.0 E 200m"
+    integration_client.location.update(loc, loc=new_loc)
+    refreshed = integration_client.location.refresh(loc)
+    assert refreshed.loc == new_loc

@@ -225,3 +225,9 @@ def test_assert_absent_existing(
 ) -> None:
     with pytest.raises(EntityAlreadyExists):
         integration_client.host.assert_absent(str(host.name))
+
+
+def test_update(integration_client: MregClient, host: Host) -> None:
+    integration_client.host.update(host, comment="updated comment")
+    refreshed = integration_client.host.refresh(host)
+    assert refreshed.comment == "updated comment"

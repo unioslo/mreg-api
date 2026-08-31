@@ -173,3 +173,9 @@ def test_count(
     result = integration_client.cname.count()
     assert isinstance(result, int)
     assert result >= 0
+
+
+def test_update(integration_client: MregClient, cname: CNAME) -> None:
+    integration_client.cname.update(cname, ttl=300)
+    refreshed = integration_client.cname.refresh(cname)
+    assert refreshed.ttl == 300

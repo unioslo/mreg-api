@@ -355,8 +355,22 @@ def test_policy_add_remove_attribute(
     assert test_attr is not None
     resource_tracker.add(lambda: integration_client.networkpolicyattribute.delete(test_attr))
 
-    updated = integration_client.networkpolicy.add_attribute(pol, test_attr, True)
+    integration_client.networkpolicy.add_attribute(pol, test_attr, True)
+    updated = integration_client.networkpolicy.refresh(pol)
     assert any(a.name == test_attr.name for a in updated.attributes)
 
-    removed = integration_client.networkpolicy.remove_attribute(updated, test_attr)
+    integration_client.networkpolicy.remove_attribute(updated, test_attr)
+    removed = integration_client.networkpolicy.refresh(updated)
     assert not any(a.name == test_attr.name for a in removed.attributes)
+
+
+def test_attr_update(integration_client: MregClient, attr: NetworkPolicyAttribute) -> None:
+    integration_client.networkpolicyattribute.update(attr, description="updated attr")
+    refreshed = integration_client.networkpolicyattribute.refresh(attr)
+    assert refreshed.description == "updated attr"
+
+
+def test_policy_update(integration_client: MregClient, policy: NetworkPolicy) -> None:
+    integration_client.networkpolicy.update(policy, description="updated policy")
+    refreshed = integration_client.networkpolicy.refresh(policy)
+    assert refreshed.description == "updated policy"

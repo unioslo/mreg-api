@@ -425,13 +425,18 @@ class ResourceManager(Generic[T], ABC):
         params: QueryParams = {field: value}
         return self._client.get_typed(self.endpoint, list[self.model], params=params)
 
-    # NOTE: add toggleable _refetch behavior? Return None if refetching is disabled?
-    def _refetch(self, obj: T) -> T:
-        """Fetch a fresh copy of `obj` from the server.
+    def refresh(self, obj: T) -> T:
+        """Fetch a fresh copy of the resource from the server.
 
-        Prefers the immutable `id` when the model has one, so a preceding rename (which
-        leaves the path parameter field on `obj` stale) does not break the lookup. Models
-        without an `id` field (HInfo, Location — keyed by `host`) fall back to the path parameter.
+        Args:
+            obj: The resource object to refresh.
+
+        Returns:
+            A fresh copy of the resource object.
+
+        Prefers the immutable `id` when the model has one, so refreshing a renamed
+        resource does not break the lookup. Models without an `id` field
+        (HInfo, Location — keyed by `host`) fall back to the path parameter.
         """
         if (obj_id := getattr(obj, "id", None)) is not None:
             fresh = self._fetch_by_field("id", obj_id)
@@ -569,13 +574,19 @@ class WriteResourceManager(ResourceManager[T], ABC):
             return self._client.get_typed(response.headers["Location"], self.model)
         raise PostError(f"Failed to fetch {self.model_name} after creation.")
 
-    def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> T:
-        """PATCH `obj` with `data` and return the refetched object.
+    def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> None:
+        """PATCH `obj` with `data`. Does not update the local object passed to this method.
+
+        Call `refresh()` to refresh an object after patching it.
+
+        Args:
+            obj (T): The object to patch.
+            data (dict[str, Any]): The data to PATCH to the resource endpoint.
+            params (QueryParams | None): Optional query parameters to include in the PATCH request.
 
         Raises `PatchError` (from the client) if the server rejects the patch.
         """
         _ = self._client.patch(self._endpoint_with_path_param(obj), json=data, params=params)
-        return self._refetch(obj)
 
     # TODO: rename to _delete so subclass implementations of `delete` can use
     # appropriately named parameters + add new parameters if required. This public
@@ -693,17 +704,17 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         _ = self._client.delete(self._endpoint_with_path_param(obj))
 
     # TODO: add str | int support for obj?
-    def rename(self, obj: T, new_name: str) -> T:
+    def rename(self, obj: T, new_name: str) -> None:
         """Rename the resource.
+
+        Does not refresh the object locally.
+        Call `refresh()` with the object to fetch the updated resource.
 
         Args:
             obj: The resource to rename.
             new_name: The new name to set.
-
-        Returns:
-            The patched resource.
         """
-        return self._patch(obj, {self.name_field: self._normalize_name(new_name)})
+        self._patch(obj, {self.name_field: self._normalize_name(new_name)})
 
     # TODO: add list_by_name ? Didn't exist in prior version
 
@@ -955,7 +966,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         comment: str | None | UNSET = UNSET,
         contacts: list[str] | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
-    ) -> Host:
+    ) -> None:
         """Update a host's mutable fields.
 
         Args:
@@ -975,7 +986,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             data["contacts"] = contacts
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._patch(host, data)
+        self._patch(host, data)
 
     def add_contacts(self, host: int | str | Host, contacts: list[str]) -> HostContactModification:
         """Add contacts to a host (atomic; POST to /hosts/{name}/contacts/).
@@ -1101,7 +1112,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         hostgroup: int | str | HostGroup,
         *,
         description: str | UNSET = UNSET,
-    ) -> HostGroup:
+    ) -> None:
         """Update a host group's mutable fields.
 
         Args:
@@ -1112,9 +1123,9 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
-        return self._patch(group, data)
+        self._patch(group, data)
 
-    def set_description(self, hostgroup: int | str | HostGroup, description: str) -> HostGroup:
+    def set_description(self, hostgroup: int | str | HostGroup, description: str) -> None:
         """Set the description for the host group.
 
         Args:
@@ -1122,7 +1133,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             description (str): New description to set.
         """
         hostgroup = self._resolve(hostgroup)
-        return self.update(hostgroup, description=description)
+        self.update(hostgroup, description=description)
 
     def _resolve_hostgroup_name(self, hostgroup: str | HostGroup) -> str:
         """Resolve a host group reference (instance or name) to a string name."""
@@ -1135,7 +1146,7 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
     #       to use `resolve_hostgroup` and `resolve_host` respectively, or
     #       some other clever solution. Very low priority to fix that right now.
 
-    def add_group(self, hostgroup: int | str | HostGroup, subgroup: str | HostGroup) -> HostGroup:
+    def add_group(self, hostgroup: int | str | HostGroup, subgroup: str | HostGroup) -> None:
         """Add a group to a host group.
 
         Args:
@@ -1149,9 +1160,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             Endpoint.HostGroupsAddHostGroups.with_params(hostgroup.name),
             json={"name": subgroup_name},
         )
-        return self._refetch(hostgroup)
 
-    def remove_group(self, hostgroup: int | str | HostGroup, subgroup: str | HostGroup) -> HostGroup:
+    def remove_group(self, hostgroup: int | str | HostGroup, subgroup: str | HostGroup) -> None:
         """Remove a group from a host group.
 
         Args:
@@ -1164,9 +1174,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         self._client.delete(
             Endpoint.HostGroupsRemoveHostGroups.with_params(hostgroup.name, subgroup_name),
         )
-        return self._refetch(hostgroup)
 
-    def add_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> HostGroup:
+    def add_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> None:
         """Add a host to a host group.
 
         Args:
@@ -1180,9 +1189,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             Endpoint.HostGroupsAddHosts.with_params(hostgroup.name),
             json={"name": hostname},
         )
-        return self._refetch(hostgroup)
 
-    def remove_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> HostGroup:
+    def remove_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> None:
         """Remove a host from a host group.
 
         Args:
@@ -1195,9 +1203,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         self._client.delete(
             Endpoint.HostGroupsRemoveHosts.with_params(hostgroup.name, hostname),
         )
-        return self._refetch(hostgroup)
 
-    def add_owner(self, hostgroup: int | str | HostGroup, name: str) -> HostGroup:
+    def add_owner(self, hostgroup: int | str | HostGroup, name: str) -> None:
         """Add an owner to a host group.
 
         Args:
@@ -1210,9 +1217,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             Endpoint.HostGroupsAddOwner.with_params(hostgroup.name),
             json={"name": name},
         )
-        return self._refetch(hostgroup)
 
-    def remove_owner(self, hostgroup: int | str | HostGroup, name: str) -> HostGroup:
+    def remove_owner(self, hostgroup: int | str | HostGroup, name: str) -> None:
         """Remove an owner from a host group.
 
         Args:
@@ -1224,7 +1230,6 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         self._client.delete(
             Endpoint.HostGroupsRemoveOwner.with_params(hostgroup.name, name),
         )
-        return self._refetch(hostgroup)
 
     # RENAMED: get_all_parents -> list_parents
     def list_parents(self, hostgroup: int | str | HostGroup) -> list[HostGroup]:
@@ -1301,7 +1306,7 @@ class LabelManager(NamedResourceManager[Label]):
         label: int | str | Label,
         *,
         description: str | UNSET = UNSET,
-    ) -> Label:
+    ) -> None:
         """Update a label's mutable fields.
 
         Args:
@@ -1312,9 +1317,9 @@ class LabelManager(NamedResourceManager[Label]):
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
-        return self._patch(label, data)
+        self._patch(label, data)
 
-    def set_description(self, label: int | str | Label, description: str) -> Label:
+    def set_description(self, label: int | str | Label, description: str) -> None:
         """Set the description for the label.
 
         Args:
@@ -1322,7 +1327,7 @@ class LabelManager(NamedResourceManager[Label]):
             description (str): New description to set.
         """
         label = self._resolve(label)
-        return self.update(label, description=description)
+        self.update(label, description=description)
 
 
 class HostPolicyManagerNamespace:
@@ -1396,7 +1401,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         role: int | str | Role,
         *,
         description: str | UNSET = UNSET,
-    ) -> Role:
+    ) -> None:
         """Update a role's mutable fields.
 
         Args:
@@ -1407,9 +1412,9 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
-        return self._patch(role, data)
+        self._patch(role, data)
 
-    def set_description(self, role: int | str | Role, description: str) -> Role:
+    def set_description(self, role: int | str | Role, description: str) -> None:
         """Set the description for the role.
 
         Args:
@@ -1417,7 +1422,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             description (str): New description to set.
         """
         role = self._resolve(role)
-        return self.update(role, description=description)
+        self.update(role, description=description)
 
     @override
     def delete(self, obj: int | str | Role) -> None:
@@ -1553,7 +1558,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         labels = LabelManager(self._client)
         return [labels.get(lid, required=True) for lid in role.labels]
 
-    def add_label(self, role: int | str | Role, label: int | str | Label) -> Role:
+    def add_label(self, role: int | str | Role, label: int | str | Label) -> None:
         """Add a label to the role.
 
         Args:
@@ -1568,9 +1573,9 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         label_id = self._resolve_label_id(label)
         if label_id in role.labels:
             raise EntityAlreadyExists(f"Role {role.name!r} already has label {label!r}")
-        return self._patch(role, {"labels": [*role.labels, label_id]})
+        self._patch(role, {"labels": [*role.labels, label_id]})
 
-    def remove_label(self, role: int | str | Role, label: int | str | Label) -> Role:
+    def remove_label(self, role: int | str | Role, label: int | str | Label) -> None:
         """Remove a label from the role.
 
         Args:
@@ -1585,7 +1590,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         label_id = self._resolve_label_id(label)
         if label_id not in role.labels:
             raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label!r}")
-        return self._patch(role, {"labels": [lid for lid in role.labels if lid != label_id]})
+        self._patch(role, {"labels": [lid for lid in role.labels if lid != label_id]})
 
     def list_by_host(self, host: int | str | Host) -> list[Role]:
         """List all roles that include the given host.
@@ -1639,7 +1644,7 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         atom: int | str | Atom,
         *,
         description: str | UNSET = UNSET,
-    ) -> Atom:
+    ) -> None:
         """Update an atom's mutable fields.
 
         Args:
@@ -1650,9 +1655,9 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
-        return self._patch(atom, data)
+        self._patch(atom, data)
 
-    def set_description(self, atom: int | str | Atom, description: str) -> Atom:
+    def set_description(self, atom: int | str | Atom, description: str) -> None:
         """Set the description for the atom.
 
         Args:
@@ -1660,7 +1665,7 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
             description (str): New description to set.
         """
         atom = self._resolve(atom)
-        return self.update(atom, description=description)
+        self.update(atom, description=description)
 
     @override
     def delete(self, obj: int | str | Atom) -> None:
@@ -1727,7 +1732,7 @@ class PermissionManager(WriteResourceManager[Permission]):
         range: str | UNSET = UNSET,  # noqa: A002
         regex: str | UNSET = UNSET,
         labels: list[int] | UNSET = UNSET,
-    ) -> Permission:
+    ) -> None:
         """Update a permission's mutable fields.
 
         Args:
@@ -1747,9 +1752,9 @@ class PermissionManager(WriteResourceManager[Permission]):
             data["regex"] = regex
         if labels is not UNSET:
             data["labels"] = labels
-        return self._patch(permission, data)
+        self._patch(permission, data)
 
-    def add_label(self, permission: int | Permission, label: int | str | Label) -> Permission:
+    def add_label(self, permission: int | Permission, label: int | str | Label) -> None:
         """Add a label to the permission.
 
         Args:
@@ -1764,9 +1769,9 @@ class PermissionManager(WriteResourceManager[Permission]):
         label_id = self._resolve_label_id(label)
         if label_id in permission.labels:
             raise EntityAlreadyExists(f"Permission already has label {label!r}.")
-        return self.update(permission, labels=[*permission.labels, label_id])
+        self.update(permission, labels=[*permission.labels, label_id])
 
-    def remove_label(self, permission: int | Permission, label: int | str | Label) -> Permission:
+    def remove_label(self, permission: int | Permission, label: int | str | Label) -> None:
         """Remove a label from the permission.
 
         Args:
@@ -1780,7 +1785,7 @@ class PermissionManager(WriteResourceManager[Permission]):
         label_id = self._resolve_label_id(label)
         if label_id not in permission.labels:
             raise EntityNotFound(f"Permission does not have label {label!r}.")
-        return self.update(permission, labels=[lid for lid in permission.labels if lid != label_id])
+        self.update(permission, labels=[lid for lid in permission.labels if lid != label_id])
 
     @overload
     def get_by_triplet(
@@ -1873,7 +1878,7 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         attr: int | str | NetworkPolicyAttribute,
         *,
         description: str | UNSET = UNSET,
-    ) -> NetworkPolicyAttribute:
+    ) -> None:
         """Update a network policy attribute's mutable fields.
 
         Args:
@@ -1884,11 +1889,9 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
         data: dict[str, Any] = {}
         if description is not UNSET:
             data["description"] = description
-        return self._patch(attr, data)
+        self._patch(attr, data)
 
-    def set_description(
-        self, attr: int | str | NetworkPolicyAttribute, description: str
-    ) -> NetworkPolicyAttribute:
+    def set_description(self, attr: int | str | NetworkPolicyAttribute, description: str) -> None:
         """Set the description for the attribute.
 
         Args:
@@ -1896,7 +1899,7 @@ class NetworkPolicyAttributeManager(NamedResourceManager[NetworkPolicyAttribute]
             description (str): New description to set.
         """
         attr = self._resolve(attr)
-        return self.update(attr, description=description)
+        self.update(attr, description=description)
 
     @deprecated('Use "list_policies()" instead.')
     def get_policies(self, attr: int | str | NetworkPolicyAttribute) -> list[NetworkPolicy]:
@@ -1972,7 +1975,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         *,
         description: str | UNSET = UNSET,
         community_template_pattern: str | None | UNSET = UNSET,
-    ) -> NetworkPolicy:
+    ) -> None:
         """Update a network policy's mutable fields.
 
         Pass `community_template_pattern=None` to unset it.
@@ -1989,9 +1992,9 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             data["description"] = description
         if community_template_pattern is not UNSET:
             data["community_template_pattern"] = community_template_pattern
-        return self._patch(policy, data)
+        self._patch(policy, data)
 
-    def set_description(self, policy: int | str | NetworkPolicy, description: str) -> NetworkPolicy:
+    def set_description(self, policy: int | str | NetworkPolicy, description: str) -> None:
         """Set the description for the policy.
 
         Args:
@@ -1999,14 +2002,14 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             description (str): New description to set.
         """
         policy = self._resolve(policy)
-        return self.update(policy, description=description)
+        self.update(policy, description=description)
 
     def add_attribute(
         self,
         policy: int | str | NetworkPolicy,
         attr: str | NetworkPolicyAttribute,
         value: bool = True,
-    ) -> NetworkPolicy:
+    ) -> None:
         """Add an attribute to a policy.
 
         Args:
@@ -2024,7 +2027,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         if policy.get_attribute(attr):
             raise EntityAlreadyExists(f"Policy {policy.name!r} already has attribute {attr!r}.")
         attrs = [*policy.attributes, NetworkPolicyAttributeValue(name=attr, value=value)]
-        return self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
+        self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
     def _resolve_attribute_name(self, attribute: str | NetworkPolicyAttribute) -> str:
         """Resolve an attribute reference (instance or name) to a string name."""
@@ -2034,7 +2037,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
 
     def remove_attribute(
         self, policy: int | str | NetworkPolicy, attribute: str | NetworkPolicyAttribute
-    ) -> NetworkPolicy:
+    ) -> None:
         """Remove an attribute from a policy.
 
         Args:
@@ -2049,7 +2052,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         if not policy.get_attribute(attribute_name):
             raise EntityNotFound(f"Policy {policy.name!r} does not have attribute {attribute_name!r}.")
         attrs = [a for a in policy.attributes if a.name != attribute_name]
-        return self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
+        self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
     def networks(self, policy: int | str | NetworkPolicy) -> list[Network]:
         """Get all networks that use this policy.
@@ -2446,7 +2449,7 @@ class NetworkManager(WriteResourceManager[Network]):
         reserved: int | UNSET = UNSET,
         policy: int | None | UNSET = UNSET,
         max_communities: int | None | UNSET = UNSET,
-    ) -> Network:
+    ) -> None:
         """Update a network's mutable fields.
 
         Pass `policy=None` or `max_communities=None` to unset; omit to leave unchanged.
@@ -2483,7 +2486,7 @@ class NetworkManager(WriteResourceManager[Network]):
             data["policy"] = policy
         if max_communities is not UNSET:
             data["max_communities"] = max_communities
-        return self._patch(network, data)
+        self._patch(network, data)
 
     def get_first_available_ip(self, network: str | int | Network) -> IP_AddressT:
         """Return the first available IP address in the network.
@@ -2708,7 +2711,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         ipaddress: IP_AddressT | str | UNSET = UNSET,
         macaddress: str | MacAddress | None | UNSET = UNSET,
         host: int | str | Host | UNSET | None = UNSET,
-    ) -> IPAddress:
+    ) -> None:
         """Update an IP address record's mutable fields.
 
         Args:
@@ -2732,11 +2735,11 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             else:
                 host_id = host
             data["host"] = host_id
-        return self._patch(ip, data)
+        self._patch(ip, data)
 
     def associate_mac(
         self, ip: int | str | IP_AddressT | IPAddress, mac: str | MacAddress, *, force: bool = False
-    ) -> IPAddress:
+    ) -> None:
         """Associate a MAC address with an IP address.
 
         Args:
@@ -2750,16 +2753,16 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         ip = self._resolve(ip)
         if ip.macaddress and not force:
             raise EntityAlreadyExists(f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.")
-        return self.update(ip, macaddress=mac)
+        self.update(ip, macaddress=mac)
 
-    def disassociate_mac(self, ip: int | str | IP_AddressT | IPAddress) -> IPAddress:
+    def disassociate_mac(self, ip: int | str | IP_AddressT | IPAddress) -> None:
         """Remove the MAC address from an IP address.
 
         Args:
             ip (int | str | IP_AddressT | IPAddress): IPAddress instance, numeric ID, or IP address string.
         """
         ip = self._resolve(ip)
-        return self.update(ip, macaddress=None)
+        self.update(ip, macaddress=None)
 
     def list_by_host(self, host: int | str | Host) -> list[IPAddress]:
         """List all IP address records for a host.
@@ -2841,7 +2844,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         host: int | str | Host | UNSET = UNSET,
         name: str | HostName | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
-    ) -> CNAME:
+    ) -> None:
         """Update a CNAME record's mutable fields. Pass `ttl=None` to reset to default.
 
         Args:
@@ -2858,7 +2861,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
             data["name"] = self._client.fqdn(str(name))
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._patch(cname, data)
+        self._patch(cname, data)
 
     @overload
     def get_by_name(self, name: str, *, required: Literal[False]) -> CNAME | None: ...
@@ -2955,7 +2958,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
         *,
         cpu: str | UNSET = UNSET,
         os: str | UNSET = UNSET,
-    ) -> HInfo:
+    ) -> None:
         """Update an HInfo record's mutable fields.
 
         Args:
@@ -2969,7 +2972,7 @@ class HInfoManager(WriteResourceManager[HInfo]):
             data["cpu"] = cpu
         if os is not UNSET:
             data["os"] = os
-        return self._patch(hinfo, data)
+        self._patch(hinfo, data)
 
     def get_by_host(self, host: int | str | Host, *, required: bool = True) -> HInfo | None:
         """Get the HInfo record for a host.
@@ -3030,7 +3033,7 @@ class TXTManager(WriteResourceManager[TXT]):
         ref: int | TXT,
         *,
         txt: str | UNSET = UNSET,
-    ) -> TXT:
+    ) -> None:
         """Update a TXT record's mutable fields.
 
         Args:
@@ -3041,7 +3044,7 @@ class TXTManager(WriteResourceManager[TXT]):
         data: dict[str, Any] = {}
         if txt is not UNSET:
             data["txt"] = txt
-        return self._patch(txt_obj, data)
+        self._patch(txt_obj, data)
 
     def list_by_host(self, host: int | str | Host) -> list[TXT]:
         """List all TXT records for a host.
@@ -3094,7 +3097,7 @@ class MXManager(WriteResourceManager[MX]):
         *,
         mx: str | UNSET = UNSET,
         priority: int | UNSET = UNSET,
-    ) -> MX:
+    ) -> None:
         """Update an MX record's mutable fields.
 
         Args:
@@ -3108,7 +3111,7 @@ class MXManager(WriteResourceManager[MX]):
             data["mx"] = mx
         if priority is not UNSET:
             data["priority"] = priority
-        return self._patch(mx_obj, data)
+        self._patch(mx_obj, data)
 
     def list_by_host(self, host: int | str | Host) -> list[MX]:
         """List all MX records for a host.
@@ -3243,7 +3246,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
         service: str | UNSET = UNSET,
         regex: str | UNSET = UNSET,
         replacement: str | UNSET = UNSET,
-    ) -> NAPTR:
+    ) -> None:
         """Update a NAPTR record's mutable fields.
 
         Args:
@@ -3269,7 +3272,7 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             data["regex"] = regex
         if replacement is not UNSET:
             data["replacement"] = replacement
-        return self._patch(naptr, data)
+        self._patch(naptr, data)
 
     # TODO: ensure overload is sound; does `= ...` capture both defaults and explicit str args?
     @overload
@@ -3474,7 +3477,7 @@ class SrvManager(WriteResourceManager[Srv]):
         weight: int | UNSET = UNSET,
         port: int | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
-    ) -> Srv:
+    ) -> None:
         """Update a SRV record's mutable fields. Pass `ttl=None` to reset to default.
 
         Args:
@@ -3497,7 +3500,7 @@ class SrvManager(WriteResourceManager[Srv]):
             data["port"] = port
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._patch(srv, data)
+        self._patch(srv, data)
 
     def list_by_host(self, host: int | str | Host) -> list[Srv]:
         """List all SRV records for a host.
@@ -3548,7 +3551,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
         *,
         host: int | str | Host | UNSET = UNSET,
         ipaddress: IP_AddressT | str | UNSET = UNSET,
-    ) -> PTR_override:
+    ) -> None:
         """Update a PTR override record's mutable fields.
 
         Args:
@@ -3562,7 +3565,7 @@ class PTROverrideManager(WriteResourceManager[PTR_override]):
             data["host"] = resolve_host_id(host, self._client)
         if ipaddress is not UNSET:
             data["ipaddress"] = str(ipaddress)
-        return self._patch(ptr, data)
+        self._patch(ptr, data)
 
     # NOTE: potential for `get_by_ip()` here, since ipaddress field is unique per record
 
@@ -3629,7 +3632,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
         hash_type: int | UNSET = UNSET,
         fingerprint: str | UNSET = UNSET,
         ttl: int | None | UNSET = UNSET,
-    ) -> SSHFP:
+    ) -> None:
         """Update an SSHFP record's mutable fields. Pass `ttl=None` to reset to default.
 
         Args:
@@ -3649,7 +3652,7 @@ class SSHFPManager(WriteResourceManager[SSHFP]):
             data["fingerprint"] = fingerprint
         if ttl is not UNSET:
             data["ttl"] = ttl
-        return self._patch(sshfp, data)
+        self._patch(sshfp, data)
 
     def list_by_host(self, host: int | str | Host) -> list[SSHFP]:
         """List all SSHFP records for a host.
@@ -3759,7 +3762,7 @@ class LocationManager(WriteResourceManager[Location]):
         location: int | Location,
         *,
         loc: str | UNSET = UNSET,
-    ) -> Location:
+    ) -> None:
         """Update a LOC record's mutable fields.
 
         Args:
@@ -3770,7 +3773,7 @@ class LocationManager(WriteResourceManager[Location]):
         data: dict[str, Any] = {}
         if loc is not UNSET:
             data["loc"] = loc
-        return self._patch(location, data)
+        self._patch(location, data)
 
     def get_by_host(self, host: int | str | Host, *, required: bool = True) -> Location | None:
         """Get the LOC record for a host.
@@ -3900,7 +3903,7 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
         retry: int | UNSET = UNSET,
         expire: int | UNSET = UNSET,
         soa_ttl: int | UNSET = UNSET,
-    ) -> _ZoneT:
+    ) -> None:
         """Update the zone's SOA fields. At least one field must be provided.
 
         Args:
@@ -3930,16 +3933,16 @@ class _ZoneSubManager(NamedResourceManager[_ZoneT], ABC):
             data["soa_ttl"] = _valid_zone_ttl(soa_ttl)
         if not data:
             raise InputFailure("No fields to update")
-        return self._patch(zone, data)
+        self._patch(zone, data)
 
-    def set_default_ttl(self, zone: _ZoneT, ttl: int) -> _ZoneT:
+    def set_default_ttl(self, zone: _ZoneT, ttl: int) -> None:
         """Set the zone's default TTL.
 
         Args:
             zone (_ZoneT): The zone to update.
             ttl (int): The new default TTL value (300–68400).
         """
-        return self._patch(zone, {"default_ttl": _valid_zone_ttl(ttl)})
+        self._patch(zone, {"default_ttl": _valid_zone_ttl(ttl)})
 
     def set_nameservers(self, zone: _ZoneT, nameservers: list[VerifiedNS]) -> None:
         """Replace the zone's nameservers (hits the per-type nameservers endpoint).
@@ -4018,12 +4021,13 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
         # TODO: use Pydantic JsonMapping validator for this
         # These checks are dangerous! `in` checks and direct key access may break.
         blob = resp.json()
-        if "delegate" in blob:
-            return ForwardZoneDelegation.model_validate(blob)
-        if "zone" in blob:
-            return ForwardZone.model_validate(blob["zone"])
-        if "delegation" in blob:
-            return ForwardZoneDelegation.model_validate(blob["delegation"])
+        if isinstance(blob, dict):
+            if "delegate" in blob:
+                return ForwardZoneDelegation.model_validate(blob)
+            if "zone" in blob:
+                return ForwardZone.model_validate(blob["zone"])
+            if "delegation" in blob:
+                return ForwardZoneDelegation.model_validate(blob["delegation"])
         raise UnexpectedDataError(f"Unexpected response from server: {blob}", resp)
 
 
@@ -4041,6 +4045,9 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.ReverseZones
+
+
+ZoneT = TypeVar("ZoneT", bound=ForwardZone | ReverseZone)  # or just bound=Zone?
 
 
 # NOTE: If we need to support resolving zones by ID, we must expose the sub managers
@@ -4080,6 +4087,17 @@ class ZoneManager:
             force (bool): When True, skip safety checks on nameserver existence.
         """
         return _verify_nameservers(self._client, nameservers, force=force)
+
+    def refresh(self, obj: ZoneT) -> ZoneT:
+        """Refresh a zone instance from the server.
+
+        Args:
+            obj (ZoneT): The zone to refresh.
+        """
+        if isinstance(obj, ForwardZone):
+            return self._forward.refresh(obj)
+        else:
+            return self._reverse.refresh(obj)
 
     @overload
     def get(self, name: str, *, required: Literal[False]) -> ForwardZone | ReverseZone | None: ...
@@ -4176,7 +4194,7 @@ class ZoneManager:
         retry: int | UNSET = UNSET,
         expire: int | UNSET = UNSET,
         soa_ttl: int | UNSET = UNSET,
-    ) -> ForwardZone | ReverseZone:
+    ) -> None:
         """Update the zone's SOA fields.
 
         Args:
@@ -4201,10 +4219,11 @@ class ZoneManager:
         }
         # NOTE: no verification here...?
         if isinstance(z, ReverseZone):
-            return self._reverse.update_soa(z, **kwargs)
-        return self._forward.update_soa(z, **kwargs)
+            self._reverse.update_soa(z, **kwargs)
+        else:
+            self._forward.update_soa(z, **kwargs)
 
-    def set_default_ttl(self, zone: str | ForwardZone | ReverseZone, ttl: int) -> ForwardZone | ReverseZone:
+    def set_default_ttl(self, zone: str | ForwardZone | ReverseZone, ttl: int) -> None:
         """Set the zone's default TTL.
 
         Args:
@@ -4213,8 +4232,9 @@ class ZoneManager:
         """
         z = self._resolve_zone(zone)
         if isinstance(z, ReverseZone):
-            return self._reverse.set_default_ttl(z, ttl)
-        return self._forward.set_default_ttl(z, ttl)
+            self._reverse.set_default_ttl(z, ttl)
+        else:
+            self._forward.set_default_ttl(z, ttl)
 
     def set_nameservers(
         self, zone: str | ForwardZone | ReverseZone, nameservers: list[str], *, force: bool = False
@@ -4244,7 +4264,8 @@ class ZoneManager:
         z = self._resolve_zone(zone)
         if isinstance(z, ReverseZone):
             return self._reverse.list_subzones(z)
-        return self._forward.list_subzones(z)
+        else:
+            return self._forward.list_subzones(z)
 
     def delete(self, zone: str | ForwardZone | ReverseZone, *, force: bool = False) -> None:
         """Delete the zone, guarding against non-empty zones unless `force`.

@@ -152,3 +152,9 @@ def test_count(integration_client: MregClient) -> None:
 def test_first(integration_client: MregClient) -> None:
     result = integration_client.ipaddress.first(required=False)
     assert result is None or isinstance(result, IPAddress)
+
+
+def test_update(integration_client: MregClient, ip: IPAddress) -> None:
+    integration_client.ipaddress.update(ip, macaddress="aa:bb:cc:dd:ee:ff")
+    refreshed = integration_client.ipaddress.refresh(ip)
+    assert str(refreshed.macaddress) == "aa:bb:cc:dd:ee:ff"
