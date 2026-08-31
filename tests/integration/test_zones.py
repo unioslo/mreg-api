@@ -240,3 +240,21 @@ def test_nameserver_get_by_name(integration_client: MregClient, seed_ns: str) ->
     assert result is not None
     assert isinstance(result, NameServer)
     assert result.name == seed_ns
+
+
+def test_update_soa(integration_client: MregClient, test_zone: ForwardZone) -> None:
+    integration_client.zone.update_soa(test_zone, retry=7200)
+    refreshed = integration_client.zone.refresh(test_zone)
+    assert refreshed.retry == 7200
+
+
+def test_set_default_ttl(integration_client: MregClient, test_zone: ForwardZone) -> None:
+    integration_client.zone.set_default_ttl(test_zone, 3600)
+    refreshed = integration_client.zone.refresh(test_zone)
+    assert refreshed.default_ttl == 3600
+
+
+def test_set_nameservers(integration_client: MregClient, test_zone: ForwardZone, seed_ns: str) -> None:
+    integration_client.zone.set_nameservers(test_zone, [seed_ns], force=True)
+    refreshed = integration_client.zone.refresh(test_zone)
+    assert seed_ns in [ns.name for ns in refreshed.nameservers]

@@ -186,7 +186,8 @@ def test_rename(
     group = client.hostgroup.create(name=old_name)
     assert group is not None
     resource_tracker.add(lambda: client.hostgroup.delete(new_name))
-    renamed = client.hostgroup.rename(group, new_name)
+    client.hostgroup.rename(group, new_name)
+    renamed = client.hostgroup.refresh(group)
     assert renamed.name == new_name
     assert client.hostgroup.get(old_name, required=False) is None
     assert client.hostgroup.get(new_name, required=False) is not None
@@ -229,10 +230,12 @@ def test_add_remove_subgroup(
     resource_tracker.add(lambda: client.hostgroup.delete(child_name))
     resource_tracker.add(lambda: client.hostgroup.delete(parent_name))
 
-    updated_parent = client.hostgroup.add_group(parent, child)
+    client.hostgroup.add_group(parent, child)
+    updated_parent = client.hostgroup.refresh(parent)
     assert child.name in updated_parent.groups
 
-    updated_parent = client.hostgroup.remove_group(updated_parent, child)
+    client.hostgroup.remove_group(updated_parent, child)
+    updated_parent = client.hostgroup.refresh(updated_parent)
     assert child.name not in updated_parent.groups
 
 
@@ -277,8 +280,25 @@ def test_add_remove_host(
     resource_tracker.add(lambda: client.hostgroup.delete(group_name))
     resource_tracker.add(lambda: client.hostgroup.remove_host(group_name, host_name))
 
-    updated = client.hostgroup.add_host(group, host)
+    client.hostgroup.add_host(group, host)
+    updated = client.hostgroup.refresh(group)
     assert host.name in updated.hosts
 
-    updated = client.hostgroup.remove_host(updated, host)
+    client.hostgroup.remove_host(updated, host)
+    updated = client.hostgroup.refresh(updated)
     assert host.name not in updated.hosts
+
+
+def test_update(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    name = f"{test_prefix}hg-upd"
+    group = client.hostgroup.create(name=name, description="before update")
+    assert group is not None
+    resource_tracker.add(lambda: client.hostgroup.delete(name))
+    client.hostgroup.update(group, description="after update")
+    refreshed = client.hostgroup.refresh(group)
+    assert refreshed.description == "after update"

@@ -183,3 +183,9 @@ def test_assert_absent_existing(
     resource_tracker.add(lambda: integration_client.label.delete(lbl))
     with pytest.raises(EntityAlreadyExists):
         integration_client.label.assert_absent(lbl.id)
+
+
+def test_update(integration_client: MregClient, label: Label) -> None:
+    integration_client.label.update(label, description="updated description")
+    refreshed = integration_client.label.refresh(label)
+    assert refreshed.description == "updated description"

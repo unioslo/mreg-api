@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `mreg_api.history` module that defines request/response history data structures. This includes the `RequestHistory` class for storing and retrieving request records, as well as filtering capabilities.
 - `EventKind.TRUNCATION` event kind. Recorded on `MregClient.events` when a list GET request matches more objects than the requested `limit`, so consumers can react to dropped results.
+- `MregClient.*.refresh()` method to refresh an object with the latest data from the API. Used to update the state of an object after an `update()` call.
 
 ### Changed
 

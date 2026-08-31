@@ -188,7 +188,8 @@ def test_rename(
     role = client.role.create(name=old_name, description="test role")
     assert role is not None
     resource_tracker.add(lambda: client.role.delete(new_name))
-    renamed = client.role.rename(role, new_name)
+    client.role.rename(role, new_name)
+    renamed = client.role.refresh(role)
     assert renamed.name == new_name
     assert client.role.get(old_name, required=False) is None
     assert client.role.get(new_name, required=False) is not None
@@ -287,11 +288,13 @@ def test_add_remove_label(
     resource_tracker.add(lambda: client.label.delete(label_name))
     resource_tracker.add(lambda: client.role.delete(role_name))
 
-    updated_role = client.role.add_label(role, label)
+    client.role.add_label(role, label)
+    updated_role = client.role.refresh(role)
     lbs = client.role.list_labels(updated_role)
     assert any(lb.name == label.name for lb in lbs)
 
-    updated_role = client.role.remove_label(updated_role, label)
+    client.role.remove_label(updated_role, label)
+    updated_role = client.role.refresh(updated_role)
     lbs = client.role.list_labels(updated_role)
     assert not any(lb.name == label.name for lb in lbs)
 
@@ -321,3 +324,18 @@ def test_delete_role_with_hosts_raises(
 
     with pytest.raises(DeleteError):
         client.role.delete(role_name)
+
+
+def test_update(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    name = f"{test_prefix}role-upd"
+    role = client.role.create(name=name, description="before update")
+    assert role is not None
+    resource_tracker.add(lambda: client.role.delete(name))
+    client.role.update(role, description="after update")
+    refreshed = client.role.refresh(role)
+    assert refreshed.description == "after update"

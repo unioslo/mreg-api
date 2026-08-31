@@ -195,8 +195,28 @@ def test_add_remove_label(
     assert lbl is not None
     resource_tracker.add(lambda: integration_client.label.delete(lbl))
 
-    updated = integration_client.permission.add_label(perm, lbl)
+    integration_client.permission.add_label(perm, lbl)
+    updated = integration_client.permission.refresh(perm)
     assert lbl.id in updated.labels
 
-    removed = integration_client.permission.remove_label(updated, lbl)
+    integration_client.permission.remove_label(updated, lbl)
+    removed = integration_client.permission.refresh(updated)
     assert lbl.id not in removed.labels
+
+
+def test_update(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    group = f"{test_prefix}grpupd"
+    range_ = "10.0.0.0/8"
+    regex = f".*{test_prefix}upd.*"
+    integration_client.permission.create(group=group, range=range_, regex=regex)
+    perm = integration_client.permission.get_by_triplet(group, range_, regex)
+    assert perm is not None
+    resource_tracker.add(lambda: integration_client.permission.delete(perm))
+    new_regex = f".*{test_prefix}updated.*"
+    integration_client.permission.update(perm, regex=new_regex)
+    refreshed = integration_client.permission.refresh(perm)
+    assert refreshed.regex == new_regex

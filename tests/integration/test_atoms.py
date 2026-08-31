@@ -300,3 +300,9 @@ def test_assert_absent_existing(
     resource_tracker.add(lambda: integration_client.atom.delete(atm))
     with pytest.raises(EntityAlreadyExists):
         integration_client.atom.assert_absent(atm.name)
+
+
+def test_update(integration_client: MregClient, atom: Atom) -> None:
+    integration_client.atom.update(atom, description="updated atom")
+    refreshed = integration_client.atom.refresh(atom)
+    assert refreshed.description == "updated atom"
