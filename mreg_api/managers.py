@@ -4021,12 +4021,13 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
         # TODO: use Pydantic JsonMapping validator for this
         # These checks are dangerous! `in` checks and direct key access may break.
         blob = resp.json()
-        if "delegate" in blob:
-            return ForwardZoneDelegation.model_validate(blob)
-        if "zone" in blob:
-            return ForwardZone.model_validate(blob["zone"])
-        if "delegation" in blob:
-            return ForwardZoneDelegation.model_validate(blob["delegation"])
+        if isinstance(blob, dict):
+            if "delegate" in blob:
+                return ForwardZoneDelegation.model_validate(blob)
+            if "zone" in blob:
+                return ForwardZone.model_validate(blob["zone"])
+            if "delegation" in blob:
+                return ForwardZoneDelegation.model_validate(blob["delegation"])
         raise UnexpectedDataError(f"Unexpected response from server: {blob}", resp)
 
 
@@ -4044,6 +4045,9 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
     @override
     def endpoint(self) -> Endpoint:
         return Endpoint.ReverseZones
+
+
+ZoneT = TypeVar("ZoneT", bound=ForwardZone | ReverseZone)  # or just bound=Zone?
 
 
 # NOTE: If we need to support resolving zones by ID, we must expose the sub managers
@@ -4083,6 +4087,17 @@ class ZoneManager:
             force (bool): When True, skip safety checks on nameserver existence.
         """
         return _verify_nameservers(self._client, nameservers, force=force)
+
+    def refresh(self, obj: ZoneT) -> ZoneT:
+        """Refresh a zone instance from the server.
+
+        Args:
+            obj (ZoneT): The zone to refresh.
+        """
+        if isinstance(obj, ForwardZone):
+            return self._forward.refresh(obj)
+        else:
+            return self._reverse.refresh(obj)
 
     @overload
     def get(self, name: str, *, required: Literal[False]) -> ForwardZone | ReverseZone | None: ...
