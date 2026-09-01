@@ -5,6 +5,7 @@ from __future__ import annotations
 import functools
 import logging
 import re
+import warnings
 from collections.abc import Callable
 from collections.abc import Generator
 from collections.abc import Mapping
@@ -50,7 +51,6 @@ from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
 from mreg_api.exceptions import determine_http_error_class
-from mreg_api.history import RequestHistory
 from mreg_api.managers import AtomManager
 from mreg_api.managers import BacnetIDManager
 from mreg_api.managers import CNAMEManager
@@ -83,6 +83,8 @@ from mreg_api.managers import ZoneManager
 from mreg_api.models.fields import HostName
 from mreg_api.models.fields import parse_hostname
 from mreg_api.models.models import TokenAuth
+from mreg_api.requestlog import RequestLog
+from mreg_api.types import UNSET
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
@@ -412,11 +414,21 @@ class MregClient:
         cache: CacheConfig | bool = False,
         follow_redirects: bool = False,
         page_size: int | None = None,
-        history_size: int | None = 100,
+        request_log_size: int | None = 100,
         event_log_size: int | None = 100,
         user_agent: str | None = None,
+        # Deprecated parameters
+        history_size: int | None | UNSET = UNSET,
     ) -> None:
         """Initialize the client."""
+        if history_size is not UNSET:
+            warnings.warn(
+                '"history_size" is deprecated, use "request_log_size" instead.',
+                DeprecationWarning,
+                stacklevel=2,
+            )
+            request_log_size = history_size
+
         if not user_agent:
             user_agent = f"mreg-api-{__version__}"
         self.session: httpx.Client = httpx.Client(
@@ -438,7 +450,7 @@ class MregClient:
 
         # State setup/reset
         self._token: str | None = None
-        self.history: RequestHistory = RequestHistory(maxsize=history_size)
+        self.requests: RequestLog = RequestLog(maxsize=request_log_size)
         self.events: EventLog = EventLog(max_size=event_log_size)
 
     @property
@@ -623,20 +635,20 @@ class MregClient:
         """
         return str(self.session.headers.get(Header.CORRELATION_ID, ""))
 
-    @deprecated('Use "history.get()" or "iter(history)" instead.')
-    def get_client_history(self) -> RequestHistory:
-        """Get the request/response history for this client.
+    @deprecated('Use "requests.get()" or "iter(requests)" instead.')
+    def get_client_history(self) -> RequestLog:
+        """Get the request/response log for this client.
 
         Returns:
-            RequestHistory object containing the history of requests and responses
+            RequestLog object containing the log of requests and responses
 
         """
-        return self.history
+        return self.requests
 
-    @deprecated('Use "history.clear()" instead.')
+    @deprecated('Use "requests.clear()" instead.')
     def clear_client_history(self) -> None:
-        """Clear the request/response history for this client."""
-        self.history.clear()
+        """Clear the request/response log for this client."""
+        self.requests.clear()
 
     def login(self, username: str, password: str) -> str:
         """Authenticate with username and password.
@@ -770,7 +782,7 @@ class MregClient:
 
         result = self.session.send(request)
         # Log response in response log
-        self.history.add(result, json=json)
+        self.requests.add(result, json=json)
 
         # # This is a workaround for old server versions that can't handle JSON data in requests
         # if result.is_redirect and not result.history and params == {} and data:

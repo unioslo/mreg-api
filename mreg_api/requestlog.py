@@ -1,4 +1,4 @@
-"""Request history management for the MREG API client."""
+"""Request log management for the MREG API client."""
 
 from __future__ import annotations
 
@@ -45,22 +45,22 @@ class RequestRecord(NamedTuple):
         return str(self.request.url)
 
 
-class RequestHistory:
-    """A history of HTTP requests made by the client."""
+class RequestLog:
+    """A log of HTTP requests made by the client."""
 
     def __init__(self, maxsize: int | None = None):
-        """Initialize the request history.
+        """Initialize the request log.
 
         Args:
-            maxsize: Maximum number of records to keep in history. If None, history is unbounded.
+            maxsize: Maximum number of records to keep in the log. If None, the log is unbounded.
         """
         if maxsize is not None and maxsize <= 0:
-            raise ValueError("Request history max size must be >=0 or None")
+            raise ValueError("Request log max size must be >=0 or None")
         self._records: deque[RequestRecord] = deque(maxlen=maxsize)
 
     @property
     def maxsize(self) -> int | None:
-        """Get the maximum number of records that can be stored in history."""
+        """Get the maximum number of records that can be stored in the log."""
         return self._records.maxlen
 
     def add(
@@ -69,7 +69,7 @@ class RequestHistory:
         data: JsonMapping | None = None,
         json: Json | None = None,
     ) -> None:
-        """Add a new request record to the history."""
+        """Add a new request record to the log."""
         r = RequestRecord(
             method=response.request.method,
             request=response.request,
@@ -81,11 +81,11 @@ class RequestHistory:
         self._records.append(r)
 
     def _add_record(self, r: RequestRecord) -> None:
-        """Add a new request record to the history."""
+        """Add a new request record to the log."""
         self._records.append(r)
 
     def clear(self) -> None:
-        """Clear the request history."""
+        """Clear the request log."""
         self._records.clear()
 
     def get(
@@ -139,13 +139,13 @@ class RequestHistory:
         ]
 
     def last(self) -> RequestRecord | None:
-        """Get the most recent request record, or None if history is empty."""
+        """Get the most recent request record, or None if the log is empty."""
         return self._records[-1] if self._records else None
 
     def __iter__(self) -> Iterator[RequestRecord]:
-        """Iterate over the request records in the history."""
+        """Iterate over the request records in the log."""
         return iter(self._records)
 
     def __len__(self) -> int:
-        """Return the number of request records in the history."""
+        """Return the number of request records in the log."""
         return len(self._records)
