@@ -13,6 +13,7 @@ from typing import TypeAlias
 from typing import TypeVar
 
 from pydantic import TypeAdapter
+from typing_extensions import Sentinel
 
 HTTPMethod: TypeAlias = Literal[
     "GET",
@@ -42,6 +43,11 @@ else:
 JsonMapping = Mapping[str, Json]
 QueryParams = MutableMapping[str, str | int | float | bool | None]
 
+# NOTE: Using the capitalized `Sentinel` name here (deprecated) instead of
+# `sentinel`, because not all type checkers recognize the lowercase version.
+# basedpyright in vscode does not recognize `typing_extensions.sentinel` as of 2026-09-01.
+UNSET = Sentinel("UNSET")
+"""Sentinel type for unset function parameters."""
 
 T = TypeVar("T")
 

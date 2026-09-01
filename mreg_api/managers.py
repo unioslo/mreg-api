@@ -38,7 +38,6 @@ from typing import overload
 from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
-from typing_extensions import Sentinel
 from typing_extensions import deprecated
 from typing_extensions import override
 
@@ -104,6 +103,7 @@ from mreg_api.models.fields import VerifiedNS
 from mreg_api.models.history import HistoryItem
 from mreg_api.models.history import HistoryResource
 from mreg_api.models.models import is_reverse_zone_name
+from mreg_api.types import UNSET
 from mreg_api.types import IP_AddressT
 from mreg_api.types import JsonMapping
 from mreg_api.types import QueryParams
@@ -115,10 +115,6 @@ if TYPE_CHECKING:
     from mreg_api.types import IP_NetworkT
 
 logger = logging.getLogger(__name__)
-
-# NOTE: Using the capitalized `Sentinel` name here (deprecated) instead of
-# `sentinel`, because not all type checkers recognize the lowercase version.
-UNSET = Sentinel("UNSET")
 
 
 T = TypeVar("T", bound=BaseModel)

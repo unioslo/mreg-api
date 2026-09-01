@@ -84,6 +84,7 @@ from mreg_api.models.fields import HostName
 from mreg_api.models.fields import parse_hostname
 from mreg_api.models.models import TokenAuth
 from mreg_api.requestlog import RequestLog
+from mreg_api.types import UNSET
 from mreg_api.types import HTTPMethod
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
@@ -105,10 +106,6 @@ JsonMappingValidator = TypeAdapter(JsonMapping)
 MAX_PAGE_SIZE: Final[int] = 1000
 MIN_PAGE_SIZE: Final[int] = 1
 PAGE_SIZE: Final[str] = "page_size"
-
-# Sentinel for the deprecated `history_size` kwarg, so an explicit `None`
-# (unbounded log) can be told apart from the arg not being passed at all.
-_UNSET: Any = object()
 
 
 class Header(StrEnum):
@@ -420,16 +417,18 @@ class MregClient:
         request_log_size: int | None = 100,
         event_log_size: int | None = 100,
         user_agent: str | None = None,
-        history_size: int | None = _UNSET,
+        # Deprecated parameters
+        history_size: int | None | UNSET = UNSET,
     ) -> None:
         """Initialize the client."""
-        if history_size is not _UNSET:
+        if history_size is not UNSET:
             warnings.warn(
                 '"history_size" is deprecated, use "request_log_size" instead.',
                 DeprecationWarning,
                 stacklevel=2,
             )
             request_log_size = history_size
+
         if not user_agent:
             user_agent = f"mreg-api-{__version__}"
         self.session: httpx.Client = httpx.Client(
