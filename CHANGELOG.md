@@ -9,20 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `mreg_api.history` module that defines request/response history data structures. This includes the `RequestHistory` class for storing and retrieving request records, as well as filtering capabilities.
+- `mreg_api.requestlog` module that defines request/response log data structures. This includes the `RequestLog` class for storing and retrieving request records, as well as filtering capabilities.
+- `MregClient(request_log_size=...)` parameter to size the request log.
 - `EventKind.TRUNCATION` event kind. Recorded on `MregClient.events` when a list GET request matches more objects than the requested `limit`, so consumers can react to dropped results.
 - `MregClient.*.refresh()` method to refresh an object with the latest data from the API. Used to update the state of an object after an `update()` call.
 
 ### Changed
 
-- Client request history is now stored in a `RequestHistory` instance, accessible via the `MregClient.history` property.
+- Client request/response history is now stored in a `RequestLog` instance, accessible via the `MregClient.requests` property.
 - **BREAKING:** `limit` semantics for list GET requests (`MregClient.get_list()` and `MregClient.get_typed()`). Previously, matching more results than `limit` raised `TooManyResults`. Now the results are truncated to `limit` and an `EventKind.TRUNCATION` event is recorded instead of raising. Passing `None` (the default) leaves results unrestricted.
   - The emitted event contains an ObjectRef to the GET request URL, so consumers can correlate the event with the request that caused it (subject to change in the future).
 
 ### Deprecated
 
-- `MregClient.get_client_history()` method. Use `MregClient.history.get()` instead.
-- `MregClient.clear_client_history()` method. Use `MregClient.history.clear()` instead.
+- `MregClient.get_client_history()` method. Use `MregClient.requests.get()` instead.
+- `MregClient.clear_client_history()` method. Use `MregClient.requests.clear()` instead.
+- `MregClient(history_size=...)` parameter. Use `request_log_size` instead; `history_size` remains as an alias.
 - `exceptions.TooManyResults`. See the truncation behaviour above.
 
 ### Removed

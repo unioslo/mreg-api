@@ -2,14 +2,14 @@
 icon: lucide/timeline
 ---
 
-# Request/Response History
+# Request/Response Log
 
-The client records a request/response history of each interaction with the server. The history is a bounded deque, sized by the `history_size` argument to [`MregClient`][mreg_api.client.MregClient].
-You can access the history via the `client.history` property, which returns a list of [`RequestRecord`][mreg_api.client.RequestRecord] instances, which contain the request and response objects for each interaction, as well as shortcuts for the request method, URL, data and json payloads, as well as response status code.
+The client records a request/response log of each interaction with the server. The log is a bounded deque, sized by the `request_log_size` argument to [`MregClient`][mreg_api.client.MregClient].
+You can access the log via the `client.requests` property, which returns a list of [`RequestRecord`][mreg_api.requestlog.RequestRecord] instances, which contain the request and response objects for each interaction, as well as shortcuts for the request method, URL, data and json payloads, as well as response status code.
 
 ``` python
 client = MregClient(...)
-for record in client.history:
+for record in client.requests:
     print(record.request.method, record.request.url, record.status)
     assert record.status == record.response.status_code
     print("Request payload:", record.data or record.json)
@@ -20,7 +20,7 @@ for record in client.history:
 To get the record for the last response, you can use the `last` method:
 
 ``` python
-record = client.history.last()
+record = client.requests.last()
 ```
 
 ## Get all records
@@ -29,17 +29,17 @@ To get the record for the last response, you can use the `get` method:
 
 ``` python
 
-records = client.history.get()
+records = client.requests.get()
 ```
 
 ## Filtering
 
-Each request record has a method, URL, status code, and optionally data and JSON payloads. You can filter the request history using the `get` method with the `status`, `method`, and `url` arguments:
+Each request record has a method, URL, status code, and optionally data and JSON payloads. You can filter the request log using the `get` method with the `status`, `method`, and `url` arguments:
 
 ``` python
-all_200 = client.history.get(status=200)
-all_posts = client.history.get(method="POST")
-all_example = client.history.get(url="https://example.com/api")
+all_200 = client.requests.get(status=200)
+all_posts = client.requests.get(method="POST")
+all_example = client.requests.get(url="https://example.com/api")
 ```
 
 ### Combining filters
@@ -47,7 +47,7 @@ all_example = client.history.get(url="https://example.com/api")
 Filters can be combined to further narrow down the results:
 
 ``` python
-all_200_posts = client.history.get(status=200, method="POST")
+all_200_posts = client.requests.get(status=200, method="POST")
 ```
 
 ### Advanced filtering
@@ -63,14 +63,14 @@ def is_post_to_example_and_not_201(record: RequestRecord) -> bool:
         and record.status != 201
     )
 
-filtered_records = client.history.get(where=is_post_to_example_and_not_201)
+filtered_records = client.requests.get(where=is_post_to_example_and_not_201)
 ```
 
 This can also be achieved with a lambda function, which is a more concise way to define one-time
 filtering logic that doesn't need to be reused elsewhere:
 
 ``` python
-filtered_records = client.history.get(
+filtered_records = client.requests.get(
     where=lambda r: r.method == "POST" and r.url.startswith("https://example.com/api") and r.status != 201
 )
 ```

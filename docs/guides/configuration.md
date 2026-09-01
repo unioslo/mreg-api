@@ -28,7 +28,7 @@ client = MregClient(
 | `cache` | `CacheConfig | bool` | `False` | Enable GET-response caching. `True` uses defaults; pass a [`CacheConfig`][mreg_api.cache.CacheConfig] to customize. See [Caching](caching.md). |
 | `follow_redirects` | `bool` | `False` | Whether the HTTP client follows redirects. |
 | `page_size` | `int | None` | `None` | Default pagination page size sent as a query parameter on GET requests. |
-| `history_size` | `int | None` | `100` | Maximum number of request/response records kept in `client.history`. |
+| `request_log_size` | `int | None` | `100` | Maximum number of request/response records kept in `client.requests`. (`history_size` is a deprecated alias.) |
 | `event_log_size` | `int | None` | `100` | Maximum number of entries kept in the [event log](../reference/events.md). |
 | `user_agent` | `str | None` | `None` | Custom `User-Agent` header. Defaults to `mreg-api-<version>`. |
 
@@ -52,13 +52,13 @@ with client.domain_override("other.example.com"):
 client.timeout = 120
 ```
 
-## Request history
+## Request log
 
-Every request/response pair is recorded in a bounded deque, sized by `history_size`:
+Every request/response pair is recorded in a bounded deque, sized by `request_log_size`:
 
 ```python
-for record in client.get_client_history():
+for record in client.requests:
     print(record.method, record.status, record.url)
 
-client.clear_client_history()
+client.requests.clear()
 ```
