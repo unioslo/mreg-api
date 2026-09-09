@@ -5,7 +5,31 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Added
+
+- `models.history.HistoryItem.message` property to get a human-readable message describing the history item.
+- Models for heterogeneous history item data:
+  - `models.history.HistoryUpdate`: updated data in a history item.
+  - `models.history.HistoryRelation`: addition/removal of relations in a history item.
+- `exceptions.MregAPIError.status_code` property to get the HTTP status code of the response, if available.
+- Nicer error messages for failed resource mutation in convenience methods:
+  - `MregClient.hostgroup.add_owner()`
+  - `MregClient.hostgroup.remove_owner()`
+  - `MregClient.hostgroup.add_host()`
+  - `MregClient.hostgroup.remove_host()`
+  - These methods still raise `PostError` or `DeleteError`, but now with a more descriptive message. The original exception is preserved as the cause (`__cause__`) of the new exception.
+
+### Fixed
+
+- Client-side checking of values using stale local object in certain methods:
+  - `MregClient.role.add_atom()`
+  - `MregClient.role.remove_atom()`
+  - `MregClient.role.add_label()`
+  - `MregClient.role.remove_label()`
+
+  These methods now rely on the API to validate the request and return appropriate errors. This allows for more accurate error reporting, as the API may have additional validation rules that the client is not aware of.
 
 ## [0.5.0](https://github.com/unioslo/mreg-api/releases/tag/0.5.0) - 2026-09-01
 
@@ -21,6 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Client request/response history is now stored in a `RequestLog` instance, accessible via the `MregClient.requests` property.
 - **BREAKING:** `limit` semantics for list GET requests (`MregClient.get_list()` and `MregClient.get_typed()`). Previously, matching more results than `limit` raised `TooManyResults`. Now the results are truncated to `limit` and an `EventKind.TRUNCATION` event is recorded instead of raising. Passing `None` (the default) leaves results unrestricted.
   - The emitted event contains an ObjectRef to the GET request URL, so consumers can correlate the event with the request that caused it (subject to change in the future).
+- `MregClient.hostgroup.add_host()` now raises `EntityAlreadyExists` if the host is already a member of the host group, instead of raising a generic `PostError` with a 409 response.
+- `MregClient.hostgroup.remove_host()` now raises `EntityNotFound` if the host is not a member of the host group, instead of raising a generic `DeleteError` with a 404 response.
 
 ### Deprecated
 

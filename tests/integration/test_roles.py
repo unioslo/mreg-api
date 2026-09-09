@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.exceptions import DeleteError
@@ -339,3 +340,49 @@ def test_update(
     client.role.update(role, description="after update")
     refreshed = client.role.refresh(role)
     assert refreshed.description == "after update"
+
+
+def test_role_history(
+    integration_client: MregClient,
+    fail_on_error_log: None,  # pyright: ignore[reportUnusedParameter]
+) -> None:
+    role = integration_client.role.create(name="test-history-role", description="test history description")
+    new_name = "test-history-role-renamed"
+    integration_client.role.rename(role, new_name)
+    role = integration_client.role.refresh(role)
+
+    history = integration_client.role.history(new_name)
+
+    # Create 2 hosts, add and remove only the first host
+    host1 = integration_client.host.create(name="test-history-role-host1")
+    host2 = integration_client.host.create(name="test-history-role-host2")
+    integration_client.role.add_host(role, host1)
+    integration_client.role.add_host(role, host2)
+    integration_client.role.remove_host(role, host1)
+
+    # Create 2 atoms, add and remove only the first atom
+    atom1 = integration_client.atom.create(name="test-history-role-atom1", description="test history atom 1")
+    atom2 = integration_client.atom.create(name="test-history-role-atom2", description="test history atom 2")
+    integration_client.role.add_atom(role, atom1)
+    integration_client.role.add_atom(role, atom2)
+    integration_client.role.remove_atom(role, atom1)
+
+    assert len(history) > 0
+    messages = "\n".join(h.message for h in history)
+    assert messages == snapshot("""\
+description = 'test history description', name = 'test-history-role'
+name: test-history-role -> test-history-role-renamed\
+""")
+
+    # Delete the role and check that the history is still retrievable
+    history_pre_delete = history
+    integration_client.role.delete(new_name)
+    history_after_delete = integration_client.role.history(new_name)
+
+    # History can be retrieved and should have more entries after the delete operation
+    assert len(history_after_delete) > len(history_pre_delete)
+
+    # History should show the atoms and hosts associated with the role at the time of deletion.
+    assert history_after_delete[-1].message == snapshot(
+        "id = '19', hosts = '[]', atoms = '[]', updated_at = '2026-09-02T14:03:56.281757+02:00', create_date = '2026-09-02', description = 'test history description', name = 'test-history-role-renamed', labels = '[]'"
+    )

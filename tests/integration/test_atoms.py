@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.endpoints import Endpoint
@@ -306,3 +307,43 @@ def test_update(integration_client: MregClient, atom: Atom) -> None:
     integration_client.atom.update(atom, description="updated atom")
     refreshed = integration_client.atom.refresh(atom)
     assert refreshed.description == "updated atom"
+
+
+def test_atom_history(
+    integration_client: MregClient,
+    fail_on_error_log: None,  # pyright: ignore[reportUnusedParameter]
+) -> None:
+    atm = integration_client.atom.create(name="test-history-atom", description="test history description")
+    integration_client.atom.update(atm, description="test history description")
+    new_name = "test-history-atom-renamed"
+    integration_client.atom.rename(atm, new_name)
+    atm = integration_client.atom.refresh(atm)
+
+    # Create 2 roles, add to both, remove from only the first role
+    role1 = integration_client.role.create(name="test-history-atom-role1", description="test history role 1")
+    role2 = integration_client.role.create(name="test-history-atom-role2", description="test history role 2")
+    integration_client.role.add_atom(role1, atm)
+    integration_client.role.add_atom(role2, atm)
+    integration_client.role.remove_atom(role1, atm)
+
+    history = integration_client.atom.history(new_name)
+
+    assert len(history) > 0
+    messages = "\n".join(h.message for h in history)
+    assert messages == snapshot("""\
+description = 'test history description', name = 'test-history-atom'
+description: test history description -> test history description
+name: test-history-atom -> test-history-atom-renamed\
+""")
+
+    # Delete the atom and check that the history is still retrievable
+    history_pre_delete = history
+
+    integration_client.atom.delete(new_name)
+
+    # History can be retrieved and should have more entries after the delete operation
+    history_after_delete = integration_client.atom.history(new_name)
+    assert len(history_after_delete) > len(history_pre_delete)
+    assert history_after_delete[-1].message == snapshot(
+        "id = '17', roles = '[]', updated_at = '2026-09-02T14:02:45.189803+02:00', create_date = '2026-09-02', description = 'test history description', name = 'test-history-atom-renamed'"
+    )

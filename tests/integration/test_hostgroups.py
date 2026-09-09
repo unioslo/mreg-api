@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
@@ -297,8 +298,50 @@ def test_update(
     client = integration_client
     name = f"{test_prefix}hg-upd"
     group = client.hostgroup.create(name=name, description="before update")
-    assert group is not None
     resource_tracker.add(lambda: client.hostgroup.delete(name))
     client.hostgroup.update(group, description="after update")
     refreshed = client.hostgroup.refresh(group)
     assert refreshed.description == "after update"
+
+
+def test_hostgroup_history(
+    integration_client: MregClient,
+    fail_on_error_log: None,  # pyright: ignore[reportUnusedParameter]
+) -> None:
+    hg = integration_client.hostgroup.create(name="test-history-hg")
+
+    integration_client.hostgroup.update(hg, description="updated description")
+    new_name = "test-history-hg-renamed"
+    integration_client.hostgroup.rename(hg, new_name)
+
+    # Create 2 hosts, add and remove only the first host
+    host1 = integration_client.host.create(name="test-history-hg-host1")
+    host2 = integration_client.host.create(name="test-history-hg-host2")
+    integration_client.hostgroup.add_host(new_name, host1)
+    integration_client.hostgroup.add_host(new_name, host2)
+    integration_client.hostgroup.remove_host(new_name, host1)
+
+    history = integration_client.hostgroup.history(new_name)
+
+    assert len(history) > 0
+    messages = "\n".join(h.message for h in history)
+    assert messages == snapshot("""\
+name = 'test-history-hg'
+description: not set -> updated description
+name: test-history-hg -> test-history-hg-renamed
+host test-history-hg-host1.example.com to group test-history-hg-renamed
+host test-history-hg-host2.example.com to group test-history-hg-renamed
+host test-history-hg-host1.example.com from group test-history-hg-renamed\
+""")
+
+    # Delete the hostgroup and check that the history is still retrievable
+    history_pre_delete = history
+
+    integration_client.hostgroup.delete(new_name)
+
+    # History can be retrieved and should have more entries after the delete operation
+    history_after_delete = integration_client.hostgroup.history(new_name)
+    assert len(history_after_delete) > len(history_pre_delete)
+    assert history_after_delete[-1].message == snapshot(
+        "id = '20', parent = '[]', groups = '[]', hosts = '[{'name': 'test-history-hg-host2.example.com'}]', owners = '[]', created_at = '2026-09-02T14:18:23.979830+02:00', updated_at = '2026-09-02T14:18:26.045204+02:00', name = 'test-history-hg-renamed', description = 'updated description'"
+    )
