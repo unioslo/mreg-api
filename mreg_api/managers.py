@@ -1456,17 +1456,18 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self.update(role, description=description)
 
     @override
-    def delete(self, obj: int | str | Role) -> None:
+    def delete(self, obj: int | str | Role, *, force: bool = False) -> None:
         """Delete a role.
 
         Args:
             obj (int | str | Role): Role instance, numeric ID, or name string.
+            force (bool): Force deletion even if the role is in use. Defaults to False.
 
         Raises:
             DeleteError: If the role is still in use on any hosts.
         """
         obj = self._resolve(obj)
-        if obj.hosts:
+        if obj.hosts and not force:
             hosts = ", ".join(obj.hosts)
             raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
         super().delete(obj)
@@ -1720,17 +1721,18 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         self.update(atom, description=description)
 
     @override
-    def delete(self, obj: int | str | Atom) -> None:
+    def delete(self, obj: int | str | Atom, *, force: bool = False) -> None:
         """Delete an atom.
 
         Args:
             obj (int | str | Atom): Atom instance, name string, or numeric ID.
+            force (bool): Force deletion even if the atom is used in roles. Defaults to False.
 
         Raises:
             DeleteError: If the atom is still used in any roles.
         """
         obj = self._resolve(obj)
-        if obj.roles:
+        if obj.roles and not force:
             roles = ", ".join(obj.roles)
             raise DeleteError(f"Atom {obj.name!r} used in roles: {roles}")
         super().delete(obj)

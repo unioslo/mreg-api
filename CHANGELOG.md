@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `MregClient.hostgroup.add_host()`
   - `MregClient.hostgroup.remove_host()`
   - These methods still raise `PostError` or `DeleteError`, but now with a more descriptive message. The original exception is preserved as the cause (`__cause__`) of the new exception.
+- `force` argument for `MregClient.role.delete()` and `MregClient.atom.delete()` to allow deletion of roles/atoms even if they are in use.
 
 ### Fixed
 

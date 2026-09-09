@@ -8,6 +8,7 @@ from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.endpoints import Endpoint
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Atom
@@ -333,17 +334,29 @@ def test_atom_history(
     assert messages == snapshot("""\
 description = 'test history description', name = 'test-history-atom'
 description: test history description -> test history description
-name: test-history-atom -> test-history-atom-renamed\
+name: test-history-atom -> test-history-atom-renamed
+atom test-history-atom-renamed to role test-history-atom-role1
+atom test-history-atom-renamed to role test-history-atom-role2
+atom test-history-atom-renamed from role test-history-atom-role1\
 """)
 
-    # Delete the atom and check that the history is still retrievable
     history_pre_delete = history
 
-    integration_client.atom.delete(new_name)
+    # Atom in use, will raise an exception
+    with pytest.raises(DeleteError) as excinfo:
+        integration_client.atom.delete(new_name)
+    assert "Atom 'test-history-atom-renamed' used in roles" in str(excinfo.value)
+
+    # Force delete it
+    integration_client.atom.delete(new_name, force=True)
 
     # History can be retrieved and should have more entries after the delete operation
     history_after_delete = integration_client.atom.history(new_name)
     assert len(history_after_delete) > len(history_pre_delete)
-    assert history_after_delete[-1].message == snapshot(
-        "id = '17', roles = '[]', updated_at = '2026-09-02T14:02:45.189803+02:00', create_date = '2026-09-02', description = 'test history description', name = 'test-history-atom-renamed'"
-    )
+
+    last_item = history_after_delete[-1]
+
+    # NOTE: not sure why this is a "remove" relation instead of "delete"...
+    assert last_item.action == "remove"
+    assert "'name': 'test-history-atom-renamed'" in last_item.message
+    assert "'relation': 'atoms'" in last_item.message

@@ -374,15 +374,23 @@ description = 'test history description', name = 'test-history-role'
 name: test-history-role -> test-history-role-renamed\
 """)
 
-    # Delete the role and check that the history is still retrievable
     history_pre_delete = history
-    integration_client.role.delete(new_name)
-    history_after_delete = integration_client.role.history(new_name)
+    with pytest.raises(DeleteError) as excinfo:
+        integration_client.role.delete(new_name)
+    assert "Role 'test-history-role-renamed' used on hosts" in str(excinfo.value)
+
+    # Force delete the role
+    integration_client.role.delete(new_name, force=True)
 
     # History can be retrieved and should have more entries after the delete operation
+    history_after_delete = integration_client.role.history(new_name)
     assert len(history_after_delete) > len(history_pre_delete)
 
     # History should show the atoms and hosts associated with the role at the time of deletion.
-    assert history_after_delete[-1].message == snapshot(
-        "id = '19', hosts = '[]', atoms = '[]', updated_at = '2026-09-02T14:03:56.281757+02:00', create_date = '2026-09-02', description = 'test history description', name = 'test-history-role-renamed', labels = '[]'"
+    last_msg = history_after_delete[-1].message
+    assert "hosts = '[{'name': 'test-history-role-host2.example.com'}]'" in last_msg
+    assert "atoms = '[{'name': 'test-history-role-atom2'}]'" in last_msg
+    assert (
+        "description = 'test history description', name = 'test-history-role-renamed',"
+        in history_after_delete[-1].message
     )

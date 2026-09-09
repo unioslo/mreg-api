@@ -337,11 +337,12 @@ host test-history-hg-host1.example.com from group test-history-hg-renamed\
     # Delete the hostgroup and check that the history is still retrievable
     history_pre_delete = history
 
+    # NOTE: no force parameter here. Can delete even if it contains a host!
     integration_client.hostgroup.delete(new_name)
 
     # History can be retrieved and should have more entries after the delete operation
     history_after_delete = integration_client.hostgroup.history(new_name)
     assert len(history_after_delete) > len(history_pre_delete)
-    assert history_after_delete[-1].message == snapshot(
-        "id = '20', parent = '[]', groups = '[]', hosts = '[{'name': 'test-history-hg-host2.example.com'}]', owners = '[]', created_at = '2026-09-02T14:18:23.979830+02:00', updated_at = '2026-09-02T14:18:26.045204+02:00', name = 'test-history-hg-renamed', description = 'updated description'"
-    )
+    last_msg = history_after_delete[-1].message
+    assert "hosts = '[{'name': 'test-history-hg-host2.example.com'}]'" in last_msg
+    assert "name = 'test-history-hg-renamed', description = 'updated description'" in last_msg
