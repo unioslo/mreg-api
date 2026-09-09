@@ -358,5 +358,4 @@ atom test-history-atom-renamed from role test-history-atom-role1\
 
     # NOTE: not sure why this is a "remove" relation instead of "delete"...
     assert last_item.action == "remove"
-    assert "'name': 'test-history-atom-renamed'" in last_item.message
-    assert "'relation': 'atoms'" in last_item.message
+    assert "atom test-history-atom-renamed from role test-history-atom-role1" in last_item.message
