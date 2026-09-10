@@ -7,6 +7,7 @@ import logging
 from enum import Enum
 from typing import Any
 
+from pydantic import AliasChoices
 from pydantic import BaseModel
 from pydantic import Field
 from pydantic import ValidationError
@@ -82,6 +83,9 @@ class HistoryRelation(BaseModel):
 
 
 def _render_fields(data: JsonMapping) -> str:
+    """Render a mapping as a comma-separated string in the form of key = 'value'."""
+    # NOTE: this format is a holdover from the legacy CLI history item formatting
+    # we should likely not quote non-string values, but for now we'll keep this format.
     return ", ".join(f"{k} = '{v}'" for k, v in data.items())
 
 
@@ -93,7 +97,13 @@ class HistoryItem(BaseModel):
     user: str
     resource: HistoryResource
     name: str
-    mid: int = Field(alias="model_id")  # model_ is an internal pydantic namespace.
+    mid: int = Field(
+        # `model_*` is an internal pydantic namespace.
+        # Use `mid` internally, accept `model_id` as input
+        # and serialize as `model_id` to maintain parity with API
+        validation_alias=AliasChoices("model_id", "mid"),
+        serialization_alias="model_id",
+    )
     model: str
     action: str
     data: JsonMapping
@@ -110,7 +120,23 @@ class HistoryItem(BaseModel):
 
     @property
     def message(self) -> str:
-        """Human-readable description of this history entry."""
+        """Human-readable description of this history entry.
+
+        Guards rendering from failing due to malformed data, and falls back
+        to a raw string representation of the data if rendering fails.
+        """
+        try:
+            return self._render_message()
+        except Exception:
+            logger.warning(
+                "Failed to render history item id=%s action=%s; falling back to raw data",
+                self.id,
+                self.action,
+                exc_info=True,
+            )
+            return str(self.data)
+
+    def _render_message(self) -> str:
         match self.action:
             case "add" | "remove":
                 return HistoryRelation.model_validate(self.data).render(
@@ -126,7 +152,4 @@ class HistoryItem(BaseModel):
                 return _render_fields(self.data)
             case _:
                 logger.error("Unhandled history action: %s", self.action)
-                try:
-                    return _render_fields(self.data)
-                except Exception:
-                    return str(self.data)
+                return _render_fields(self.data)
