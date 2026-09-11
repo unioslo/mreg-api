@@ -21,6 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `MregClient.hostgroup.remove_host()`
   - These methods still raise `PostError` or `DeleteError`, but now with a more descriptive message. The original exception is preserved as the cause (`__cause__`) of the new exception.
 - `force` argument for `MregClient.role.delete()` and `MregClient.atom.delete()` to allow deletion of roles/atoms even if they are in use.
+- Improved type annotations and method overloads for Zone and Delegation methods.
 
 ### Fixed
 
@@ -31,6 +32,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `MregClient.role.remove_label()`
 
   These methods now rely on the API to validate the request and return appropriate errors. This allows for more accurate error reporting, as the API may have additional validation rules that the client is not aware of.
+
+### Changed
+
+- `Zone` is no longer a concrete type. It is now a type alias for `ForwardZone | ReverseZone`.
+- `Delegation` is no longer a concrete type. It is now a type alias for `ForwardZoneDelegation | ReverseZoneDelegation`.
+
+### Removed
+
+- `Zone.type_by_name()` class method.
+- `Delegation.type_by_zone()` class method.
+- `Delegation.endpoint_with_name()` class method.
 
 ## [0.5.0](https://github.com/unioslo/mreg-api/releases/tag/0.5.0) - 2026-09-01
 

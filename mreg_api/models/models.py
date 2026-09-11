@@ -14,6 +14,7 @@ from functools import cached_property
 from typing import Any
 from typing import Literal
 from typing import Self
+from typing import TypeAlias
 from typing import cast
 from typing import overload
 
@@ -27,7 +28,6 @@ from pydantic import field_validator
 from pydantic import model_validator
 from typing_extensions import deprecated
 
-from mreg_api.endpoints import Endpoint
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InvalidIPAddress
@@ -303,8 +303,8 @@ def is_reverse_zone_name(name: str) -> bool:
     return name.endswith(".arpa")
 
 
-class Zone(MregModelWithTimestamps):
-    """Model representing a DNS zone with various attributes and related nameservers."""
+class _Zone(MregModelWithTimestamps):
+    """Private base for DNS zones. Never instantiated directly."""
 
     id: int  # noqa: A003
     nameservers: list[NameServer]
@@ -340,30 +340,20 @@ class Zone(MregModelWithTimestamps):
         if not name.endswith(f".{self.name}"):
             raise InputFailure(f"Delegation '{name}' is not in '{self.name}'")
 
-    @classmethod
-    def type_by_name(cls, name: str) -> type[ForwardZone | ReverseZone]:
-        """Determine the zone type based on the name.
 
-        Args:
-            name: The name of the zone.
-
-        Returns:
-            The zone type.
-        """
-        if is_reverse_zone_name(name):
-            return ReverseZone
-        return ForwardZone
-
-
-class ForwardZone(Zone):
+class ForwardZone(_Zone):
     """A forward zone."""
 
 
-class ReverseZone(Zone):
+class ReverseZone(_Zone):
     """A reverse zone."""
 
 
-class Delegation(MregModelWithTimestamps):
+Zone: TypeAlias = ForwardZone | ReverseZone
+"""A DNS zone: always a concrete forward or reverse zone."""
+
+
+class _Delegation(MregModelWithTimestamps):
     """A delegated zone."""
 
     id: int  # noqa: A003
@@ -371,21 +361,6 @@ class Delegation(MregModelWithTimestamps):
     name: str
     comment: str | None = None
     zone: int | None = None
-
-    # NOTE: Delegations are created through zone objects!
-    # Call Zone.create_delegation() on an existing zone to create one.
-    # We do not implement APIMixin here, since we cannot determine
-    # the path and type of a delegation to create without information
-    # about the zone in which to create it.
-
-    @classmethod
-    def endpoint_with_name(cls, zone: Zone, name: str) -> str:
-        """Return the path to a delegation in a specific zone."""
-        if cls.is_reverse():
-            endpoint = Endpoint.ReverseZonesDelegationsZone
-        else:
-            endpoint = Endpoint.ForwardZonesDelegationsZone
-        return endpoint.with_params(zone.name, name)
 
     def is_delegated(self) -> bool:
         """Return True if the zone is delegated."""
@@ -396,25 +371,22 @@ class Delegation(MregModelWithTimestamps):
         """Return True if the delegation is for a reverse zone."""
         return False
 
-    @classmethod
-    def type_by_zone(cls, zone: Zone) -> type[ForwardZoneDelegation | ReverseZoneDelegation]:
-        """Get the delegation type for a zone."""
-        if zone.is_reverse():
-            return ReverseZoneDelegation
-        return ForwardZoneDelegation
 
-
-class ForwardZoneDelegation(Delegation):
+class ForwardZoneDelegation(_Delegation):
     """A forward zone delegation."""
 
 
-class ReverseZoneDelegation(Delegation):
+class ReverseZoneDelegation(_Delegation):
     """A reverse zone delegation."""
 
     @classmethod
     def is_reverse(cls) -> bool:
         """Return True if the delegation is for a reverse zone."""
         return True
+
+
+Delegation: TypeAlias = ForwardZoneDelegation | ReverseZoneDelegation
+"""A DNS delegation: always a concrete forward or reverse zone delegation."""
 
 
 class ZoneFile(RootModel[str]):
