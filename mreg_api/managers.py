@@ -4443,6 +4443,36 @@ class DelegationManager:
         cls = self._model_for(zone)
         return self._client.get_typed(self._endpoint_for(zone).with_params(zone.name), list[cls])
 
+    @overload
+    def create(
+        self,
+        zone: ForwardZone,
+        *,
+        name: str,
+        nameservers: list[str],
+        comment: str = ...,
+        force: bool = ...,
+    ) -> ForwardZoneDelegation: ...
+    @overload
+    def create(
+        self,
+        zone: ReverseZone,
+        *,
+        name: str,
+        nameservers: list[str],
+        comment: str = ...,
+        force: bool = ...,
+    ) -> ReverseZoneDelegation: ...
+    @overload
+    def create(
+        self,
+        zone: str | Zone,
+        *,
+        name: str,
+        nameservers: list[str],
+        comment: str = ...,
+        force: bool = ...,
+    ) -> ForwardZoneDelegation | ReverseZoneDelegation: ...
     def create(
         self,
         zone: str | Zone,
