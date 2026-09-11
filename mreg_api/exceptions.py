@@ -69,6 +69,11 @@ class APIError(MregApiBaseError):
         return None
 
     @property
+    def status_code(self) -> int | None:
+        """Get the HTTP status code of the response, if available."""
+        return self.response.status_code if self.response else None
+
+    @property
     def request(self) -> Request | None:
         """Get the request that triggered the exception.
 

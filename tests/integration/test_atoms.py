@@ -4,9 +4,11 @@ from typing import TYPE_CHECKING
 from urllib.parse import quote
 
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.endpoints import Endpoint
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models.models import Atom
@@ -306,3 +308,54 @@ def test_update(integration_client: MregClient, atom: Atom) -> None:
     integration_client.atom.update(atom, description="updated atom")
     refreshed = integration_client.atom.refresh(atom)
     assert refreshed.description == "updated atom"
+
+
+def test_atom_history(
+    integration_client: MregClient,
+    fail_on_error_log: None,  # pyright: ignore[reportUnusedParameter]
+) -> None:
+    atm = integration_client.atom.create(name="test-history-atom", description="test history description")
+    integration_client.atom.update(atm, description="test history description")
+    new_name = "test-history-atom-renamed"
+    integration_client.atom.rename(atm, new_name)
+    atm = integration_client.atom.refresh(atm)
+
+    # Create 2 roles, add to both, remove from only the first role
+    role1 = integration_client.role.create(name="test-history-atom-role1", description="test history role 1")
+    role2 = integration_client.role.create(name="test-history-atom-role2", description="test history role 2")
+    integration_client.role.add_atom(role1, atm)
+    integration_client.role.add_atom(role2, atm)
+    integration_client.role.remove_atom(role1, atm)
+
+    history = integration_client.atom.history(new_name)
+
+    assert len(history) > 0
+    messages = "\n".join(h.message for h in history)
+    assert messages == snapshot("""\
+description = 'test history description', name = 'test-history-atom'
+description: test history description -> test history description
+name: test-history-atom -> test-history-atom-renamed
+atom test-history-atom-renamed to role test-history-atom-role1
+atom test-history-atom-renamed to role test-history-atom-role2
+atom test-history-atom-renamed from role test-history-atom-role1\
+""")
+
+    history_pre_delete = history
+
+    # Atom in use, will raise an exception
+    with pytest.raises(DeleteError) as excinfo:
+        integration_client.atom.delete(new_name)
+    assert "Atom 'test-history-atom-renamed' used in roles" in str(excinfo.value)
+
+    # Force delete it
+    integration_client.atom.delete(new_name, force=True)
+
+    # History can be retrieved and should have more entries after the delete operation
+    history_after_delete = integration_client.atom.history(new_name)
+    assert len(history_after_delete) > len(history_pre_delete)
+
+    last_item = history_after_delete[-1]
+
+    # NOTE: not sure why this is a "remove" relation instead of "delete"...
+    assert last_item.action == "remove"
+    assert "atom test-history-atom-renamed from role test-history-atom-role1" in last_item.message

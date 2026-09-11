@@ -292,7 +292,7 @@ class ResourceManager(Generic[T], ABC):
             return self._search_one("id", ref)
         return self._fetch_by_path(ref)
 
-    def _resolve(self, ref: int | str | T) -> T:
+    def _resolve(self, ref: int | str | T, *, refresh: bool = False) -> T:
         """Resolve an object reference (instance, path parameter, or numeric id) to a model.
 
         Fetches the object from the server if only an identifier is provided.
@@ -301,7 +301,12 @@ class ResourceManager(Generic[T], ABC):
             EntityNotFound: If the object cannot be found.
         """
         if isinstance(ref, self.model):
-            return ref
+            if refresh:
+                # NOTE: somewhat spooky for a private method to call a public method.
+                #       we could easily introduce recursion spaghetti this way
+                return self.refresh(ref)
+            else:
+                return ref
         elif isinstance(ref, BaseModel):  # MregModel but not the manager's bound type
             # Technically, type checker should prevent this class of errors, but
             # but in cases where the wrong model type is passed to this method
@@ -615,7 +620,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         return self._case_name(name)
 
     @override
-    def _resolve(self, ref: int | str | T) -> T:
+    def _resolve(self, ref: int | str | T, *, refresh: bool = False) -> T:
         # Resolve by name search if we have a str arg and the API resource path
         # does not identify the resource by name, e.g.:
         # `/labels/{id}` -> must search by name -> `/labels?name={name}`
@@ -1181,10 +1186,18 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         hostgroup = self._resolve(hostgroup)
         hostname = resolve_host_name(host, self._client)
 
-        self._client.post(
-            Endpoint.HostGroupsAddHosts.with_params(hostgroup.name),
-            json={"name": hostname},
-        )
+        try:
+            self._client.post(
+                Endpoint.HostGroupsAddHosts.with_params(hostgroup.name),
+                json={"name": hostname},
+            )
+        except PostError as e:
+            # This endpoint does not return any useful data. A very generic and unhelpful error message.
+            if e.status_code == 409:
+                raise PostError(
+                    f"Host {hostname!r} is already a member of host group {hostgroup.name!r}."
+                ) from e
+            raise
 
     def remove_host(self, hostgroup: int | str | HostGroup, host: str | Host) -> None:
         """Remove a host from a host group.
@@ -1196,9 +1209,17 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         hostgroup = self._resolve(hostgroup)
         hostname = resolve_host_name(host, self._client)
 
-        self._client.delete(
-            Endpoint.HostGroupsRemoveHosts.with_params(hostgroup.name, hostname),
-        )
+        try:
+            self._client.delete(
+                Endpoint.HostGroupsRemoveHosts.with_params(hostgroup.name, hostname),
+            )
+        except DeleteError as e:
+            # Endpoint returns generic 404 error with no extra info, enrich it.
+            if e.status_code == 404:
+                raise DeleteError(
+                    f"Host {hostname!r} is not a member of host group {hostgroup.name!r}."
+                ) from e
+            raise
 
     def add_owner(self, hostgroup: int | str | HostGroup, name: str) -> None:
         """Add an owner to a host group.
@@ -1208,11 +1229,17 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             name (str): Name of the owner to add.
         """
         hostgroup = self._resolve(hostgroup)
-
-        self._client.post(
-            Endpoint.HostGroupsAddOwner.with_params(hostgroup.name),
-            json={"name": name},
-        )
+        try:
+            self._client.post(
+                Endpoint.HostGroupsAddOwner.with_params(hostgroup.name),
+                json={"name": name},
+            )
+        except PostError as e:
+            if e.response and e.response.status_code == 409:
+                raise PostError(
+                    f"Owner {name!r} already associated with host group {hostgroup.name!r}"
+                ) from e
+            raise
 
     def remove_owner(self, hostgroup: int | str | HostGroup, name: str) -> None:
         """Remove an owner from a host group.
@@ -1223,9 +1250,17 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
         """
         hostgroup = self._resolve(hostgroup)
 
-        self._client.delete(
-            Endpoint.HostGroupsRemoveOwner.with_params(hostgroup.name, name),
-        )
+        try:
+            self._client.delete(
+                Endpoint.HostGroupsRemoveOwner.with_params(hostgroup.name, name),
+            )
+        except DeleteError as e:
+            # Endpoint returns generic 404 error with no extra info, enrich it.
+            if e.status_code == 404:
+                raise DeleteError(
+                    f"Owner {name!r} is not associated with host group {hostgroup.name!r}."
+                ) from e
+            raise
 
     # RENAMED: get_all_parents -> list_parents
     def list_parents(self, hostgroup: int | str | HostGroup) -> list[HostGroup]:
@@ -1421,17 +1456,18 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         self.update(role, description=description)
 
     @override
-    def delete(self, obj: int | str | Role) -> None:
+    def delete(self, obj: int | str | Role, *, force: bool = False) -> None:
         """Delete a role.
 
         Args:
             obj (int | str | Role): Role instance, numeric ID, or name string.
+            force (bool): Force deletion even if the role is in use. Defaults to False.
 
         Raises:
             DeleteError: If the role is still in use on any hosts.
         """
         obj = self._resolve(obj)
-        if obj.hosts:
+        if obj.hosts and not force:
             hosts = ", ".join(obj.hosts)
             raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
         super().delete(obj)
@@ -1465,12 +1501,16 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
-        _ = self._get_atom(atom_name)  # ensure atom exists
-        if atom_name in role.atoms:
-            raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}")
-        # TODO: need a better abstraction for endpoints that
-        # return the new version of the resource after modification
-        self._client.post(Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name})
+        _ = self._get_atom(atom_name)  # ensure atom exists. # XXX [09/09/2026]: WHY?!
+
+        try:
+            self._client.post(
+                Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name}
+            )
+        except PostError as e:
+            if e.response and e.response.status_code == 409:
+                raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}") from e
+            raise
         return True
 
     def remove_atom(self, role: int | str | Role, atom: int | str | Atom) -> bool:
@@ -1490,9 +1530,14 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
-        if atom_name not in role.atoms:  # NOTE: use a method for this? Casing, etc.
-            raise EntityOwnershipMismatch(f"Atom {atom_name!r} not a member of {role.name!r}")
-        self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
+        try:
+            self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
+        except DeleteError as e:
+            if e.response and e.response.status_code == 404:
+                raise DeleteError(
+                    f"Atom {atom_name!r} is not a member of role {role.name!r}", response=e.response
+                ) from e
+            raise
         return True
 
     def add_host(self, role: int | Role, host: str | Host) -> bool:
@@ -1509,7 +1554,12 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         hostname = resolve_host_name(host, self._client)
-        self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
+        try:
+            self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
+        except PostError as e:
+            if e.response and e.response.status_code == 409:
+                raise PostError(f"Host {hostname!r} is already a member of role {role.name!r}") from e
+            raise
         return True
 
     def remove_host(self, role: int | Role, host: str | Host) -> bool:
@@ -1526,7 +1576,12 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         hostname = resolve_host_name(host, self._client)
-        self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
+        try:
+            self._client.delete(Endpoint.HostPolicyRolesRemoveHost.with_params(role.name, hostname))
+        except DeleteError as e:
+            # Endpoint returns generic 404 error with no extra info, enrich it.
+            if e.status_code == 404:
+                raise DeleteError(f"Host {hostname!r} does not belong to role {role.name!r}.") from e
         return True
 
     @deprecated('use "list_labels()" instead')
@@ -1565,7 +1620,8 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             EntityNotFound: If the label does not exist.
             EntityAlreadyExists: If the role already has the label.
         """
-        role = self._resolve(role)
+        # We need the up-to-date reference here!
+        role = self._resolve(role, refresh=True)
         label_id = self._resolve_label_id(label)
         if label_id in role.labels:
             raise EntityAlreadyExists(f"Role {role.name!r} already has label {label!r}")
@@ -1582,7 +1638,8 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             EntityNotFound: If the label does not exist.
             EntityOwnershipMismatch: If the role does not have the label.
         """
-        role = self._resolve(role)
+        # We need the up-to-date reference here!
+        role = self._resolve(role, refresh=True)
         label_id = self._resolve_label_id(label)
         if label_id not in role.labels:
             raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label!r}")
@@ -1664,17 +1721,18 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
         self.update(atom, description=description)
 
     @override
-    def delete(self, obj: int | str | Atom) -> None:
+    def delete(self, obj: int | str | Atom, *, force: bool = False) -> None:
         """Delete an atom.
 
         Args:
             obj (int | str | Atom): Atom instance, name string, or numeric ID.
+            force (bool): Force deletion even if the atom is used in roles. Defaults to False.
 
         Raises:
             DeleteError: If the atom is still used in any roles.
         """
         obj = self._resolve(obj)
-        if obj.roles:
+        if obj.roles and not force:
             roles = ", ".join(obj.roles)
             raise DeleteError(f"Atom {obj.name!r} used in roles: {roles}")
         super().delete(obj)
@@ -2016,6 +2074,7 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         Raises:
             EntityAlreadyExists: If the policy already has this attribute.
         """
+        # FIXME: use refresh=True
         policy = self._resolve(policy)
 
         # NOTE: potential for mistakes to happen here! Can we rely on name matching via model method?

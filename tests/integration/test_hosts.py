@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING
 
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
@@ -231,3 +232,41 @@ def test_update(integration_client: MregClient, host: Host) -> None:
     integration_client.host.update(host, comment="updated comment")
     refreshed = integration_client.host.refresh(host)
     assert refreshed.comment == "updated comment"
+
+
+def test_host_history(
+    integration_client: MregClient,
+    fail_on_error_log: None,  # pyright: ignore[reportUnusedParameter]
+) -> None:
+    host = integration_client.host.create(name="test-history-host")
+    integration_client.host.update(host, comment="test history comment", ttl=3600)
+    new_name = "test-history-host-renamed"
+    integration_client.host.rename(host, new_name)
+
+    # Create an IP address associated with the host, and then update said IP
+    ip = integration_client.ipaddress.create(
+        ipaddress="123.123.123.123", macaddress="00:11:22:33:44:55", host=host.id
+    )
+    integration_client.ipaddress.update(ip, ipaddress="124.124.124.124")
+
+    history = integration_client.host.history(new_name)
+
+    assert len(history) > 0
+    messages = "\n".join(h.message for h in history)
+    assert messages == snapshot("""\
+name = 'test-history-host.example.com'
+ttl: not set -> 3600, comment: not set -> test history comment
+name: test-history-host.example.com -> test-history-host-renamed.example.com
+macaddress = '00:11:22:33:44:55', ipaddress = '123.123.123.123'
+123.123.123.123, ipaddress: 123.123.123.123 -> 124.124.124.124\
+""")
+
+    # Delete the host and check that the history is still retrievable
+    history_pre_delete = history
+
+    integration_client.host.delete(new_name)
+
+    # History can be retrieved and should have more entries after the delete operation
+    history_after_delete = integration_client.host.history(new_name)
+    assert len(history_after_delete) > len(history_pre_delete)
+    assert history_after_delete[-1].message == snapshot("deleted test-history-host-renamed.example.com")
