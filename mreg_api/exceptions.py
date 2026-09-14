@@ -71,16 +71,24 @@ class APIError(MregApiBaseError):
 
     @cached_property
     def _detail_text(self) -> str:
-        """Verbose error text (with codes), falling back to raw response text.
-
-        Used by `formatted_message`. External callers wanting this rendering can
-        use `self.errors.as_str()` / `self.errors.as_json_str()` directly.
-        """
+        """Verbose error text (with codes), falling back to raw response text."""
         if self.errors and (msg := self.errors.as_str()):
             return msg
         if self.response and self.response.text:
             return self.response.text
         return ""
+
+    @deprecated('Use ".errors.as_str()" instead. Will be removed in 1.0')
+    @property
+    def details(self) -> str:
+        """Get the error details from the response."""
+        return self._detail_text
+
+    @deprecated('Use ".errors.as_json_str()" instead. Will be removed in 1.0')
+    @property
+    def details_json(self) -> str:
+        """Get the error details from the response."""
+        return self.errors.as_json_str()
 
     @property
     def status_code(self) -> int | None:
