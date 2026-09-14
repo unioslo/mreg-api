@@ -225,8 +225,8 @@ POST "http://localhost/api/v1/hosts/": 500: Internal Server Error
 Internal Server Error\
 """)
 
-    def test_details_property(self) -> None:
-        """Test that details property returns formatted error string."""
+    def test_detail_property(self) -> None:
+        """Test that detail returns the clean human-readable message."""
         response = make_mock_response(
             status_code=400,
             json_body={
@@ -234,12 +234,31 @@ Internal Server Error\
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
+        assert error.detail == "This field is required."
 
-        assert error.details == snapshot("Validation Error: Required - This field is required.: name")
+    def test_detail_joins_multiple_errors(self) -> None:
+        """Test that detail joins multiple error details with '; '."""
+        response = make_mock_response(
+            status_code=400,
+            json_body={
+                "type": "validation_error",
+                "errors": [
+                    {"code": "required", "detail": "This field is required.", "attr": "name"},
+                    {"code": "invalid", "detail": "Enter a valid email.", "attr": "contact"},
+                ],
+            },
+        )
+        error = APIError(response=response)
+        assert error.detail == "This field is required.; Enter a valid email."
 
-    def test_details_json_property(self) -> None:
-        """Test that details_json property returns JSON string."""
+    def test_detail_empty_without_response(self) -> None:
+        """Test that detail is empty when there is no response."""
+        error = APIError("Connection failed", response=None)
+        assert error.detail == ""
+
+    def test_str_is_formatted_message(self) -> None:
+        """Test that str(exc) returns the full formatted_message block."""
         response = make_mock_response(
             status_code=400,
             json_body={
@@ -247,27 +266,9 @@ Internal Server Error\
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError("Request failed", response=response)
-
-        assert error.details_json == snapshot("""\
-{
-  "type": "validation_error",
-  "errors": [
-    {
-      "code": "required",
-      "detail": "This field is required.",
-      "attr": "name"
-    }
-  ]
-}\
+        error = APIError(response=response)
+        assert str(error) == error.formatted_message()
+        assert str(error) == snapshot("""\
+POST "http://localhost/api/v1/hosts/": 400: Bad Request
+Validation Error: Required - This field is required.: name\
 """)
-
-    def test_details_empty_when_no_response(self) -> None:
-        """Test that details returns empty string when no response."""
-        error = APIError("Connection failed", response=None)
-        assert error.details == ""
-
-    def test_details_json_none_when_no_response(self) -> None:
-        """Test that details_json returns None when no response."""
-        error = APIError("Connection failed", response=None)
-        assert error.details_json is None

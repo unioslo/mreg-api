@@ -11,6 +11,7 @@ from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing_extensions import deprecated
+from typing_extensions import override
 
 from mreg_api.types import HTTPMethod
 
@@ -31,42 +32,55 @@ class APIError(MregApiBaseError):
     Parses drf-standardized-errors errors from the MREG API if present in response.
     """
 
-    def __init__(self, message: str, response: Response | None = None):
+    def __init__(self, message: str = "", response: Response | None = None):
         """Initialize an APIError exception.
 
         Args:
-            message: The exception message.
+            message: An optional message override. When empty, the message is
+                derived from the response (parsed error details, then raw text,
+                then reason phrase) via `formatted_message`.
             response: The response object that triggered the exception.
         """
         super().__init__(message)
         self._response: Response | None = response
 
+    @override
+    def __str__(self) -> str:
+        """Return the full formatted error message (request info + details)."""
+        return self.formatted_message()
+
     @cached_property
-    def errors(self) -> MREGErrorResponse | None:
+    def errors(self) -> MREGErrorResponse:
         """Get the parsed MREG errors from the response.
 
         Returns:
-            The MREGErrorResponse object or None if not available.
+            The MREGErrorResponse object, or a default MREGErrorResponse with type "unknown" if the response
         """
-        if self.response:
-            return parse_mreg_error(self.response)
-        return None
+        if self.response and (errors := parse_mreg_error(self.response)):
+            return errors
+        return MREGErrorResponse(type="unknown")
 
     @cached_property
-    def details(self) -> str:
-        """Error details from response as plain text."""
+    def detail(self) -> str:
+        """Clean human-readable error message from the response.
+
+        Joins the detail of each parsed error with "; ". Empty if the response
+        has no parseable errors.
+        """
+        return self.errors.detail if self.errors else ""
+
+    @cached_property
+    def _detail_text(self) -> str:
+        """Verbose error text (with codes), falling back to raw response text.
+
+        Used by `formatted_message`. External callers wanting this rendering can
+        use `self.errors.as_str()` / `self.errors.as_json_str()` directly.
+        """
         if self.errors and (msg := self.errors.as_str()):
             return msg
         if self.response and self.response.text:
             return self.response.text
         return ""
-
-    @cached_property
-    def details_json(self) -> str | None:
-        """The error details as JSON string."""
-        if self.errors and (msg := self.errors.as_json_str()):
-            return msg
-        return None
 
     @property
     def status_code(self) -> int | None:
@@ -137,9 +151,9 @@ class APIError(MregApiBaseError):
             parts.append(request_info)
 
         # Error details (JSON or plain text), falling back to exception message
-        if json and (details := self.details_json):
-            parts.append(details)
-        elif details := self.details:
+        if json and self.errors:
+            parts.append(self.errors.as_json_str())
+        elif details := self._detail_text:
             parts.append(details)
         elif self.args:
             parts.append(str(self.args[0]))
@@ -340,6 +354,18 @@ class MREGErrorResponse(BaseModel):
 
     type: str
     errors: list[MREGError] = []
+
+    def __bool__(self) -> bool:
+        """Response contains MREGError objects if True, else False."""
+        return bool(self.errors)
+
+    @cached_property
+    def detail(self) -> str:
+        """Get the detail field of the error(s).
+
+        Most MREG error responses only contain a single error object.
+        """
+        return "; ".join([error.detail for error in self.errors])
 
     def as_str(self) -> str:
         """Convert the error response to a string.
