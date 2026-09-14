@@ -78,14 +78,14 @@ class APIError(MregApiBaseError):
             return self.response.text
         return ""
 
-    @deprecated('Use ".errors.as_str()" instead. Will be removed in 1.0')
     @property
+    @deprecated('Use ".errors.as_str()" instead.')
     def details(self) -> str:
         """Get the error details from the response."""
         return self._detail_text
 
-    @deprecated('Use ".errors.as_json_str()" instead. Will be removed in 1.0')
     @property
+    @deprecated('Use ".errors.as_json_str()" instead.')
     def details_json(self) -> str:
         """Get the error details from the response."""
         return self.errors.as_json_str()
