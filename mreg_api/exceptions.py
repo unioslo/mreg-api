@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from typing_extensions import deprecated
 from typing_extensions import override
 
+from mreg_api.__about__ import __version__
 from mreg_api.types import HTTPMethod
 
 logger = logging.getLogger(__name__)
@@ -131,6 +132,24 @@ class APIError(MregApiBaseError):
             return self.__cause__.response
         return None
 
+    def _not_found_hint(self) -> str | None:
+        """Helpful hint for 404s on endpoints that don't exist on the server."""
+        resp = self.response
+        if (
+            not resp
+            or resp.status_code != 404
+            or "The requested resource was not found on this server." not in resp.text
+        ):
+            return None
+        url = str(resp.request.url)
+        endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
+        return (
+            f"Endpoint not found: '{endpoint}'\n"
+            f"This may be because your library version ({__version__}) is:\n"
+            f"  - Too old: The endpoint has been removed from the server\n"
+            f"  - Too new: You're using a beta feature not yet available on the server"
+        )
+
     def _request_info_str(self) -> str | None:
         """Prefix message with request info if available."""
         if self.response:
@@ -159,7 +178,9 @@ class APIError(MregApiBaseError):
             parts.append(request_info)
 
         # Error details (JSON or plain text), falling back to exception message
-        if json and self.errors:
+        if hint := self._not_found_hint():
+            parts.append(hint)
+        elif json and self.errors:
             parts.append(self.errors.as_json_str())
         elif details := self._detail_text:
             parts.append(details)
@@ -342,8 +363,13 @@ class MREGError(BaseModel):
     """Details of an MREG error."""
 
     code: str
+    """The error code identifying the type of error."""
+
     detail: str
+    """Human-readable representation of the error."""
+
     attr: str | None
+    """The attribute (field) associated with the error, if any."""
 
     def fmt_error(self) -> str:
         """Format the error message.
@@ -351,10 +377,11 @@ class MREGError(BaseModel):
         Returns:
             A formatted error message.
         """
-        msg = f"{fmt_error_code(self.code)} - {self.detail}"
+        detail = self.detail.rstrip(".")  # remove trailing period
+        code = fmt_error_code(self.code)
         if self.attr:
-            msg += f": {self.attr}"
-        return msg
+            return f"{self.attr}: {code} - {detail}"
+        return f"{code} - {detail}"
 
 
 class MREGErrorResponse(BaseModel):
@@ -381,9 +408,7 @@ class MREGErrorResponse(BaseModel):
         Returns:
             A string representation of the error response.
         """
-        errors = "; ".join([error.fmt_error() for error in self.errors])
-        # NOTE: could result in colon followed by no errors, but it's unlikely
-        return f"{fmt_error_code(self.type)}: {errors}"
+        return "\n".join(error.fmt_error() for error in self.errors)
 
     def as_json_str(self, indent: int = 2) -> str:
         """Convert the error response to a JSON string.
@@ -421,7 +446,7 @@ ERROR_MAPPING: dict[HTTPMethod, type[APIError]] = {
 }
 
 
-def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
+def determine_http_error_class(method: str) -> type[APIError]:
     """Get the appropriate exception class for a given HTTP method.
 
     Args:
@@ -430,7 +455,7 @@ def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
     Returns:
         The exception class corresponding to the HTTP method.
     """
-    if t := ERROR_MAPPING.get(method):
+    if t := ERROR_MAPPING.get(method):  # pyright: ignore[reportArgumentType]
         return t
     # NOTE: should be unreachable
     logger.warning("No specific exception class for HTTP method '%s', using generic APIError", method)

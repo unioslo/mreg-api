@@ -129,7 +129,7 @@ class TestAPIErrorFormattedMessage:
 
         assert error.formatted_message() == snapshot("""\
 POST "http://localhost/api/v1/hosts/": 400: Bad Request
-Validation Error: Required - This field is required.: name\
+name: Required - This field is required\
 """)
 
     def test_formatted_message_multiple_errors(self) -> None:
@@ -148,7 +148,8 @@ Validation Error: Required - This field is required.: name\
 
         assert error.formatted_message() == snapshot("""\
 POST "http://localhost/api/v1/hosts/": 400: Bad Request
-Validation Error: Required - This field is required.: name; Invalid - Enter a valid email.: contact\
+name: Required - This field is required
+contact: Invalid - Enter a valid email\
 """)
 
     def test_formatted_message_error_without_attr(self) -> None:
@@ -164,7 +165,7 @@ Validation Error: Required - This field is required.: name; Invalid - Enter a va
 
         assert error.formatted_message() == snapshot("""\
 POST "http://localhost/api/v1/hosts/": 400: Bad Request
-Client Error: Authentication Failed - Invalid credentials.\
+Authentication Failed - Invalid credentials\
 """)
 
     def test_formatted_message_json_mode(self) -> None:
@@ -203,6 +204,41 @@ POST "http://localhost/api/v1/hosts/": 400: Bad Request
         assert error.formatted_message() == snapshot("""\
 POST "http://localhost/api/v1/hosts/": 500: Internal Server Error
 Internal Server Error: Something went wrong\
+""")
+
+    def test_formatted_message_not_found_hint(self) -> None:
+        """A missing-endpoint 404 renders the version hint, not the raw text."""
+        from mreg_api.__about__ import __version__  # noqa: PLC0415
+
+        response = make_mock_response(
+            status_code=404,
+            method="GET",
+            url="http://localhost/api/v1/does/not/exist",
+            text_body="The requested resource was not found on this server.",
+        )
+        error = APIError(response=response)
+
+        assert error.formatted_message() == snapshot(f"""\
+GET "http://localhost/api/v1/does/not/exist": 404: Not Found
+Endpoint not found: 'does/not/exist'
+This may be because your library version ({__version__}) is:
+  - Too old: The endpoint has been removed from the server
+  - Too new: You're using a beta feature not yet available on the server\
+""")
+
+    def test_formatted_message_404_without_sentinel(self) -> None:
+        """A 404 without the sentinel text renders the raw body, no hint."""
+        response = make_mock_response(
+            status_code=404,
+            method="GET",
+            url="http://localhost/api/v1/hosts/foo",
+            text_body="host not found",
+        )
+        error = APIError(response=response)
+
+        assert error.formatted_message() == snapshot("""\
+GET "http://localhost/api/v1/hosts/foo": 404: Not Found
+host not found\
 """)
 
     def test_formatted_message_fallback_to_exception_args(self) -> None:
@@ -270,5 +306,5 @@ Internal Server Error\
         assert str(error) == error.formatted_message()
         assert str(error) == snapshot("""\
 POST "http://localhost/api/v1/hosts/": 400: Bad Request
-Validation Error: Required - This field is required.: name\
+name: Required - This field is required\
 """)

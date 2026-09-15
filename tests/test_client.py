@@ -3,6 +3,7 @@ from __future__ import annotations
 import datetime
 import gc
 from typing import Any
+from typing import get_args
 
 import pytest
 from httpx import Request as HttpxRequest
@@ -886,10 +887,13 @@ def test_client_manager_composition_has_get_method(client: MregClient) -> None:
         ("DELETE", DeleteError),
     ],
 )
-def test_request_exception_handling(
+def test_request_exception_handling_live(
     httpserver: HTTPServer, client: MregClient, method: HTTPMethod, expected_exc: type[Exception]
 ) -> None:
-    """Test that check_response raises the appropriate exception type on non-2xx response."""
+    """Test that check_response raises the appropriate exception type on non-2xx response.
+
+    Uses actual HTTP requests to test exception handling.
+    """
     httpserver.expect_oneshot_request("/test_check_response").respond_with_response(Response(status=400))
     with pytest.raises(expected_exc):
         _ = client.request(method, "/test_check_response")
@@ -909,10 +913,14 @@ def test_request_exception_handling(
     ],
 )
 def test_check_response_2xx(method: HTTPMethod, status_code: int) -> None:
-    """Test that check_response does not raise on non-2xx response."""
+    """Test that check_response does not raise on non-2xx response.
+
+    Uses manually constructed HTTPX responses to test exception handling.
+    No actual HTTP requests are made.
+    """
     # Valid 2xx response should not raise
     response = HttpxResponse(status_code=status_code, request=HttpxRequest(method=method, url="http://test"))
-    check_response(response, method, str(response.request.url))
+    check_response(response)
 
 
 @pytest.mark.parametrize(
@@ -928,10 +936,31 @@ def test_check_response_2xx(method: HTTPMethod, status_code: int) -> None:
     "status_code",
     [400, 403, 404, 409, 500],
 )
-def test_check_response_error(method: HTTPMethod, expected_exc: type[Exception], status_code: int) -> None:
+@pytest.mark.parametrize("lowercase_method", [True, False])
+def test_check_response_error(
+    method: str, expected_exc: type[Exception], status_code: int, lowercase_method: bool
+) -> None:
     """Test that check_response raises the correct error on non-2xx response."""
-    # Valid 2xx response should not raise
-    response = HttpxResponse(status_code=status_code, request=HttpxRequest(method=method, url="http://test"))
+    # Ensure method casing does not matter for HTTPX!
+    if lowercase_method:
+        method = method.lower()
+
+    request = HttpxRequest(method=method, url="http://test")
+    response = HttpxResponse(status_code=status_code, request=request)
+
+    # HTTPX normalizes the method to uppercase, so we expect the request method to be uppercase.
+    assert response.request.method == method.upper()
+
     with pytest.raises(expected_exc) as exc_info:
-        check_response(response, method, str(response.request.url))
+        check_response(response)
+
     assert exc_info.type is expected_exc
+
+
+def test_all_http_methods_covered() -> None:
+    """Test that all HTTP methods defined in HTTPMethod are covered in the tests."""
+    # Circuit-breaker that catches if we add more valid HTTP methods that
+    # are not covered by existing tests. Still requires us to manually fix
+    # all other test cases accordingly, but this will at least give us an indication
+    # that something needs to be updated.
+    assert set(get_args(HTTPMethod)) == {"GET", "POST", "PATCH", "DELETE"}

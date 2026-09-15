@@ -145,26 +145,20 @@ def strip_none(data: JsonMapping) -> JsonMapping:
     return new
 
 
-def check_response(response: Response, operation_type: HTTPMethod, url: str) -> None:
-    """Check the result of a request and raise on error."""
-    if not response.is_success:
-        # Produce a more helpful error message for 404s on endpoints that don't exist
-        if (
-            response.status_code == 404
-            and "The requested resource was not found on this server." in response.text
-        ):
-            endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
-            msg = (
-                f"Endpoint not found: '{endpoint}'\n"
-                f"This may be because your library version ({__version__}) is:\n"
-                f"  - Too old: The endpoint has been removed from the server\n"
-                f"  - Too new: You're using a beta feature not yet available on the server"
-            )
-            raise determine_http_error_class(operation_type)(msg, response)
+# XXX: The only reason we pass in operation_type here is for the `HTTPMethod`
+# type, which ensures we pass a valid(ly cased) HTTP method to the function.
+# We _do_ have access to `response.request.method`, which should contain the same value...
+def check_response(response: Response) -> None:
+    """Check the result of a request and raise on error.
 
-        # The exception derives its message from the response (parsed error
-        # details, then raw text, then reason phrase) via formatted_message.
-        raise determine_http_error_class(operation_type)(response=response)
+    Args:
+        response: The HTTP response object to check.
+
+    Raises:
+        APIError: If the response indicates an error.
+    """
+    if not response.is_success:
+        raise determine_http_error_class(response.request.method)(response=response)
 
 
 class PaginatedResponse(BaseModel):
@@ -799,7 +793,7 @@ class MregClient:
         if result.status_code == 404 and ok404:
             return None
 
-        check_response(result, method, url)
+        check_response(result)
         return result
 
     def _make_cache_key(self, path: str, params: QueryParams | None, ok404: bool) -> str:
