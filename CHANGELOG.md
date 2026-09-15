@@ -22,9 +22,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - These methods still raise `PostError` or `DeleteError`, but now with a more descriptive message. The original exception is preserved as the cause (`__cause__`) of the new exception.
 - `force` argument for `MregClient.role.delete()` and `MregClient.atom.delete()` to allow deletion of roles/atoms even if they are in use.
 - Improved type annotations and method overloads for Zone and Delegation methods.
+- `exceptions.APIError.detail` property to get the detail string from the parsed error(s).
 
 ### Fixed
 
+- Helpful "Endpoint not found" message for 404s on missing endpoints was silently discarded, showing the raw server text instead. The hint (including the library version) is now rendered by `exceptions.APIError.formatted_message()`.
 - Client-side checking of values using stale local object in certain methods:
   - `MregClient.role.add_atom()`
   - `MregClient.role.remove_atom()`
@@ -37,12 +39,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `Zone` is no longer a concrete type. It is now a type alias for `ForwardZone | ReverseZone`.
 - `Delegation` is no longer a concrete type. It is now a type alias for `ForwardZoneDelegation | ReverseZoneDelegation`.
+- `exceptions.APIError.errors` is not always an instance of `MREGErrorResponse`. If the response cannot be parsed, it will be an empty `MREGErrorResponse` with type `"unknown"`.
+- `client.check_response()` no longer takes a `url` argument; the endpoint is now derived from the response when rendering error messages.
+- `client.check_response()` no longer takes a `operation_type` argument; the HTTP method is now derived from the response when choosing the appropriate exception type.
 
 ### Removed
 
 - `Zone.type_by_name()` class method.
 - `Delegation.type_by_zone()` class method.
 - `Delegation.endpoint_with_name()` class method.
+
+### Deprecated
+
+- `exceptions.APIError.details` property, replaced by `exceptions.APIError.errors.as_str()`.
+- `exceptions.APIError.details_json` property, replaced by `exceptions.APIError.errors.as_json_str()`.
 
 ## [0.5.0](https://github.com/unioslo/mreg-api/releases/tag/0.5.0) - 2026-09-01
 

@@ -1531,14 +1531,9 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         """
         role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
-        try:
-            self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
-        except DeleteError as e:
-            if e.response and e.response.status_code == 404:
-                raise DeleteError(
-                    f"Atom {atom_name!r} is not a member of role {role.name!r}", response=e.response
-                ) from e
-            raise
+        # A 404 here means the atom is not a member of the role; the raised
+        # DeleteError already surfaces the server's error detail via its message.
+        self._client.delete(Endpoint.HostPolicyRolesRemoveAtom.with_params(role.name, atom_name))
         return True
 
     def add_host(self, role: int | Role, host: str | Host) -> bool:

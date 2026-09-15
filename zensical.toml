@@ -52,15 +52,16 @@ nav = [
     { "Authentication" = "guides/authentication.md" },
     { "Resources" = "guides/resources.md" },
     { "Caching" = "guides/caching.md" },
-    { "Event Log" = "guides/eventlog.md" },
-    { "Request Log" = "guides/requestlog.md" },
+    { "Event log" = "guides/eventlog.md" },
+    { "Request log" = "guides/requestlog.md" },
+    { "Error handling" = "guides/exceptions.md" },
   ] },
   { "API reference" = [
     { "Client" = "reference/client.md" },
     { "Managers" = "reference/managers.md" },
     { "Models" = "reference/models.md" },
     { "Events" = "reference/events.md" },
-    { "Request Log" = "reference/requestlog.md" },
+    { "Request log" = "reference/requestlog.md" },
     { "Cache" = "reference/cache.md" },
     { "Exceptions" = "reference/exceptions.md" },
   ] },
@@ -401,3 +402,8 @@ separate_signature = true
 show_signature_annotations = true
 signature_crossrefs = true
 extensions = [{ griffe_pydantic = { schema = true } }]
+
+## macros
+
+[project.plugins.macros.config]
+module_name = "docs/_macros/main"

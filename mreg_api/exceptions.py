@@ -11,7 +11,9 @@ from httpx import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing_extensions import deprecated
+from typing_extensions import override
 
+from mreg_api.__about__ import __version__
 from mreg_api.types import HTTPMethod
 
 logger = logging.getLogger(__name__)
@@ -31,42 +33,63 @@ class APIError(MregApiBaseError):
     Parses drf-standardized-errors errors from the MREG API if present in response.
     """
 
-    def __init__(self, message: str, response: Response | None = None):
+    def __init__(self, message: str = "", response: Response | None = None):
         """Initialize an APIError exception.
 
         Args:
-            message: The exception message.
+            message: An optional message override. When empty, the message is
+                derived from the response (parsed error details, then raw text,
+                then reason phrase) via `formatted_message`.
             response: The response object that triggered the exception.
         """
         super().__init__(message)
         self._response: Response | None = response
 
+    @override
+    def __str__(self) -> str:
+        """Return the full formatted error message (request info + details)."""
+        return self.formatted_message()
+
     @cached_property
-    def errors(self) -> MREGErrorResponse | None:
+    def errors(self) -> MREGErrorResponse:
         """Get the parsed MREG errors from the response.
 
         Returns:
-            The MREGErrorResponse object or None if not available.
+            The MREGErrorResponse object, or a default MREGErrorResponse with type "unknown" if the response
         """
-        if self.response:
-            return parse_mreg_error(self.response)
-        return None
+        if self.response and (errors := parse_mreg_error(self.response)):
+            return errors
+        return MREGErrorResponse(type="unknown")
 
     @cached_property
-    def details(self) -> str:
-        """Error details from response as plain text."""
+    def detail(self) -> str:
+        """Clean human-readable error message from the response.
+
+        Joins the detail of each parsed error with "; ". Empty if the response
+        has no parseable errors.
+        """
+        return self.errors.detail if self.errors else ""
+
+    @cached_property
+    def _detail_text(self) -> str:
+        """Verbose error text (with codes), falling back to raw response text."""
         if self.errors and (msg := self.errors.as_str()):
             return msg
         if self.response and self.response.text:
             return self.response.text
         return ""
 
-    @cached_property
-    def details_json(self) -> str | None:
-        """The error details as JSON string."""
-        if self.errors and (msg := self.errors.as_json_str()):
-            return msg
-        return None
+    @property
+    @deprecated('Use ".errors.as_str()" instead.')
+    def details(self) -> str:
+        """Get the error details from the response."""
+        return self._detail_text
+
+    @property
+    @deprecated('Use ".errors.as_json_str()" instead.')
+    def details_json(self) -> str:
+        """Get the error details from the response."""
+        return self.errors.as_json_str()
 
     @property
     def status_code(self) -> int | None:
@@ -109,6 +132,24 @@ class APIError(MregApiBaseError):
             return self.__cause__.response
         return None
 
+    def _not_found_hint(self) -> str | None:
+        """Helpful hint for 404s on endpoints that don't exist on the server."""
+        resp = self.response
+        if (
+            not resp
+            or resp.status_code != 404
+            or "The requested resource was not found on this server." not in resp.text
+        ):
+            return None
+        url = str(resp.request.url)
+        endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
+        return (
+            f"Endpoint not found: '{endpoint}'\n"
+            f"This may be because your library version ({__version__}) is:\n"
+            f"  - Too old: The endpoint has been removed from the server\n"
+            f"  - Too new: You're using a beta feature not yet available on the server"
+        )
+
     def _request_info_str(self) -> str | None:
         """Prefix message with request info if available."""
         if self.response:
@@ -137,9 +178,11 @@ class APIError(MregApiBaseError):
             parts.append(request_info)
 
         # Error details (JSON or plain text), falling back to exception message
-        if json and (details := self.details_json):
-            parts.append(details)
-        elif details := self.details:
+        if hint := self._not_found_hint():
+            parts.append(hint)
+        elif json and self.errors:
+            parts.append(self.errors.as_json_str())
+        elif details := self._detail_text:
             parts.append(details)
         elif self.args:
             parts.append(str(self.args[0]))
@@ -320,8 +363,13 @@ class MREGError(BaseModel):
     """Details of an MREG error."""
 
     code: str
+    """The error code identifying the type of error."""
+
     detail: str
+    """Human-readable representation of the error."""
+
     attr: str | None
+    """The attribute (field) associated with the error, if any."""
 
     def fmt_error(self) -> str:
         """Format the error message.
@@ -329,10 +377,11 @@ class MREGError(BaseModel):
         Returns:
             A formatted error message.
         """
-        msg = f"{fmt_error_code(self.code)} - {self.detail}"
+        detail = self.detail.rstrip(".")  # remove trailing period
+        code = fmt_error_code(self.code)
         if self.attr:
-            msg += f": {self.attr}"
-        return msg
+            return f"{self.attr}: {code} - {detail}"
+        return f"{code} - {detail}"
 
 
 class MREGErrorResponse(BaseModel):
@@ -341,15 +390,25 @@ class MREGErrorResponse(BaseModel):
     type: str
     errors: list[MREGError] = []
 
+    def __bool__(self) -> bool:
+        """Response contains MREGError objects if True, else False."""
+        return bool(self.errors)
+
+    @cached_property
+    def detail(self) -> str:
+        """Get the detail field of the error(s).
+
+        Most MREG error responses only contain a single error object.
+        """
+        return "; ".join([error.detail for error in self.errors])
+
     def as_str(self) -> str:
         """Convert the error response to a string.
 
         Returns:
             A string representation of the error response.
         """
-        errors = "; ".join([error.fmt_error() for error in self.errors])
-        # NOTE: could result in colon followed by no errors, but it's unlikely
-        return f"{fmt_error_code(self.type)}: {errors}"
+        return "\n".join(error.fmt_error() for error in self.errors)
 
     def as_json_str(self, indent: int = 2) -> str:
         """Convert the error response to a JSON string.
@@ -387,7 +446,7 @@ ERROR_MAPPING: dict[HTTPMethod, type[APIError]] = {
 }
 
 
-def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
+def determine_http_error_class(method: str) -> type[APIError]:
     """Get the appropriate exception class for a given HTTP method.
 
     Args:
@@ -396,7 +455,7 @@ def determine_http_error_class(method: HTTPMethod) -> type[APIError]:
     Returns:
         The exception class corresponding to the HTTP method.
     """
-    if t := ERROR_MAPPING.get(method):
+    if t := ERROR_MAPPING.get(method):  # pyright: ignore[reportArgumentType]
         return t
     # NOTE: should be unreachable
     logger.warning("No specific exception class for HTTP method '%s', using generic APIError", method)
