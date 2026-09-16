@@ -7,7 +7,7 @@ REPO_ROOT="$(dirname "$SCRIPT_DIR")"
 RUN_UNIT=true
 RUN_INTEGRATION=true
 RUN_COVERAGE=true
-MREG_IMAGE="${MREG_IMAGE:-ghcr.io/unioslo/mreg:master}"
+MREG_IMAGE="${MREG_IMAGE:-ghcr.io/unioslo/mreg:pr-650}"
 MREG_IMAGE_PULL_POLICY="${MREG_IMAGE_PULL_POLICY:-missing}"
 # Host port the mreg container is exposed on. Override if 8000 is already in use.
 MREG_PORT="${MREG_PORT:-8000}"

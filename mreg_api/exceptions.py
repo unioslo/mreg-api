@@ -22,6 +22,10 @@ logger = logging.getLogger(__name__)
 class MregApiBaseError(Exception):
     """Base exception class for MREG API exceptions."""
 
+    def __init__(self, message: str = ""):
+        super().__init__(message)
+        self.message = message
+
 
 class InternalError(MregApiBaseError):
     """Error class for internal errors."""
@@ -68,25 +72,30 @@ class APIError(MregApiBaseError):
         Joins the detail of each parsed error with "; ". Empty if the response
         has no parseable errors.
         """
-        return self.errors.detail if self.errors else ""
+        return self.errors.detail
 
     @cached_property
-    def _detail_text(self) -> str:
+    def error_message(self) -> str:
         """Verbose error text (with codes), falling back to raw response text."""
-        if self.errors and (msg := self.errors.as_str()):
+        if msg := self.errors.as_str():
             return msg
         if self.response and self.response.text:
             return self.response.text
         return ""
 
-    @property
-    @deprecated('Use ".errors.as_str()" instead.')
-    def details(self) -> str:
-        """Get the error details from the response."""
-        return self._detail_text
+    @cached_property
+    def error_message_json(self) -> str:
+        """Verbose error text (with codes), falling back to raw response text."""
+        return self.errors.as_json_str()
 
     @property
-    @deprecated('Use ".errors.as_json_str()" instead.')
+    @deprecated('Use "error_message" instead.')
+    def details(self) -> str:
+        """Get the error details from the response."""
+        return self.error_message
+
+    @property
+    @deprecated('Use "error_message_json" instead.')
     def details_json(self) -> str:
         """Get the error details from the response."""
         return self.errors.as_json_str()
@@ -182,7 +191,7 @@ class APIError(MregApiBaseError):
             parts.append(hint)
         elif json and self.errors:
             parts.append(self.errors.as_json_str())
-        elif details := self._detail_text:
+        elif details := self.error_message:
             parts.append(details)
         elif self.args:
             parts.append(str(self.args[0]))

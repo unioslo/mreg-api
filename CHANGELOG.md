@@ -51,7 +51,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- `exceptions.APIError.details` property, replaced by `exceptions.APIError.errors.as_str()`.
+- `exceptions.APIError.details` property, replaced by `exceptions.APIError.error_message`.
 - `exceptions.APIError.details_json` property, replaced by `exceptions.APIError.errors.as_json_str()`.
 
 ## [0.5.0](https://github.com/unioslo/mreg-api/releases/tag/0.5.0) - 2026-09-01
