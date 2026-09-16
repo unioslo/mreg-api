@@ -56,13 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Zone.type_by_name()` class method.
 - `Delegation.type_by_zone()` class method.
 - `Delegation.endpoint_with_name()` class method.
-- **BREAKING**: `exceptions.UnexpectedDataError` — use `exceptions.UnexpectedResponseError` instead.
-- **BREAKING**: `exceptions.TooManyResults` (was deprecated).
 
 ### Deprecated
 
 - `exceptions.APIError.details` property, replaced by `exceptions.APIError.error_message`.
 - `exceptions.APIError.details_json` property, replaced by `exceptions.APIError.errors.as_json_str()`.
+- `exceptions.UnexpectedDataError`, replaced by `exceptions.UnexpectedResponseError`.
 
 ## [0.5.0](https://github.com/unioslo/mreg-api/releases/tag/0.5.0) - 2026-09-01
 

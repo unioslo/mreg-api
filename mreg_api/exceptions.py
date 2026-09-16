@@ -236,6 +236,11 @@ class UnexpectedResponseError(APIError):
     """Server returned a success status but a body/content we could not use."""
 
 
+@deprecated("use UnexpectedResponseError instead")
+class UnexpectedDataError(APIError):
+    """Deprecated alias for UnexpectedResponseError."""
+
+
 class MregValidationError(MregApiBaseError):
     """Validation error class for MREG API.
 
@@ -286,6 +291,11 @@ class MregValidationError(MregApiBaseError):
 
         err_msg = f"{msg}\n  Input: {inp}\n  Errors:\n" + "\n\n".join(errors)
         return cls(err_msg, e)
+
+
+@deprecated("Unused. Will be removed in 1.0")
+class TooManyResults(MregApiBaseError):
+    """API returned too many results."""
 
 
 class EntityNotFound(MregApiBaseError):
