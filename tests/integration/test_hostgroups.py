@@ -358,9 +358,8 @@ mreg_api.exceptions.DeleteError: 404 Not Found
 """
     )
 
-    assert excinfo.value.error_message == snapshot(
-        "Not Found - 'exampleuser1' is not an owner of 'mrgtest164314hg-remove-owner-nonexistent'"
-    )
+    error_msg = excinfo.value.error_message.replace(name, "<hostgroup-name>")
+    assert error_msg == snapshot("Not Found - 'exampleuser1' is not an owner of '<hostgroup-name>'")
 
 
 def test_hostgroup_history(
