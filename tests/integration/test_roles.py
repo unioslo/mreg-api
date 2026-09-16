@@ -6,9 +6,9 @@ import pytest
 from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
-from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import ForceMissing
 from mreg_api.models import Zone
 
 if TYPE_CHECKING:
@@ -303,7 +303,6 @@ def test_add_remove_label(
 def test_delete_role_with_hosts_raises(
     integration_client: MregClient,
     test_prefix: str,
-    resource_tracker: ResourceTracker,
     main_zone: Zone,
 ) -> None:
     client = integration_client
@@ -318,13 +317,10 @@ def test_delete_role_with_hosts_raises(
 
     client.role.add_host(role, host)
 
-    # Cleanup: remove membership first, then role, then host
-    resource_tracker.add(lambda: client.host.delete(host_name))
-    resource_tracker.add(lambda: client.role.delete(role_name))
-    resource_tracker.add(lambda: client.role.remove_host(role.id, host_name))
-
-    with pytest.raises(DeleteError):
+    with pytest.raises(ForceMissing):
         client.role.delete(role_name)
+
+    client.role.delete(role_name, force=True)
 
 
 def test_update(
@@ -375,8 +371,9 @@ name: test-history-role -> test-history-role-renamed\
 """)
 
     history_pre_delete = history
-    with pytest.raises(DeleteError) as excinfo:
+    with pytest.raises(ForceMissing) as excinfo:
         integration_client.role.delete(new_name)
+
     assert "Role 'test-history-role-renamed' used on hosts" in str(excinfo.value)
 
     # Force delete the role
