@@ -12,7 +12,7 @@ services:
       retries: 10
 
   mreg:
-    image: ${MREG_IMAGE:-ghcr.io/unioslo/mreg:pr-650}
+    image: ${MREG_IMAGE:-ghcr.io/unioslo/mreg:master}
     pull_policy: ${MREG_IMAGE_PULL_POLICY:-missing}
     container_name: mreg
     depends_on:
