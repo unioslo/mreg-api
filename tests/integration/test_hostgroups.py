@@ -352,8 +352,9 @@ def test_remove_owner_nonexistent(
 
     assert msg == snapshot(
         """\
-mreg_api.exceptions.DeleteError: DELETE "<server-url>/api/v1/hostgroups/<hostgroup-name>/owners/exampleuser1": 404: Not Found
-Not Found - No Group named 'exampleuser1' exists\
+mreg_api.exceptions.DeleteError: 404 Not Found
+  DELETE <server-url>/api/v1/hostgroups/<hostgroup-name>/owners/exampleuser1
+  Owner 'exampleuser1' is not associated with host group '<hostgroup-name>'.\
 """
     )
 

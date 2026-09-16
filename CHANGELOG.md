@@ -13,7 +13,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Models for heterogeneous history item data:
   - `models.history.HistoryUpdate`: updated data in a history item.
   - `models.history.HistoryRelation`: addition/removal of relations in a history item.
-- `exceptions.MregAPIError.status_code` property to get the HTTP status code of the response, if available.
+- `exceptions.ResponseError` superclass for all errors that carry an HTTP `response`. Guarantees non-optional `.response`, `.request`, and `.status_code`.
+- `exceptions.UnexpectedResponseError` for 2xx responses whose body/content is unusable (e.g. created-but-no-body, missing token). Subclass of `APIError`.
+- `exceptions.PreconditionError` for client-side preflight guards that refuse an operation before contacting the server (e.g. deleting a resource still in use). Responseless.
+- `exceptions.APIError.formatted_message(verbose=True)` for a labeled, multi-field rendering of the error.
 - Nicer error messages for failed resource mutation in convenience methods:
   - `MregClient.hostgroup.add_owner()`
   - `MregClient.hostgroup.remove_owner()`
@@ -42,12 +45,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `exceptions.APIError.errors` is not always an instance of `MREGErrorResponse`. If the response cannot be parsed, it will be an empty `MREGErrorResponse` with type `"unknown"`.
 - `client.check_response()` no longer takes a `url` argument; the endpoint is now derived from the response when rendering error messages.
 - `client.check_response()` no longer takes a `operation_type` argument; the HTTP method is now derived from the response when choosing the appropriate exception type.
+- **BREAKING**: `exceptions.APIError` (via `ResponseError`) now requires a `response` keyword-only argument. Message-only construction of HTTP errors is no longer supported.
+- **BREAKING**: `exceptions.APIError.response`, `.request`, and `.status_code` are now non-optional. The `__cause__`-based fallbacks have been removed.
+- **BREAKING**: Default `str()` rendering of HTTP errors changed to a compact multi-line format (status/reason, method/URL, detail).
+- **BREAKING**: `LoginFailedError` is now raised only for rejected credentials (carries the response). Connection failures raise `InternalError`, a missing token raises `UnexpectedResponseError`, and an unparseable token raises `MregValidationError`.
+- **BREAKING**: `ForceMissing` now subclasses `PreconditionError` (was `MregApiBaseError`). `role.delete()` and `atom.delete()` now raise `ForceMissing` (a `PreconditionError`) instead of `DeleteError` when the resource is still in use and `force` is False.
 
 ### Removed
 
 - `Zone.type_by_name()` class method.
 - `Delegation.type_by_zone()` class method.
 - `Delegation.endpoint_with_name()` class method.
+- **BREAKING**: `exceptions.UnexpectedDataError` — use `exceptions.UnexpectedResponseError` instead.
+- **BREAKING**: `exceptions.TooManyResults` (was deprecated).
 
 ### Deprecated
 

@@ -44,12 +44,14 @@ from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
+from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PatchError
 from mreg_api.exceptions import PostError
+from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.managers import AtomManager
 from mreg_api.managers import BacnetIDManager
@@ -649,6 +651,7 @@ class MregClient:
 
         Raises:
             LoginFailedError: If authentication fails
+            InternalError: If connection to the server fails
 
         Returns:
             The authentication token
@@ -664,18 +667,18 @@ class MregClient:
                 timeout=self.timeout,
             )
         except httpx.RequestError as e:
-            raise LoginFailedError(f"Connection failed: {e}") from e
+            raise InternalError(f"Connection failed: {e}") from e
 
         if not response.is_success:
             # NOTE: Exception uses parsed API error message if possible
-            raise LoginFailedError(response.text, response)
+            raise LoginFailedError(response=response)
 
         if not (json_str := response.text):
-            raise LoginFailedError("No token received from server")
+            raise LoginFailedError("No token received from server", response=response)
         try:
             token = TokenAuth.model_validate_json(json_str).token
         except ValidationError as e:
-            raise LoginFailedError(f"Failed to parse authentication token: {e}") from e
+            raise LoginFailedError(f"Failed to parse authentication token: {e}", response=response) from e
 
         self.set_token(token)
 
@@ -702,7 +705,6 @@ class MregClient:
         Returns:
             True if authorization is valid, False otherwise
         """
-        ret: Response | None = None
         try:
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
@@ -711,7 +713,7 @@ class MregClient:
             )
             ret.raise_for_status()
         except httpx.HTTPStatusError as e:
-            raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
+            raise InvalidAuthTokenError(f"Authorization test failed: {e}", response=e.response) from e
 
     def request(
         self,
@@ -1128,7 +1130,11 @@ class MregClient:
         """Get the count of items from a list endpoint.
 
         Warning:
-            Returns the length of the results if the endpoint does not implement pagination.
+            Fetches all items from the server and counts them if the
+            endpoint does not implement pagination.
+
+        Raises:
+            UnexpectedResponseError: If the endpoint does not support counting and `strict` is True.
 
         Returns:
             The count of items.
@@ -1139,9 +1145,10 @@ class MregClient:
             return resp.count
         except MregValidationError:
             if strict:
-                raise GetError(
+                raise UnexpectedResponseError(
                     f"Endpoint {path} does not support counting. "  # pyright: ignore[reportImplicitStringConcatenation]
-                    "Pass `strict=False` to fall back on client-side counting."
+                    "Pass `strict=False` to fall back on client-side counting.",
+                    response=response,
                 ) from None
 
             content = validate_list_response(response)

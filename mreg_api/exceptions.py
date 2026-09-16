@@ -5,7 +5,6 @@ from __future__ import annotations
 import logging
 from functools import cached_property
 
-import httpx
 from httpx import Request
 from httpx import Response
 from pydantic import BaseModel
@@ -31,23 +30,63 @@ class InternalError(MregApiBaseError):
     """Error class for internal errors."""
 
 
-class APIError(MregApiBaseError):
+class PreconditionError(MregApiBaseError):
+    """Client-side guard: an operation's precondition was not met.
+
+    Raised before or independently of an HTTP request when the library refuses to
+    perform an operation (e.g. deleting a resource that is still in use).
+    """
+
+
+def _indent(text: str, spaces: int = 2) -> str:
+    """Indent every line of `text` by `spaces` spaces."""
+    pad = " " * spaces
+    return "\n".join(f"{pad}{line}" for line in text.split("\n"))
+
+
+def _labeled(label: str, value: str, *, width: int = 10) -> str:
+    """Render `label` + `value`, aligning continuation lines under the value."""
+    pad = " " * (2 + width + 1)
+    lines = value.split("\n")
+    first = f"  {label:<{width}} {lines[0]}"
+    return "\n".join([first, *(f"{pad}{line}" for line in lines[1:])])
+
+
+class ResponseError(MregApiBaseError):
+    """Base class for errors that always carry an HTTP response."""
+
+    def __init__(self, message: str = "", *, response: Response):
+        """Initialize a ResponseError.
+
+        Args:
+            message: An optional message override. When empty, the message is
+                derived from the response via `formatted_message`.
+            response: The response object that triggered the exception.
+        """
+        super().__init__(message)
+        self._response: Response = response
+
+    @property
+    def response(self) -> Response:
+        """The response object associated with the error."""
+        return self._response
+
+    @property
+    def request(self) -> Request:
+        """The request that triggered the exception."""
+        return self._response.request
+
+    @property
+    def status_code(self) -> int:
+        """The HTTP status code of the response."""
+        return self._response.status_code
+
+
+class APIError(ResponseError):
     """Exception class for API errors.
 
     Parses drf-standardized-errors errors from the MREG API if present in response.
     """
-
-    def __init__(self, message: str = "", response: Response | None = None):
-        """Initialize an APIError exception.
-
-        Args:
-            message: An optional message override. When empty, the message is
-                derived from the response (parsed error details, then raw text,
-                then reason phrase) via `formatted_message`.
-            response: The response object that triggered the exception.
-        """
-        super().__init__(message)
-        self._response: Response | None = response
 
     @override
     def __str__(self) -> str:
@@ -59,9 +98,10 @@ class APIError(MregApiBaseError):
         """Get the parsed MREG errors from the response.
 
         Returns:
-            The MREGErrorResponse object, or a default MREGErrorResponse with type "unknown" if the response
+            The MREGErrorResponse object, or a default MREGErrorResponse with type
+            "unknown" if the response could not be parsed.
         """
-        if self.response and (errors := parse_mreg_error(self.response)):
+        if errors := parse_mreg_error(self.response):
             return errors
         return MREGErrorResponse(type="unknown")
 
@@ -79,7 +119,7 @@ class APIError(MregApiBaseError):
         """Verbose error text (with codes), falling back to raw response text."""
         if msg := self.errors.as_str():
             return msg
-        if self.response and self.response.text:
+        if self.response.text:
             return self.response.text
         return ""
 
@@ -100,55 +140,10 @@ class APIError(MregApiBaseError):
         """Get the error details from the response."""
         return self.errors.as_json_str()
 
-    @property
-    def status_code(self) -> int | None:
-        """Get the HTTP status code of the response, if available."""
-        return self.response.status_code if self.response else None
-
-    @property
-    def request(self) -> Request | None:
-        """Get the request that triggered the exception.
-
-        Uses the request from the cause if not set directly.
-
-        Returns:
-            The request object or None if not set.
-        """
-        if self._response:
-            return self._response.request
-        # NOTE: do we want to recurse deeper here? Can we try to access the request
-        #       attribute as long as it exists, or do we risk infinite recursion?
-        if self.__cause__ and isinstance(self.__cause__, httpx.HTTPError):
-            try:
-                return self.__cause__.request
-            except RuntimeError:
-                # Request object not set on the cause
-                pass
-        return None
-
-    @property
-    def response(self) -> Response | None:
-        """Get the response object associated with the error.
-
-        Uses the response from the cause if not set directly.
-
-        Returns:
-            The response object or None if not set.
-        """
-        if self._response:
-            return self._response
-        if self.__cause__ and isinstance(self.__cause__, APIError):
-            return self.__cause__.response
-        return None
-
     def _not_found_hint(self) -> str | None:
         """Helpful hint for 404s on endpoints that don't exist on the server."""
         resp = self.response
-        if (
-            not resp
-            or resp.status_code != 404
-            or "The requested resource was not found on this server." not in resp.text
-        ):
+        if resp.status_code != 404 or "The requested resource was not found on this server." not in resp.text:
             return None
         url = str(resp.request.url)
         endpoint = url.split("/api/v1/")[-1] if "/api/v1/" in url else url
@@ -159,44 +154,66 @@ class APIError(MregApiBaseError):
             f"  - Too new: You're using a beta feature not yet available on the server"
         )
 
-    def _request_info_str(self) -> str | None:
-        """Prefix message with request info if available."""
-        if self.response:
-            parts = [
-                self.response.request.method,
-                f'"{self.response.request.url}":',
-                f"{self.response.status_code}:",
-                f"{self.response.reason_phrase}",
-            ]
-            return " ".join(parts)
-        return None
+    def _detail_block(self) -> str:
+        """The error detail to show, honoring explicit-message precedence.
 
-    def formatted_message(self, *, json: bool = False) -> str:
+        An explicit message (enrichment override) wins over the parsed response
+        detail; otherwise fall back to the parsed errors / raw response text.
+        """
+        if self.message:
+            return self.message
+        return self.error_message
+
+    def formatted_message(self, *, verbose: bool = False, json: bool = False) -> str:
         """Get a formatted error message including error details.
 
         Args:
-            json (bool, optional): Whether to include error details as JSON. Defaults to False.
+            verbose: Render the labeled multi-field format instead of the compact
+                default.
+            json: Render the parsed errors as JSON.
 
         Returns:
-            str: The formatted error message.
+            The formatted error message.
         """
-        parts: list[str] = []
+        status = f"{self.status_code} {self.response.reason_phrase}".strip()
+        request = f"{self.request.method} {self.request.url}"
+        parts: list[str] = [status]
 
-        # Request info prefix
-        if request_info := self._request_info_str():
-            parts.append(request_info)
+        if json:
+            parts.append(f"  {request}")
+            parts.append(_indent(self.errors.as_json_str()))
+            return "\n".join(parts)
 
-        # Error details (JSON or plain text), falling back to exception message
-        if hint := self._not_found_hint():
-            parts.append(hint)
-        elif json and self.errors:
-            parts.append(self.errors.as_json_str())
-        elif details := self.error_message:
-            parts.append(details)
-        elif self.args:
-            parts.append(str(self.args[0]))
+        hint = self._not_found_hint()
 
-        return "\n".join(p.strip() for p in parts if p.strip())
+        if verbose:
+            parts.append(_labeled("Request:", request))
+            if hint:
+                parts.append(_labeled("Hint:", hint))
+            elif self.message:
+                parts.append(_labeled("Detail:", self.message))
+            elif errs := self.errors.errors:
+                if len(errs) == 1:
+                    err = errs[0]
+                    if err.attr:
+                        parts.append(_labeled("Attr:", err.attr))
+                    parts.append(_labeled("Detail:", err.detail))
+                    parts.append(_labeled("Code:", err.code))
+                else:
+                    parts.append(f"  Errors ({len(errs)}):")
+                    for i, err in enumerate(errs, 1):
+                        prefix = f"{err.attr}: " if err.attr else ""
+                        parts.append(f"    [{i}] {prefix}{err.detail}  ({err.code})")
+            elif self.response.text:
+                parts.append(_labeled("Detail:", self.response.text))
+            return "\n".join(parts)
+
+        # Format 1 (compact default)
+        parts.append(f"  {request}")
+        detail = hint or self._detail_block()
+        if detail:
+            parts.append(_indent(detail))
+        return "\n".join(parts)
 
 
 class PostError(APIError):
@@ -215,8 +232,8 @@ class GetError(APIError):
     """Error class for failed retrieval."""
 
 
-class UnexpectedDataError(APIError):
-    """Error class for unexpected API data."""
+class UnexpectedResponseError(APIError):
+    """Server returned a success status but a body/content we could not use."""
 
 
 class MregValidationError(MregApiBaseError):
@@ -227,12 +244,6 @@ class MregValidationError(MregApiBaseError):
     """
 
     def __init__(self, message: str, pydantic_error: ValidationError | None = None):
-        """Initialize an MregValidationError.
-
-        Args:
-            message: The error message.
-            pydantic_error: The Pydantic validation error, if any.
-        """
         super().__init__(message)
         self.pydantic_error = pydantic_error
 
@@ -277,11 +288,6 @@ class MregValidationError(MregApiBaseError):
         return cls(err_msg, e)
 
 
-@deprecated("Unused. Will be removed in 1.0")
-class TooManyResults(MregApiBaseError):
-    """API returned too many results."""
-
-
 class EntityNotFound(MregApiBaseError):
     """No entity found when at least one was expected."""
 
@@ -302,8 +308,8 @@ class InputFailure(MregApiBaseError, ValueError):
     """Error class for input failure."""
 
 
-class ForceMissing(MregApiBaseError):
-    """Error class for missing force flag."""
+class ForceMissing(PreconditionError):
+    """A precondition failed that `force=True` would override."""
 
 
 class IPNetworkError(ValueError, MregApiBaseError):

@@ -8,9 +8,9 @@ from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.endpoints import Endpoint
-from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import PreconditionError
 from mreg_api.models.models import Atom
 
 if TYPE_CHECKING:
@@ -343,7 +343,7 @@ atom test-history-atom-renamed from role test-history-atom-role1\
     history_pre_delete = history
 
     # Atom in use, will raise an exception
-    with pytest.raises(DeleteError) as excinfo:
+    with pytest.raises(PreconditionError) as excinfo:
         integration_client.atom.delete(new_name)
     assert "Atom 'test-history-atom-renamed' used in roles" in str(excinfo.value)
 

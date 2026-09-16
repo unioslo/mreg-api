@@ -56,7 +56,8 @@ from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PostError
-from mreg_api.exceptions import UnexpectedDataError
+from mreg_api.exceptions import PreconditionError
+from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.models import CNAME
 from mreg_api.models import MX
 from mreg_api.models import NAPTR
@@ -445,7 +446,7 @@ class ResourceManager(Generic[T], ABC):
         else:
             fresh = self._fetch_by_path(self._path_param_value(obj))
         if fresh is None:
-            raise GetError(f"Could not refetch {self.model_name}.")
+            raise InternalError(f"Could not refetch {self.model_name}.")
         return fresh
 
     @overload
@@ -574,7 +575,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
                 pass
         if "Location" in response.headers:
             return self._client.get_typed(response.headers["Location"], self.model)
-        raise PostError(f"Failed to fetch {self.model_name} after creation.")
+        raise UnexpectedResponseError(f"Failed to fetch {self.model_name} after creation.", response=response)
 
     def _patch(self, obj: T, data: dict[str, Any], *, params: QueryParams | None = None) -> None:
         """PATCH `obj` with `data`. Does not update the local object passed to this method.
@@ -1196,7 +1197,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             # This endpoint does not return any useful data. A very generic and unhelpful error message.
             if e.status_code == 409:
                 raise PostError(
-                    f"Host {hostname!r} is already a member of host group {hostgroup.name!r}."
+                    f"Host {hostname!r} is already a member of host group {hostgroup.name!r}.",
+                    response=e.response,
                 ) from e
             raise
 
@@ -1218,7 +1220,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             # Endpoint returns generic 404 error with no extra info, enrich it.
             if e.status_code == 404:
                 raise DeleteError(
-                    f"Host {hostname!r} is not a member of host group {hostgroup.name!r}."
+                    f"Host {hostname!r} is not a member of host group {hostgroup.name!r}.",
+                    response=e.response,
                 ) from e
             raise
 
@@ -1236,9 +1239,10 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
                 json={"name": name},
             )
         except PostError as e:
-            if e.response and e.response.status_code == 409:
+            if e.status_code == 409:
                 raise PostError(
-                    f"Owner {name!r} already associated with host group {hostgroup.name!r}"
+                    f"Owner {name!r} already associated with host group {hostgroup.name!r}",
+                    response=e.response,
                 ) from e
             raise
 
@@ -1259,7 +1263,8 @@ class HostGroupManager(NamedResourceManager[HostGroup], HistoryManager[HostGroup
             # Endpoint returns generic 404 error with no extra info, enrich it.
             if e.status_code == 404:
                 raise DeleteError(
-                    f"Owner {name!r} is not associated with host group {hostgroup.name!r}."
+                    f"Owner {name!r} is not associated with host group {hostgroup.name!r}.",
+                    response=e.response,
                 ) from e
             raise
 
@@ -1465,12 +1470,12 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             force (bool): Force deletion even if the role is in use. Defaults to False.
 
         Raises:
-            DeleteError: If the role is still in use on any hosts.
+            ForceMissing: If the role is still in use on any hosts and `force` is False.
         """
         obj = self._resolve(obj)
         if obj.hosts and not force:
             hosts = ", ".join(obj.hosts)
-            raise DeleteError(f"Role {obj.name!r} used on hosts: {hosts}")
+            raise ForceMissing(f"Role {obj.name!r} used on hosts: {hosts}")
         super().delete(obj)
 
     def list_with_atom(self, atom: int | str | Atom) -> list[Role]:
@@ -1509,7 +1514,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
                 Endpoint.HostPolicyRolesAddAtom.with_params(role.name), json={"name": atom_name}
             )
         except PostError as e:
-            if e.response and e.response.status_code == 409:
+            if e.status_code == 409:
                 raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}") from e
             raise
         return True
@@ -1551,8 +1556,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         try:
             self._client.post(Endpoint.HostPolicyRolesAddHost.with_params(role.name), json={"name": hostname})
         except PostError as e:
-            if e.response and e.response.status_code == 409:
-                raise PostError(f"Host {hostname!r} is already a member of role {role.name!r}") from e
+            if e.status_code == 409:
+                raise PostError(
+                    f"Host {hostname!r} is already a member of role {role.name!r}",
+                    response=e.response,
+                ) from e
             raise
         return True
 
@@ -1575,7 +1583,10 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         except DeleteError as e:
             # Endpoint returns generic 404 error with no extra info, enrich it.
             if e.status_code == 404:
-                raise DeleteError(f"Host {hostname!r} does not belong to role {role.name!r}.") from e
+                raise DeleteError(
+                    f"Host {hostname!r} does not belong to role {role.name!r}.",
+                    response=e.response,
+                ) from e
         return True
 
     @deprecated('use "list_labels()" instead')
@@ -1723,12 +1734,12 @@ class AtomManager(NamedResourceManager[Atom], HistoryManager[Atom]):
             force (bool): Force deletion even if the atom is used in roles. Defaults to False.
 
         Raises:
-            DeleteError: If the atom is still used in any roles.
+            ForceMissing: If the atom is still used in any roles and `force` is False.
         """
         obj = self._resolve(obj)
         if obj.roles and not force:
             roles = ", ".join(obj.roles)
-            raise DeleteError(f"Atom {obj.name!r} used in roles: {roles}")
+            raise ForceMissing(f"Atom {obj.name!r} used in roles: {roles}")
         super().delete(obj)
 
 
@@ -4016,11 +4027,11 @@ class _ZoneSubManager(NamedResourceManager[ZoneT], ABC):
         # XXX: Not foolproof (e.g. SRVs are not hosts), but added for parity with old Zone.ensure_deletable.
         hosts = self._client.host.list(zone=zone.id)
         if hosts:
-            raise DeleteError(f"Zone has {len(hosts)} registered entries. Can not delete.")
+            raise PreconditionError(f"Zone has {len(hosts)} registered entries. Can not delete.")
         subzones = self.list_subzones(zone)
         if subzones:
             names = ", ".join(z.name for z in subzones)
-            raise DeleteError(f"Zone has registered subzones: '{names}'. Can not delete")
+            raise PreconditionError(f"Zone has registered subzones: '{names}'. Can not delete")
 
     # NOTE: force should not propagate to this method.
     # Ideally, we resolve all safety issues in the ZoneManager itself.
@@ -4077,7 +4088,7 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
                 return ForwardZone.model_validate(blob["zone"])
             if "delegation" in blob:
                 return ForwardZoneDelegation.model_validate(blob["delegation"])
-        raise UnexpectedDataError(f"Unexpected response from server: {blob}", resp)
+        raise UnexpectedResponseError(f"Unexpected response from server: {blob}", response=resp)
 
 
 class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
@@ -4527,7 +4538,9 @@ class DelegationManager:
                 pass
         if loc := response.headers.get("Location"):
             return self._get(loc, self._model_for(zone))
-        raise PostError(f"Failed to retrieve zone {zone.name!r} after creation")
+        raise UnexpectedResponseError(
+            f"Failed to retrieve zone {zone.name!r} after creation", response=response
+        )
 
     def delete(self, zone: str | Zone, name: str) -> None:
         """Delete a delegation from `zone`.
@@ -4830,7 +4843,7 @@ class LDAPHealthManager(GetManager[LDAPHealth]):
         except GetError as e:
             # LDAP being down causes a 503 error, which we should
             # interpret as a valid response, not an error.
-            if e.response and e.response.status_code == 503:
+            if e.status_code == 503:
                 return LDAPHealth(status="Down")
             if required:
                 raise
