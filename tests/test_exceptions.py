@@ -337,6 +337,44 @@ class TestAPIErrorFormattedMessage:
   name: Required - This field is required\
 """)
 
+    def test_legacy_error_body_compact(self) -> None:
+        """Legacy `{"error": "<msg>"}` bodies parse into a single error."""
+        response = make_mock_response(
+            status_code=409,
+            json_body={"error": "test-history-role-atom1 already in atoms"},
+        )
+        error = APIError(response=response)
+        assert error.detail == "test-history-role-atom1 already in atoms"
+        assert len(error.errors.errors) == 1
+        assert error.formatted_message() == snapshot("""\
+409 Conflict
+  POST http://localhost/api/v1/hosts/
+  Error - test-history-role-atom1 already in atoms\
+""")
+
+    def test_legacy_error_body_verbose(self) -> None:
+        """The legacy shape renders through the verbose labeled fields."""
+        response = make_mock_response(
+            status_code=409,
+            json_body={"error": "test-history-role-atom1 already in atoms"},
+        )
+        error = APIError(response=response)
+        assert error.formatted_message(verbose=True) == snapshot("""\
+409 Conflict
+  Request:   POST http://localhost/api/v1/hosts/
+  Detail:    test-history-role-atom1 already in atoms
+  Code:      error\
+""")
+
+    def test_legacy_error_body_ignored_when_not_string(self) -> None:
+        """A non-string `error` value is not treated as the legacy shape."""
+        response = make_mock_response(
+            status_code=400,
+            json_body={"error": ["not", "a", "string"]},
+        )
+        error = APIError(response=response)
+        assert error.errors.errors == []
+
 
 class TestFormattedMessageVerbose:
     """Tests for the verbose (Format 3) rendering."""

@@ -447,6 +447,37 @@ class MREGErrorResponse(BaseModel):
         return self.model_dump_json(indent=indent)
 
 
+class _LegacyError(BaseModel):
+    """The legacy mreg ``{"error": "<msg>"}`` error-body shape.
+
+    Returned by certain mreg server endpoints from `error_body()` instead
+    of going via drf-standardized error handling.
+
+    Source: https://github.com/unioslo/mreg/blob/da6b3c89819ad8291e9f858b70a923acc5c6d3fa/mreg/api/responses.py#L32-L37
+    """
+
+    error: str
+
+
+def _parse_legacy_error(resp: Response) -> MREGErrorResponse | None:
+    """Parse the legacy ``{"error": "<msg>"}`` shape into an MREGErrorResponse.
+
+    Args:
+        resp: The response object to parse.
+
+    Returns:
+        A single-error MREGErrorResponse, or None if the body is not this shape.
+    """
+    try:
+        legacy = _LegacyError.model_validate_json(resp.text)
+    except ValidationError:
+        return None
+    return MREGErrorResponse(
+        type="legacy_error",
+        errors=[MREGError(code="error", detail=legacy.error, attr=None)],
+    )
+
+
 def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     """Parse an MREG error response.
 
@@ -459,7 +490,10 @@ def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     try:
         return MREGErrorResponse.model_validate_json(resp.text)
     except ValidationError:
-        logger.error("Failed to parse response text '%s' from %s", resp.text, resp.url)
+        pass
+    if legacy := _parse_legacy_error(resp):
+        return legacy
+    logger.error("Failed to parse response text '%s' from %s", resp.text, resp.url)
     return None
 
 

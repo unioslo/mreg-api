@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Helpful "Endpoint not found" message for 404s on missing endpoints was silently discarded, showing the raw server text instead. The hint (including the library version) is now rendered by `exceptions.APIError.formatted_message()`.
+- Legacy server error responses shaped `{"error": "<message>"}` (returned by a number of endpoints instead of the drf-standardized-errors shape) are now parsed and rendered like any other error, instead of surfacing as an unparseable raw JSON blob with a `Failed to parse response text` log line.
 - Client-side checking of values using stale local object in certain methods:
   - `MregClient.role.add_atom()`
   - `MregClient.role.remove_atom()`
