@@ -362,8 +362,8 @@ class TestAPIErrorFormattedMessage:
         assert error.formatted_message(verbose=True) == snapshot("""\
 409 Conflict
   Request:   POST http://localhost/api/v1/hosts/
-  Detail:    test-history-role-atom1 already in atoms
-  Code:      error\
+  Error:
+    test-history-role-atom1 already in atoms  (error)\
 """)
 
     def test_legacy_error_body_ignored_when_not_string(self) -> None:
@@ -380,7 +380,7 @@ class TestFormattedMessageVerbose:
     """Tests for the verbose (Format 3) rendering."""
 
     def test_verbose_single_error(self) -> None:
-        """Single error renders labeled Request/Attr/Detail/Code fields."""
+        """Single error renders a singular `Error:` list with no index prefix."""
         response = make_mock_response(
             status_code=400,
             json_body={
@@ -392,9 +392,27 @@ class TestFormattedMessageVerbose:
         assert error.formatted_message(verbose=True) == snapshot("""\
 400 Bad Request
   Request:   POST http://localhost/api/v1/hosts/
-  Attr:      name
-  Detail:    Enter a valid hostname.
-  Code:      invalid\
+  Error:
+    name: Enter a valid hostname.  (invalid)\
+""")
+
+    def test_verbose_single_error_without_attr(self) -> None:
+        """A single error with no attr omits the `attr:` segment."""
+        response = make_mock_response(
+            status_code=404,
+            method="GET",
+            url="http://localhost/api/v1/hosts/foo",
+            json_body={
+                "type": "client_error",
+                "errors": [{"code": "not_found", "detail": "No Group named 'foo' exists", "attr": None}],
+            },
+        )
+        error = APIError(response=response)
+        assert error.formatted_message(verbose=True) == snapshot("""\
+404 Not Found
+  Request:   GET http://localhost/api/v1/hosts/foo
+  Error:
+    No Group named 'foo' exists  (not_found)\
 """)
 
     def test_verbose_multiple_errors(self) -> None:

@@ -193,17 +193,12 @@ class APIError(ResponseError):
             elif self.message:
                 parts.append(_labeled("Detail:", self.message))
             elif errs := self.errors.errors:
-                if len(errs) == 1:
-                    err = errs[0]
-                    if err.attr:
-                        parts.append(_labeled("Attr:", err.attr))
-                    parts.append(_labeled("Detail:", err.detail))
-                    parts.append(_labeled("Code:", err.code))
-                else:
-                    parts.append(f"  Errors ({len(errs)}):")
-                    for i, err in enumerate(errs, 1):
-                        prefix = f"{err.attr}: " if err.attr else ""
-                        parts.append(f"    [{i}] {prefix}{err.detail}  ({err.code})")
+                multiple = len(errs) > 1
+                parts.append(f"  Errors ({len(errs)}):" if multiple else "  Error:")
+                for i, err in enumerate(errs, 1):
+                    index = f"[{i}] " if multiple else ""
+                    attr = f"{err.attr}: " if err.attr else ""
+                    parts.append(f"    {index}{attr}{err.detail}  ({err.code})")
             elif self.response.text:
                 parts.append(_labeled("Detail:", self.response.text))
             return "\n".join(parts)
