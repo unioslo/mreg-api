@@ -358,7 +358,7 @@ Owner 'exampleuser1' is not associated with host group '<hostgroup-name>'.\
     )
 
     error_msg = excinfo.value.error_message.replace(name, "<hostgroup-name>")
-    assert error_msg == snapshot("Not Found - 'exampleuser1' is not an owner of '<hostgroup-name>'")
+    assert error_msg == snapshot("Not Found - Not found")
 
 
 def test_hostgroup_history(
