@@ -72,14 +72,15 @@ try:
     client.host.create(...)
 except APIError as exc:
     print(str(exc)) # or print(exc.formatted_message())
-    # POST "https://mreg.example.com/api/v1/hosts/": 400: Bad Request
-    # Validation Error: Required - This field is required.: name
+    # 400 Bad Request: POST https://mreg.example.com/api/v1/hosts/
+    # 1 error:
+    #   name: This field is required.  (required)
 
     print(exc.detail)
     # This field is required.
 
     print(exc.formatted_message(json=True))
-    # POST "https://mreg.example.com/api/v1/hosts/": 400: Bad Request
+    # 400 Bad Request: POST https://mreg.example.com/api/v1/hosts/
     # {
     #   "type": "validation_error",
     #   "errors": [ ... ]

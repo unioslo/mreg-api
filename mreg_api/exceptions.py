@@ -38,20 +38,6 @@ class PreconditionError(MregApiBaseError):
     """
 
 
-def _indent(text: str, spaces: int = 2) -> str:
-    """Indent every line of `text` by `spaces` spaces."""
-    pad = " " * spaces
-    return "\n".join(f"{pad}{line}" for line in text.split("\n"))
-
-
-def _labeled(label: str, value: str, *, width: int = 10) -> str:
-    """Render `label` + `value`, aligning continuation lines under the value."""
-    pad = " " * (2 + width + 1)
-    lines = value.split("\n")
-    first = f"  {label:<{width}} {lines[0]}"
-    return "\n".join([first, *(f"{pad}{line}" for line in lines[1:])])
-
-
 class ResponseError(MregApiBaseError):
     """Base class for errors that always carry an HTTP response."""
 
@@ -154,60 +140,56 @@ class APIError(ResponseError):
             f"  - Too new: You're using a beta feature not yet available on the server"
         )
 
-    def _detail_block(self) -> str:
-        """The error detail to show, honoring explicit-message precedence.
+    def formatted_message(self, *, json: bool = False) -> str:
+        """Get a formatted, human-readable error message.
 
-        An explicit message (enrichment override) wins over the parsed response
-        detail; otherwise fall back to the parsed errors / raw response text.
-        """
-        if self.message:
-            return self.message
-        return self.error_message
-
-    def formatted_message(self, *, verbose: bool = False, json: bool = False) -> str:
-        """Get a formatted error message including error details.
+        The message has a status-first header line (`{code} {reason}: {method}
+        {url}`) followed by the error detail(s): a pluralized `N error(s):`
+        list of the parsed errors, or the endpoint-not-found hint / explicit
+        message / raw response text otherwise.
 
         Args:
-            verbose: Render the labeled multi-field format instead of the compact
-                default.
-            json: Render the parsed errors as JSON.
+            json: Render the parsed errors as a JSON block instead of the list.
 
         Returns:
             The formatted error message.
+
+        Example:
+            ```
+            400 Bad Request: POST http://localhost/api/v1/hosts/
+            2 errors:
+              name: This field is required.  (required)
+              contact: Enter a valid email.  (invalid)
+            ```
         """
         status = f"{self.status_code} {self.response.reason_phrase}".strip()
-        request = f"{self.request.method} {self.request.url}"
-        parts: list[str] = [status]
+        parts: list[str] = [f"{status}: {self.request.method} {self.request.url}"]
 
+        # Determine body of the error message based on args and response content
         if json:
-            parts.append(f"  {request}")
-            parts.append(_indent(self.errors.as_json_str()))
-            return "\n".join(parts)
+            parts.append(self.errors.as_json_str())
 
-        hint = self._not_found_hint()
+        # Certain 404 errors stem from the endpoint not being defined
+        # on the server. Provide info if that is the case.
+        elif hint := self._not_found_hint():
+            parts.append(hint)
 
-        if verbose:
-            parts.append(_labeled("Request:", request))
-            if hint:
-                parts.append(_labeled("Hint:", hint))
-            elif self.message:
-                parts.append(_labeled("Detail:", self.message))
-            elif errs := self.errors.errors:
-                multiple = len(errs) > 1
-                parts.append(f"  Errors ({len(errs)}):" if multiple else "  Error:")
-                for i, err in enumerate(errs, 1):
-                    index = f"[{i}] " if multiple else ""
-                    attr = f"{err.attr}: " if err.attr else ""
-                    parts.append(f"    {index}{attr}{err.detail}  ({err.code})")
-            elif self.response.text:
-                parts.append(_labeled("Detail:", self.response.text))
-            return "\n".join(parts)
+        # Explicit message provided on instantiation takes precedence
+        # over parsed errors
+        elif self.message:
+            parts.append(self.message)
 
-        # Format 1 (compact default)
-        parts.append(f"  {request}")
-        detail = hint or self._detail_block()
-        if detail:
-            parts.append(_indent(detail))
+        # Parsed errors from the response body
+        elif errs := self.errors.errors:
+            parts.append(f"{len(errs)} error{'' if len(errs) == 1 else 's'}:")
+            for err in errs:
+                attr = f"{err.attr}: " if err.attr else ""
+                parts.append(f"  {attr}{err.detail}  ({err.code})")
+
+        # Fall back on response text if no other info is available
+        elif self.response.text:
+            parts.append(self.response.text)
+
         return "\n".join(parts)
 
 
@@ -443,7 +425,7 @@ class MREGErrorResponse(BaseModel):
 
 
 class _LegacyError(BaseModel):
-    """The legacy mreg ``{"error": "<msg>"}`` error-body shape.
+    """The legacy mreg `{"error": "<msg>"}` error-body shape.
 
     Returned by certain mreg server endpoints from `error_body()` instead
     of going via drf-standardized error handling.
@@ -455,7 +437,7 @@ class _LegacyError(BaseModel):
 
 
 def _parse_legacy_error(resp: Response) -> MREGErrorResponse | None:
-    """Parse the legacy ``{"error": "<msg>"}`` shape into an MREGErrorResponse.
+    """Parse the legacy `{"error": "<msg>"}` shape into an MREGErrorResponse.
 
     Args:
         resp: The response object to parse.
