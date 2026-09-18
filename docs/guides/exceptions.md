@@ -13,9 +13,7 @@ All mreg-api exceptions inherit from a common [`MregApiBaseError`][mreg_api.exce
 
 The exception hierarchy is as follows:
 
-``` text
 {{ exception_tree() }}
-```
 
 To catch all exceptions raised by mreg-api, one can use [`MregApiBaseError`][mreg_api.exceptions.MregApiBaseError],
 while [`APIError`][mreg_api.exceptions.APIError] narrows to server-side failures.
@@ -62,7 +60,7 @@ except APIError as exc:
 
 ## Reading the error message
 
-Raised [APIError][mreg_api.exceptions.APIError] exceptions contain the HTTP response and parsed error details.
+Raised [`APIError`][mreg_api.exceptions.APIError] exceptions contain the HTTP response and parsed error details.
 
 The `detail` attribute contains the main error message from the server without additional context,
 while the `formatted_message()` method returns a more detailed message, optionally formatted as JSON.

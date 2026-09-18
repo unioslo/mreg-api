@@ -407,5 +407,6 @@ extensions = [{ griffe_pydantic = { schema = true } }]
 
 [project.plugins.macros]
 module_name = "docs/_macros/main"
+verbose = true
 
 [project.plugins.search]

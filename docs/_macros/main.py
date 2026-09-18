@@ -33,11 +33,11 @@ def define_env(env: Any) -> None:
 
     @env.macro
     def exception_tree() -> str:
-        """Render the `mreg_api.exceptions` class hierarchy as a text tree.
+        """Render the `mreg_api.exceptions` class hierarchy as a markdown list.
 
         Introspects every exception defined in the module (in definition order,
-        skipping deprecated ones) and prints it as an ASCII tree rooted at
-        `MregApiBaseError`.
+        skipping deprecated ones) and prints it as an indented markdown list
+        rooted at `MregApiBaseError`.
         """
         root = exceptions.MregApiBaseError
         classes = [
@@ -59,14 +59,12 @@ def define_env(env: Any) -> None:
                     children[parent].append(cls)
                     break
 
-        lines = [root.__name__]
+        lines: list[str] = []
 
-        def render(node: type, prefix: str) -> None:
-            kids = children[node]
-            for index, kid in enumerate(kids):
-                last = index == len(kids) - 1
-                lines.append(f"{prefix}{'└── ' if last else '├── '}{kid.__name__}")
-                render(kid, prefix + ("    " if last else "│   "))
+        def render(node: type, depth: int) -> None:
+            lines.append(f"{'    ' * depth}- [`{node.__name__}`][{node.__module__}.{node.__name__}]")
+            for kid in children[node]:
+                render(kid, depth + 1)
 
-        render(root, "")
+        render(root, 0)
         return "\n".join(lines)
