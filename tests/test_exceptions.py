@@ -200,6 +200,39 @@ class TestAPIErrorFormattedMessage:
 }\
 """)
 
+    def test_formatted_message_json_mode_multiple_errors(self) -> None:
+        """Test formatted_message with json=True returns JSON details for multiple errors."""
+        response = make_mock_response(
+            status_code=400,
+            json_body={
+                "type": "validation_error",
+                "errors": [
+                    {"code": "required", "detail": "This field is required.", "attr": "name"},
+                    {"code": "invalid", "detail": "Enter a valid email.", "attr": "contact"},
+                ],
+            },
+        )
+        error = APIError(response=response)
+
+        assert error.formatted_message(json=True) == snapshot("""\
+400 Bad Request: POST http://localhost/api/v1/hosts/
+{
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "required",
+      "detail": "This field is required.",
+      "attr": "name"
+    },
+    {
+      "code": "invalid",
+      "detail": "Enter a valid email.",
+      "attr": "contact"
+    }
+  ]
+}\
+""")
+
     def test_formatted_message_fallback_to_response_text(self) -> None:
         """Test formatted_message falls back to response text when not MREG error format."""
         response = make_mock_response(
