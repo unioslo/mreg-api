@@ -13,9 +13,7 @@ All mreg-api exceptions inherit from a common [`MregApiBaseError`][mreg_api.exce
 
 The exception hierarchy is as follows:
 
-``` text
 {{ exception_tree() }}
-```
 
 To catch all exceptions raised by mreg-api, one can use [`MregApiBaseError`][mreg_api.exceptions.MregApiBaseError],
 while [`APIError`][mreg_api.exceptions.APIError] narrows to server-side failures.
@@ -62,7 +60,7 @@ except APIError as exc:
 
 ## Reading the error message
 
-Raised [APIError][mreg_api.exceptions.APIError] exceptions contain the HTTP response and parsed error details.
+Raised [`APIError`][mreg_api.exceptions.APIError] exceptions contain the HTTP response and parsed error details.
 
 The `detail` attribute contains the main error message from the server without additional context,
 while the `formatted_message()` method returns a more detailed message, optionally formatted as JSON.
@@ -72,14 +70,15 @@ try:
     client.host.create(...)
 except APIError as exc:
     print(str(exc)) # or print(exc.formatted_message())
-    # POST "https://mreg.example.com/api/v1/hosts/": 400: Bad Request
-    # Validation Error: Required - This field is required.: name
+    # 400 Bad Request: POST https://mreg.example.com/api/v1/hosts/
+    # 1 error:
+    #   name: This field is required.  (required)
 
     print(exc.detail)
     # This field is required.
 
     print(exc.formatted_message(json=True))
-    # POST "https://mreg.example.com/api/v1/hosts/": 400: Bad Request
+    # 400 Bad Request: POST https://mreg.example.com/api/v1/hosts/
     # {
     #   "type": "validation_error",
     #   "errors": [ ... ]
@@ -144,7 +143,7 @@ These will be rolled into existing exception classes, such as[`APIError`][mreg_a
 - [`EntityNotFound`][mreg_api.exceptions.EntityNotFound]
 - [`MultipleEntitiesFound`][mreg_api.exceptions.MultipleEntitiesFound]
 - [`EntityAlreadyExists`][mreg_api.exceptions.EntityAlreadyExists]
-- [`EntityOwnershipMismatch`][mreg_api.exceptions.EntityOwnershipMismatch]
+- [`EntityRelationMissing`][mreg_api.exceptions.EntityRelationMissing]
 - [`InputFailure`][mreg_api.exceptions.InputFailure]
 - [`IPNetworkError`][mreg_api.exceptions.IPNetworkError]
 

@@ -13,7 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Models for heterogeneous history item data:
   - `models.history.HistoryUpdate`: updated data in a history item.
   - `models.history.HistoryRelation`: addition/removal of relations in a history item.
-- `exceptions.MregAPIError.status_code` property to get the HTTP status code of the response, if available.
+- `exceptions.ResponseError` superclass for all errors that carry an HTTP `response`. Guarantees non-optional `.response`, `.request`, and `.status_code`.
+- `exceptions.UnexpectedResponseError` for 2xx responses whose body/content is unusable (e.g. created-but-no-body, missing token). Subclass of `APIError`.
+- `exceptions.PreconditionError` for client-side preflight guards that refuse an operation before contacting the server (e.g. deleting a resource still in use). Responseless.
 - Nicer error messages for failed resource mutation in convenience methods:
   - `MregClient.hostgroup.add_owner()`
   - `MregClient.hostgroup.remove_owner()`
@@ -27,6 +29,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - Helpful "Endpoint not found" message for 404s on missing endpoints was silently discarded, showing the raw server text instead. The hint (including the library version) is now rendered by `exceptions.APIError.formatted_message()`.
+- Legacy server error responses shaped `{"error": "<message>"}` (returned by a number of endpoints instead of the drf-standardized-errors shape) are now parsed and rendered like any other error, instead of surfacing as an unparseable raw JSON blob with a `Failed to parse response text` log line.
 - Client-side checking of values using stale local object in certain methods:
   - `MregClient.role.add_atom()`
   - `MregClient.role.remove_atom()`
@@ -42,6 +45,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `exceptions.APIError.errors` is not always an instance of `MREGErrorResponse`. If the response cannot be parsed, it will be an empty `MREGErrorResponse` with type `"unknown"`.
 - `client.check_response()` no longer takes a `url` argument; the endpoint is now derived from the response when rendering error messages.
 - `client.check_response()` no longer takes a `operation_type` argument; the HTTP method is now derived from the response when choosing the appropriate exception type.
+- **BREAKING**: `exceptions.APIError` (via `ResponseError`) now requires a `response` keyword-only argument. Message-only construction of HTTP errors is no longer supported.
+- **BREAKING**: `exceptions.APIError.response`, `.request`, and `.status_code` are now non-optional. The `__cause__`-based fallbacks have been removed.
+- **BREAKING**: Default `str()` rendering of HTTP errors changed to a multi-line format: a status-first header line (`{code} {reason}: {method} {url}`) followed by a pluralized `N error(s):` list of the parsed error(s) as `attr: detail (code)` (or the endpoint-not-found hint / raw response text when there are none).
+- **BREAKING**: `LoginFailedError` is now raised only for rejected credentials (carries the response). Connection failures raise `InternalError`, a missing token raises `UnexpectedResponseError`, and an unparseable token raises `MregValidationError`.
+- **BREAKING**: `ForceMissing` now subclasses `PreconditionError` (was `MregApiBaseError`). `role.delete()` and `atom.delete()` now raise `ForceMissing` (a `PreconditionError`) instead of `DeleteError` when the resource is still in use and `force` is False.
 
 ### Removed
 
@@ -51,8 +59,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Deprecated
 
-- `exceptions.APIError.details` property, replaced by `exceptions.APIError.errors.as_str()`.
+- `exceptions.APIError.details` property, replaced by `exceptions.APIError.error_message`.
 - `exceptions.APIError.details_json` property, replaced by `exceptions.APIError.errors.as_json_str()`.
+- `exceptions.UnexpectedDataError`, replaced by `exceptions.UnexpectedResponseError`.
 
 ## [0.5.0](https://github.com/unioslo/mreg-api/releases/tag/0.5.0) - 2026-09-01
 
