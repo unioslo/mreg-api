@@ -456,8 +456,9 @@ class TestEntityErrors:
         assert not issubclass(EntityLookupError, EntityConflictError)
 
     def test_ownership_mismatch_is_deprecated_alias(self) -> None:
-        """The old name is a plain alias of EntityRelationMissing (same class)."""
-        assert EntityOwnershipMismatch is EntityRelationMissing
+        """EntityOwnershipMismatch is a deprecated alias of EntityRelationMissing."""
+        assert isinstance(EntityOwnershipMismatch(), EntityRelationMissing)
+        assert EntityOwnershipMismatch.__mro__[1] == EntityRelationMissing
 
     def test_carries_model_and_identifier(self) -> None:
         """Entity errors expose model/identifier as data, not just a message."""
