@@ -405,5 +405,7 @@ extensions = [{ griffe_pydantic = { schema = true } }]
 
 ## macros
 
-[project.plugins.macros.config]
+[project.plugins.macros]
 module_name = "docs/_macros/main"
+
+[project.plugins.search]
