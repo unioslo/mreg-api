@@ -12,10 +12,21 @@ from pytest_httpserver import HTTPServer
 from mreg_api import MregClient
 from mreg_api.client import last_request_url
 from mreg_api.exceptions import APIError
+from mreg_api.exceptions import ConnectionFailedError
+from mreg_api.exceptions import EntityAlreadyExists
+from mreg_api.exceptions import EntityConflictError
+from mreg_api.exceptions import EntityError
+from mreg_api.exceptions import EntityLookupError
+from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import EntityOwnershipMismatch
+from mreg_api.exceptions import EntityRelationMissing
 from mreg_api.exceptions import ForceMissing
+from mreg_api.exceptions import MregApiBaseError
 from mreg_api.exceptions import MregValidationError
+from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PreconditionError
 from mreg_api.exceptions import ResponseError
+from mreg_api.exceptions import TransportError
 from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.models import Host
 
@@ -426,3 +437,66 @@ class TestPreconditionErrors:
         error = ForceMissing("Atom 'a' used in roles: r1")
         assert isinstance(error, PreconditionError)
         assert not hasattr(error, "response")
+
+
+class TestEntityErrors:
+    """The transport-agnostic domain-outcome family under `EntityError`."""
+
+    def test_two_axis_hierarchy(self) -> None:
+        """Lookup and conflict leaves group under their axis and EntityError."""
+        assert issubclass(EntityNotFound, EntityLookupError)
+        assert issubclass(MultipleEntitiesFound, EntityLookupError)
+        assert issubclass(EntityAlreadyExists, EntityConflictError)
+        assert issubclass(EntityRelationMissing, EntityConflictError)
+        assert issubclass(EntityLookupError, EntityError)
+        assert issubclass(EntityConflictError, EntityError)
+        assert issubclass(EntityError, MregApiBaseError)
+        # The two axes are disjoint.
+        assert not issubclass(EntityConflictError, EntityLookupError)
+        assert not issubclass(EntityLookupError, EntityConflictError)
+
+    def test_ownership_mismatch_is_deprecated_alias(self) -> None:
+        """The old name is a plain alias of EntityRelationMissing (same class)."""
+        assert EntityOwnershipMismatch is EntityRelationMissing
+
+    def test_carries_model_and_identifier(self) -> None:
+        """Entity errors expose model/identifier as data, not just a message."""
+        error = EntityNotFound("Host 'foo' not found.", model=Host, identifier="foo")
+        assert error.model is Host
+        assert error.identifier == "foo"
+        assert str(error) == "Host 'foo' not found."
+
+    def test_context_defaults_to_none(self) -> None:
+        """Message-only construction still works (mreg-cli subclasses rely on this)."""
+        error = EntityNotFound("gone")
+        assert error.model is None
+        assert error.identifier is None
+
+    def test_never_carries_a_response(self) -> None:
+        """Entity errors are transport-agnostic: no response attribute."""
+        assert not hasattr(EntityNotFound("x"), "response")
+
+
+class TestTransportErrors:
+    """`TransportError`: a request was sent but no usable response came back."""
+
+    def test_hierarchy(self) -> None:
+        """ConnectionFailedError is a TransportError, distinct from ResponseError."""
+        assert issubclass(ConnectionFailedError, TransportError)
+        assert issubclass(TransportError, MregApiBaseError)
+        assert not issubclass(TransportError, ResponseError)
+
+    def test_connection_failure_is_wrapped(
+        self, monkeypatch: pytest.MonkeyPatch, httpserver: HTTPServer
+    ) -> None:
+        """A raw httpx connection error on the request path becomes ConnectionFailedError."""
+        client = MregClient(url=httpserver.url_for("/"), domain="example.com")
+
+        def boom(request: httpx.Request, **kwargs: Any) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
+
+        monkeypatch.setattr(client.session, "send", boom)
+
+        with pytest.raises(ConnectionFailedError) as exc_info:
+            client.get("/hosts/")
+        assert exc_info.value.request is not None

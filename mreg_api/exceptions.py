@@ -30,6 +30,18 @@ class InternalError(MregApiBaseError):
     """Error class for internal errors."""
 
 
+class TransportError(MregApiBaseError):
+    """Request was sent but no usable response was received (e.g. connection failure)."""
+
+    def __init__(self, message: str = "", *, request: Request | None = None):
+        super().__init__(message)
+        self.request = request
+
+
+class ConnectionFailedError(TransportError):
+    """Could not establish or complete the connection to the server."""
+
+
 class PreconditionError(MregApiBaseError):
     """Client-side guard: an operation's precondition was not met.
 
@@ -275,20 +287,61 @@ class TooManyResults(MregApiBaseError):
     """API returned too many results."""
 
 
-class EntityNotFound(MregApiBaseError):
+class EntityError(MregApiBaseError):
+    """A request succeeded but the entity result or state was not as required.
+
+    Never carries an HTTP response: these arise from a successful query that
+    returned the wrong number of rows, or from a failed client-side invariant.
+    The model type and the looked-up identifier are exposed as data instead.
+    """
+
+    def __init__(self, message: str = "", *, model: type | str | None = None, identifier: object = None):
+        """Initialize an EntityError.
+
+        Args:
+            message: A human-readable error message.
+            model: The model type (or its name) the operation concerned.
+            identifier: The identifier (name/id/ref) that was looked up.
+        """
+        super().__init__(message)
+        self.model = model
+        self.identifier = identifier
+
+
+class EntityLookupError(EntityError):
+    """A resolve/read operation did not yield exactly one entity."""
+
+
+class EntityConflictError(EntityError):
+    """A mutating operation's precondition on entity state was not met.
+
+    Either the entity already existed when it was expected to be absent, or a
+    required relation between entities was absent.
+    """
+
+
+class EntityNotFound(EntityLookupError):
     """No entity found when at least one was expected."""
 
 
-class EntityAlreadyExists(MregApiBaseError):
-    """Entity already exists when none was expected."""
-
-
-class MultipleEntitiesFound(MregApiBaseError):
+class MultipleEntitiesFound(EntityLookupError):
     """Multiple entities found when only one was expected."""
 
 
-class EntityOwnershipMismatch(MregApiBaseError):
-    """Entity already exists but is owned by someone else."""
+class EntityAlreadyExists(EntityConflictError):
+    """Entity already exists when none was expected."""
+
+
+class EntityRelationMissing(EntityConflictError):
+    """A required relation between two entities is absent (e.g. role lacks a label)."""
+
+
+# Deprecated alias, kept because mreg-cli subclasses this name.
+
+
+@deprecated("Use EntityRelationMissing instead.")
+class EntityOwnershipMismatch(EntityRelationMissing):
+    """Deprecated alias for EntityRelationMissing."""
 
 
 class InputFailure(MregApiBaseError, ValueError):

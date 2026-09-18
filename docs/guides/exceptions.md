@@ -145,7 +145,7 @@ These will be rolled into existing exception classes, such as[`APIError`][mreg_a
 - [`EntityNotFound`][mreg_api.exceptions.EntityNotFound]
 - [`MultipleEntitiesFound`][mreg_api.exceptions.MultipleEntitiesFound]
 - [`EntityAlreadyExists`][mreg_api.exceptions.EntityAlreadyExists]
-- [`EntityOwnershipMismatch`][mreg_api.exceptions.EntityOwnershipMismatch]
+- [`EntityRelationMissing`][mreg_api.exceptions.EntityRelationMissing]
 - [`InputFailure`][mreg_api.exceptions.InputFailure]
 - [`IPNetworkError`][mreg_api.exceptions.IPNetworkError]
 

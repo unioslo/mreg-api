@@ -669,7 +669,7 @@ class NetworkPolicy(MregModelWithTimestamps):
         """
         attribute = self.get_attribute(name)
         if not attribute:
-            raise EntityNotFound(f"Attribute {name!r} not found in policy.")
+            raise EntityNotFound(f"Attribute {name!r} not found in policy.", identifier=name)
         return attribute
 
     def get_attribute(self, name: str) -> NetworkPolicyAttributeValue | None:

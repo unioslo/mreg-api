@@ -42,9 +42,9 @@ from mreg_api.events import EventLog
 from mreg_api.events import ObjectRef
 from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
+from mreg_api.exceptions import ConnectionFailedError
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import GetError
-from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
@@ -651,7 +651,7 @@ class MregClient:
 
         Raises:
             LoginFailedError: If authentication fails
-            InternalError: If connection to the server fails
+            ConnectionFailedError: If connection to the server fails
 
         Returns:
             The authentication token
@@ -667,7 +667,7 @@ class MregClient:
                 timeout=self.timeout,
             )
         except httpx.RequestError as e:
-            raise InternalError(f"Connection failed: {e}") from e
+            raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
 
         if not response.is_success:
             # NOTE: Exception uses parsed API error message if possible
@@ -772,7 +772,10 @@ class MregClient:
         last_request_url.set(str(request.url))
         last_request_method.set(method)
 
-        result = self.session.send(request)
+        try:
+            result = self.session.send(request)
+        except httpx.RequestError as e:
+            raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
         # Log response in response log
         self.requests.add(result, json=json)
 

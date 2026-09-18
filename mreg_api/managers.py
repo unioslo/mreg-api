@@ -49,7 +49,7 @@ from mreg_api.events import ObjectRef
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.exceptions import EntityOwnershipMismatch
+from mreg_api.exceptions import EntityRelationMissing
 from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InputFailure
@@ -319,7 +319,11 @@ class ResourceManager(Generic[T], ABC):
         # ref narrowed to int | str
         obj = self._fetch(ref)
         if obj is None:
-            raise EntityNotFound(f"{model_name(self.model)} with {self._path_param_field} {ref!r} not found.")
+            raise EntityNotFound(
+                f"{model_name(self.model)} with {self._path_param_field} {ref!r} not found.",
+                model=self.model,
+                identifier=ref,
+            )
         return obj
 
     def _resolve_hostname(self, host: str | HostName | Host) -> str:
@@ -488,7 +492,9 @@ class ResourceManager(Generic[T], ABC):
         """
         ident = self._normalize_path_param(ident)
         if self._fetch_by_field(self._path_param_field, ident) is not None:
-            raise EntityAlreadyExists(f"{self.model_name} {ident!r} already exists.")
+            raise EntityAlreadyExists(
+                f"{self.model_name} {ident!r} already exists.", model=self.model, identifier=ident
+            )
 
     def list(
         self,
@@ -537,7 +543,7 @@ class ResourceManager(Generic[T], ABC):
         if res is None:
             if required:
                 # TODO: add query to error message if defined
-                raise EntityNotFound(f"No {self.model_name} found.")
+                raise EntityNotFound(f"No {self.model_name} found.", model=self.model)
             else:
                 return None
         return get_type_adapter(self.model).validate_python(res)
@@ -650,7 +656,9 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
 
         # If we have a string, delegate to get_by_name
         if self.get_by_name(ident, required=False) is not None:
-            raise EntityAlreadyExists(f"{self.model_name} {ident!r} already exists.")
+            raise EntityAlreadyExists(
+                f"{self.model_name} {ident!r} already exists.", model=self.model, identifier=ident
+            )
 
     # XXX:  Do we actually need an explicit name based lookup?
     #       Can we just override `get()` and use `fetch_by_field()` there, falling
@@ -693,7 +701,7 @@ class NamedResourceManager(WriteResourceManager[T], ABC):
         name = self._normalize_name(name)
         obj = self._fetch_by_field(self.name_field, name)
         if required and obj is None:
-            raise EntityNotFound(f"{self.model_name} {name!r} not found.")
+            raise EntityNotFound(f"{self.model_name} {name!r} not found.", model=self.model, identifier=name)
         return obj
 
     @override
@@ -843,7 +851,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         """
         obj = self._fetch_by_field("id", host_id)
         if required and obj is None:
-            raise EntityNotFound(f"Host with id {host_id!r} not found.")
+            raise EntityNotFound(f"Host with id {host_id!r} not found.", model=self.model, identifier=host_id)
         return obj
 
     @overload
@@ -876,9 +884,11 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
                 if host is not None:
                     self._record_ptr_event(host, addr)
         except MultipleEntitiesFound as e:
-            raise MultipleEntitiesFound(f"Multiple hosts found with IP address {addr}.") from e
+            raise MultipleEntitiesFound(
+                f"Multiple hosts found with IP address {addr}.", model=self.model, identifier=addr
+            ) from e
         if required and host is None:
-            raise EntityNotFound(f"Host with IP address {addr} not found.")
+            raise EntityNotFound(f"Host with IP address {addr} not found.", model=self.model, identifier=addr)
         return host
 
     @overload
@@ -898,7 +908,9 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         addr = MacAddress.parse_or_raise(mac)
         host = self._fetch_by_field("ipaddresses__macaddress", str(addr))
         if required and host is None:
-            raise EntityNotFound(f"Host with MAC address {addr} not found.")
+            raise EntityNotFound(
+                f"Host with MAC address {addr} not found.", model=self.model, identifier=addr
+            )
         return host
 
     # NOTE: not sure if it makes sense to fetch _multiple_ hosts given the same IP/MAC
@@ -1515,7 +1527,11 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
             )
         except PostError as e:
             if e.status_code == 409:
-                raise EntityAlreadyExists(f"Atom {atom_name!r} already a member of role {role.name!r}") from e
+                raise EntityAlreadyExists(
+                    f"Atom {atom_name!r} already a member of role {role.name!r}",
+                    model=self.model,
+                    identifier=atom_name,
+                ) from e
             raise
         return True
 
@@ -1532,7 +1548,7 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
                 Will never return False on failure; an exception is raised instead.
 
         Raises:
-            EntityOwnershipMismatch: If the atom is not a member of the role.
+            EntityRelationMissing: If the atom is not a member of the role.
         """
         role = self._resolve(role)
         atom_name = self._resolve_atom_name(atom)
@@ -1629,7 +1645,9 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
         role = self._resolve(role, refresh=True)
         label_id = self._resolve_label_id(label)
         if label_id in role.labels:
-            raise EntityAlreadyExists(f"Role {role.name!r} already has label {label!r}")
+            raise EntityAlreadyExists(
+                f"Role {role.name!r} already has label {label!r}", model=self.model, identifier=label
+            )
         self._patch(role, {"labels": [*role.labels, label_id]})
 
     def remove_label(self, role: int | str | Role, label: int | str | Label) -> None:
@@ -1641,13 +1659,15 @@ class RoleManager(NamedResourceManager[Role], HistoryManager[Role]):
 
         Raises:
             EntityNotFound: If the label does not exist.
-            EntityOwnershipMismatch: If the role does not have the label.
+            EntityRelationMissing: If the role does not have the label.
         """
         # We need the up-to-date reference here!
         role = self._resolve(role, refresh=True)
         label_id = self._resolve_label_id(label)
         if label_id not in role.labels:
-            raise EntityOwnershipMismatch(f"Role {role.name!r} does not have label {label!r}")
+            raise EntityRelationMissing(
+                f"Role {role.name!r} does not have label {label!r}", model=self.model, identifier=label
+            )
         self._patch(role, {"labels": [lid for lid in role.labels if lid != label_id]})
 
     def list_by_host(self, host: int | str | Host) -> list[Role]:
@@ -1827,7 +1847,9 @@ class PermissionManager(WriteResourceManager[Permission]):
         permission = self._resolve(permission)
         label_id = self._resolve_label_id(label)
         if label_id in permission.labels:
-            raise EntityAlreadyExists(f"Permission already has label {label!r}.")
+            raise EntityAlreadyExists(
+                f"Permission already has label {label!r}.", model=self.model, identifier=label
+            )
         self.update(permission, labels=[*permission.labels, label_id])
 
     def remove_label(self, permission: int | Permission, label: int | str | Label) -> None:
@@ -1838,12 +1860,15 @@ class PermissionManager(WriteResourceManager[Permission]):
             label: The label to remove (instance, name, or numeric id).
 
         Raises:
-            EntityNotFound: If the label does not exist or the permission lacks it.
+            EntityNotFound: If the label does not exist.
+            EntityRelationMissing: If the permission does not have the label.
         """
         permission = self._resolve(permission)
         label_id = self._resolve_label_id(label)
         if label_id not in permission.labels:
-            raise EntityNotFound(f"Permission does not have label {label!r}.")
+            raise EntityRelationMissing(
+                f"Permission does not have label {label!r}.", model=self.model, identifier=label
+            )
         self.update(permission, labels=[lid for lid in permission.labels if lid != label_id])
 
     @overload
@@ -1890,12 +1915,14 @@ class PermissionManager(WriteResourceManager[Permission]):
         results = self.list(group=group, range=range, regex=regex)
         if len(results) > 1:
             raise MultipleEntitiesFound(
-                f"Multiple permissions found for group={group!r}, range={range!r}, regex={regex!r}."
+                f"Multiple permissions found for group={group!r}, range={range!r}, regex={regex!r}.",
+                model=self.model,
             )
         obj = results[0] if results else None
         if required and obj is None:
             raise EntityNotFound(
-                f"Permission not found for group={group!r}, range={range!r}, regex={regex!r}."
+                f"Permission not found for group={group!r}, range={range!r}, regex={regex!r}.",
+                model=self.model,
             )
         return obj
 
@@ -2085,7 +2112,9 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         # NOTE: potential for mistakes to happen here! Can we rely on name matching via model method?
         attr = self._resolve_attribute_name(attr)
         if policy.get_attribute(attr):
-            raise EntityAlreadyExists(f"Policy {policy.name!r} already has attribute {attr!r}.")
+            raise EntityAlreadyExists(
+                f"Policy {policy.name!r} already has attribute {attr!r}.", model=self.model, identifier=attr
+            )
         attrs = [*policy.attributes, NetworkPolicyAttributeValue(name=attr, value=value)]
         self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
@@ -2105,12 +2134,16 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
             attribute (str | NetworkPolicyAttribute): NetworkPolicyAttribute instance or name string.
 
         Raises:
-            EntityNotFound: If the policy does not have this attribute.
+            EntityRelationMissing: If the policy does not have this attribute.
         """
         policy = self._resolve(policy)
         attribute_name = self._resolve_attribute_name(attribute)
         if not policy.get_attribute(attribute_name):
-            raise EntityNotFound(f"Policy {policy.name!r} does not have attribute {attribute_name!r}.")
+            raise EntityRelationMissing(
+                f"Policy {policy.name!r} does not have attribute {attribute_name!r}.",
+                model=self.model,
+                identifier=attribute_name,
+            )
         attrs = [a for a in policy.attributes if a.name != attribute_name]
         self._patch(policy, {"attributes": [{"name": a.name, "value": a.value} for a in attrs]})
 
@@ -2233,12 +2266,14 @@ class CommunityManager:
             if resp is not None:
                 return Community.model_validate(resp)
             if required:
-                raise EntityNotFound(f"Community {name!r} not found in network {network!r}.")
+                raise EntityNotFound(
+                    f"Community {name!r} not found in network {network!r}.", model=Community, identifier=name
+                )
             return None
 
         community = next((c for c in self.list(network) if c.name == name), None)
         if required and community is None:
-            raise EntityNotFound(f"Community {name!r} not found.")
+            raise EntityNotFound(f"Community {name!r} not found.", model=Community, identifier=name)
         return community
 
     @overload
@@ -2269,9 +2304,15 @@ class CommunityManager:
             community = self._client.get_typed(
                 Endpoint.NetworkCommunity.with_params(nw_addr, community_id), Community
             )
-        except EntityNotFound:
+        except GetError as e:
+            # get_typed raises GetError (not EntityNotFound) on a 404; only a
+            # missing resource is a "not found" — re-raise any other transport error.
+            if e.status_code != 404:
+                raise
             if required:
-                raise EntityNotFound(f"Community {community_id!r} not found.") from None
+                raise EntityNotFound(
+                    f"Community {community_id!r} not found.", model=Community, identifier=community_id
+                ) from None
         return community
 
     @overload
@@ -2300,7 +2341,11 @@ class CommunityManager:
         else:
             com = self.get_by_name(community, network, required=False)
         if required and com is None:
-            raise EntityNotFound(f"Community {community!r} not found in network {network!r}.")
+            raise EntityNotFound(
+                f"Community {community!r} not found in network {network!r}.",
+                model=Community,
+                identifier=community,
+            )
         return com
 
     # NOTE: this API should change! `network` is the last param in other methods,
@@ -2450,7 +2495,9 @@ class NetworkManager(WriteResourceManager[Network]):
         resp = self._client.get(Endpoint.NetworksByIP.with_id(addr), ok404=True)
         if not resp:
             if required:
-                raise EntityNotFound(f"Network containing IP {addr!r} not found.")
+                raise EntityNotFound(
+                    f"Network containing IP {addr!r} not found.", model=self.model, identifier=addr
+                )
             return None
         return self._validate_json(resp.text)
 
@@ -2687,7 +2734,9 @@ class NetworkManager(WriteResourceManager[Network]):
             None,
         )
         if exrange is None:
-            raise EntityNotFound(f"Excluded range {start} - {end} not found in {network.network!r}.")
+            raise EntityNotFound(
+                f"Excluded range {start} - {end} not found in {network.network!r}.", model=self.model
+            )
         self._client.delete(Endpoint.NetworksRemoveExcludedRanges.with_params(network.network, exrange.id))
 
     def list_by_policy(self, policy: int | NetworkPolicy) -> list[Network]:
@@ -2736,7 +2785,7 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             # so we fetch the list of IP addresses with this IP and return the first one.
             ip_list = self._list_by_ip(ipaddr)
             if not ip_list:
-                raise EntityNotFound(f"IP address {ipaddr!r} not found.")
+                raise EntityNotFound(f"IP address {ipaddr!r} not found.", model=self.model, identifier=ipaddr)
             return ip_list[0]
         return super()._resolve(ref, refresh=refresh)
 
@@ -2812,7 +2861,11 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
         """
         ip = self._resolve(ip)
         if ip.macaddress and not force:
-            raise EntityAlreadyExists(f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.")
+            raise EntityAlreadyExists(
+                f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.",
+                model=self.model,
+                identifier=ip.ipaddress,
+            )
         self.update(ip, macaddress=mac)
 
     def disassociate_mac(self, ip: int | str | IP_AddressT | IPAddress) -> None:
@@ -2939,7 +2992,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         """
         obj = self._fetch_by_field("name", self._client.fqdn(name))
         if required and obj is None:
-            raise EntityNotFound(f"CNAME {name!r} not found.")
+            raise EntityNotFound(f"CNAME {name!r} not found.", model=self.model, identifier=name)
         return obj
 
     def get_by_host_and_name(
@@ -2961,7 +3014,9 @@ class CNAMEManager(NamedResourceManager[CNAME]):
         cnames = self.list(name=fqdn, host=host_id)
         obj = next((c for c in cnames), None)
         if required and obj is None:
-            raise EntityNotFound(f"CNAME {name!r} for host {host_id} not found.")
+            raise EntityNotFound(
+                f"CNAME {name!r} for host {host_id} not found.", model=self.model, identifier=name
+            )
         return obj
 
     def list_by_host(self, host: int | str | Host) -> list[CNAME]:
@@ -3047,7 +3102,9 @@ class HInfoManager(WriteResourceManager[HInfo]):
         host_id = resolve_host_id(host, self._client)
         obj = self._fetch_by_field("host", host_id)
         if required and obj is None:
-            raise EntityNotFound(f"HInfo for host id {host_id!r} not found.")
+            raise EntityNotFound(
+                f"HInfo for host id {host_id!r} not found.", model=self.model, identifier=host_id
+            )
         return obj
 
 
@@ -3217,7 +3274,11 @@ class MXManager(WriteResourceManager[MX]):
             return MX.model_validate(obj)
 
         if required:
-            raise EntityNotFound(f"MX {mx!r} with priority {priority} not found for host {host_id}.")
+            raise EntityNotFound(
+                f"MX {mx!r} with priority {priority} not found for host {host_id}.",
+                model=self.model,
+                identifier=mx,
+            )
         return None
 
     # NOTE: This is a somewhat clumsy interface. It would be better if we had
@@ -3412,7 +3473,9 @@ class NAPTRManager(WriteResourceManager[NAPTR]):
             raise EntityNotFound(
                 f"NAPTR with preference {preference}, order {order}, flag {flag}, "  # pyright: ignore[reportImplicitStringConcatenation]
                 f"service {service}, regex {regex}, replacement {replacement} not found "
-                f"for host {host_id}."
+                f"for host {host_id}.",
+                model=self.model,
+                identifier=host_id,
             )
         return None
 
@@ -3489,7 +3552,9 @@ class SrvManager(WriteResourceManager[Srv]):
         if required:
             raise EntityNotFound(
                 f"SRV {name!r} with priority {priority}, weight {weight}, port {port} "  # pyright: ignore[reportImplicitStringConcatenation]
-                f"not found for host {host_id}."
+                f"not found for host {host_id}.",
+                model=self.model,
+                identifier=name,
             )
         return None
 
@@ -3780,7 +3845,9 @@ class BacnetIDManager(WriteResourceManager[BacnetID]):
         name = resolve_host_name(host, self._client)
         obj = self._fetch_by_field("hostname", name)
         if required and obj is None:
-            raise EntityNotFound(f"BacnetID record for host {name!r} not found.")
+            raise EntityNotFound(
+                f"BacnetID record for host {name!r} not found.", model=self.model, identifier=name
+            )
         return obj
 
 
@@ -3848,7 +3915,9 @@ class LocationManager(WriteResourceManager[Location]):
         host_id = resolve_host_id(host, self._client)
         obj = self._fetch_by_field("host", host_id)
         if required and obj is None:
-            raise EntityNotFound(f"Location for host id {host_id!r} not found.")
+            raise EntityNotFound(
+                f"Location for host id {host_id!r} not found.", model=self.model, identifier=host_id
+            )
         return obj
 
 
@@ -4427,9 +4496,15 @@ class DelegationManager:
         cls = self._model_for(zone)
         try:
             return self._get(self._endpoint_with_name(zone, name), cls)
-        except Exception as e:
+        except GetError as e:
+            # get_typed raises GetError on a 404; only a missing delegation is a
+            # "not found" — let any other transport error propagate unchanged.
+            if e.status_code != 404:
+                raise
             if required:
-                raise EntityNotFound(f"Could not find delegation {name!r} in zone {zone.name!r}") from e
+                raise EntityNotFound(
+                    f"Could not find delegation {name!r} in zone {zone.name!r}", model=cls, identifier=name
+                ) from e
         return None
 
     def _get(
@@ -4506,7 +4581,11 @@ class DelegationManager:
         verified_ns = _verify_nameservers(self._client, nameservers, force=force)
 
         if self.get(zone, name, required=False) is not None:
-            raise EntityAlreadyExists(f"Zone {zone.name!r} already has a delegation named {name!r}")
+            raise EntityAlreadyExists(
+                f"Zone {zone.name!r} already has a delegation named {name!r}",
+                model=self._model_for(zone),
+                identifier=name,
+            )
 
         return self._create(
             zone,
