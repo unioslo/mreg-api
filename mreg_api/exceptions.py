@@ -51,7 +51,10 @@ class PreconditionError(MregApiBaseError):
 
 
 class ResponseError(MregApiBaseError):
-    """Base class for errors that always carry an HTTP response."""
+    """Base class for errors that always carry an HTTP response.
+
+    Parses error details from the MREG API response if present.
+    """
 
     def __init__(self, message: str = "", *, response: Response):
         """Initialize a ResponseError.
@@ -78,13 +81,6 @@ class ResponseError(MregApiBaseError):
     def status_code(self) -> int:
         """The HTTP status code of the response."""
         return self._response.status_code
-
-
-class APIError(ResponseError):
-    """Exception class for API errors.
-
-    Parses drf-standardized-errors errors from the MREG API if present in response.
-    """
 
     @override
     def __str__(self) -> str:
@@ -205,28 +201,37 @@ class APIError(ResponseError):
         return "\n".join(parts)
 
 
-class PostError(APIError):
+@deprecated("Use ResponseError instead.")
+class APIError(ResponseError):
+    """Deprecated alias for ResponseError."""
+
+
+class HTTPStatusError(ResponseError):
+    """Server returned a 4xx or 5xx status code."""
+
+
+class PostError(HTTPStatusError):
     """Error class for failed creation."""
 
 
-class PatchError(APIError):
+class PatchError(HTTPStatusError):
     """Error class for failed patching."""
 
 
-class DeleteError(APIError):
+class DeleteError(HTTPStatusError):
     """Error class for failed deletion."""
 
 
-class GetError(APIError):
+class GetError(HTTPStatusError):
     """Error class for failed retrieval."""
 
 
-class UnexpectedResponseError(APIError):
+class UnexpectedResponseError(ResponseError):
     """Server returned a success status but a body/content we could not use."""
 
 
 @deprecated("use UnexpectedResponseError instead")
-class UnexpectedDataError(APIError):
+class UnexpectedDataError(UnexpectedResponseError):
     """Deprecated alias for UnexpectedResponseError."""
 
 
@@ -372,7 +377,7 @@ class InvalidNetwork(IPNetworkError):
     """Entity is not a valid network."""
 
 
-class LoginFailedError(APIError):
+class LoginFailedError(ResponseError):
     """Login failed."""
 
 
@@ -527,7 +532,7 @@ def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     return None
 
 
-ERROR_MAPPING: dict[HTTPMethod, type[APIError]] = {
+ERROR_MAPPING: dict[HTTPMethod, type[HTTPStatusError]] = {
     "GET": GetError,
     "POST": PostError,
     "PATCH": PatchError,
@@ -535,7 +540,7 @@ ERROR_MAPPING: dict[HTTPMethod, type[APIError]] = {
 }
 
 
-def determine_http_error_class(method: str) -> type[APIError]:
+def determine_http_error_class(method: str) -> type[HTTPStatusError]:
     """Get the appropriate exception class for a given HTTP method.
 
     Args:
@@ -547,5 +552,5 @@ def determine_http_error_class(method: str) -> type[APIError]:
     if t := ERROR_MAPPING.get(method):  # pyright: ignore[reportArgumentType]
         return t
     # NOTE: should be unreachable
-    logger.warning("No specific exception class for HTTP method '%s', using generic APIError", method)
-    return APIError
+    logger.warning("No specific exception class for HTTP method '%s', using generic HTTPStatusError", method)
+    return HTTPStatusError

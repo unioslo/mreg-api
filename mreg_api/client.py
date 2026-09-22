@@ -40,17 +40,12 @@ from mreg_api.events import Event
 from mreg_api.events import EventKind
 from mreg_api.events import EventLog
 from mreg_api.events import ObjectRef
-from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
 from mreg_api.exceptions import ConnectionFailedError
-from mreg_api.exceptions import DeleteError
-from mreg_api.exceptions import GetError
 from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.exceptions import PatchError
-from mreg_api.exceptions import PostError
 from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.managers import AtomManager
@@ -157,7 +152,7 @@ def check_response(response: Response) -> None:
         response: The HTTP response object to check.
 
     Raises:
-        APIError: If the response indicates an error.
+        HTTPStatusError: If the response indicates an error.
     """
     if not response.is_success:
         raise determine_http_error_class(response.request.method)(response=response)
@@ -700,7 +695,7 @@ class MregClient:
         Does not handle connection errors.
 
         Raises:
-            APIError: If the authorization test fails
+            InvalidAuthTokenError: If the authorization test fails
 
         Returns:
             True if authorization is valid, False otherwise
@@ -737,7 +732,8 @@ class MregClient:
             Response object or None if ok404=True and status is 404
 
         Raises:
-            APIError: If request fails
+            HTTPStatusError: If response status code is not 2xx and ok404 is False
+            ConnectionFailedError: If the request could not be sent due to a connection error
 
         """
         # Ensure that we never pass in params when we are paginating,
@@ -776,6 +772,7 @@ class MregClient:
             result = self.session.send(request)
         except httpx.RequestError as e:
             raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
+
         # Log response in response log
         self.requests.add(result, json=json)
 
@@ -852,12 +849,7 @@ class MregClient:
     def _do_get(
         self, path: str, *, params: QueryParams | None = None, ok404: bool = False
     ) -> Response | None:
-        try:
-            return self.request("GET", path, params=params, ok404=ok404)
-        except GetError as e:
-            raise e
-        except APIError as e:
-            raise GetError(response=e.response) from e
+        return self.request("GET", path, params=params, ok404=ok404)
 
     @overload
     def post(
@@ -897,12 +889,7 @@ class MregClient:
         ok404: bool = False,
     ) -> Response | None:
         """Make a POST request."""
-        try:
-            return self.request("POST", path, params=params, ok404=ok404, json=json)
-        except PostError as e:
-            raise e
-        except APIError as e:
-            raise PostError(response=e.response) from e
+        return self.request("POST", path, params=params, ok404=ok404, json=json)
 
     @overload
     def patch(
@@ -944,12 +931,7 @@ class MregClient:
         ok404: bool = False,
     ) -> Response | None:
         """Make a PATCH request."""
-        try:
-            return self.request("PATCH", path, params=params, ok404=ok404, json=json)
-        except PatchError as e:
-            raise e
-        except APIError as e:
-            raise PatchError(response=e.response) from e
+        return self.request("PATCH", path, params=params, ok404=ok404, json=json)
 
     @overload
     def delete(
@@ -991,12 +973,7 @@ class MregClient:
         ok404: bool = False,
     ) -> Response | None:
         """Make a DELETE request."""
-        try:
-            return self.request("DELETE", path, params=params, ok404=ok404, json=json)
-        except DeleteError as e:
-            raise e
-        except APIError as e:
-            raise DeleteError(response=e.response) from e
+        return self.request("DELETE", path, params=params, ok404=ok404, json=json)
 
     def get_list(
         self,
