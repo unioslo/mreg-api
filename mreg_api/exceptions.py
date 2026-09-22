@@ -365,16 +365,24 @@ class InvalidIPAddress(IPNetworkError):
     """Entity is not a valid IP address."""
 
 
-class InvalidIPv4Address(IPNetworkError):
+class InvalidIPv4Address(InvalidIPAddress):
     """Entity is not a valid IPv4 address."""
 
 
-class InvalidIPv6Address(IPNetworkError):
+class InvalidIPv6Address(InvalidIPAddress):
     """Entity is not a valid IPv6 address."""
 
 
 class InvalidNetwork(IPNetworkError):
     """Entity is not a valid network."""
+
+
+class InvalidIPv4Network(InvalidNetwork):
+    """Entity is not a valid IPv4 network."""
+
+
+class InvalidIPv6Network(InvalidNetwork):
+    """Entity is not a valid IPv6 network."""
 
 
 class LoginFailedError(ResponseError):
