@@ -139,6 +139,8 @@ except MregValidationError as exc:
     print(exc.pydantic_error)  # the underlying pydantic.ValidationError, or None
 ```
 
+Generally, this should not happen, and indicates a mismatch between what the server delivers, and what the client expects. If this problem persists, [open an issue](https://github.com/unioslo/mreg-api/issues/new).
+
 ## Other exceptions
 
 These exception are less common, and typically indicate some user error or failsafe that is triggered, that must be handled carefully.
