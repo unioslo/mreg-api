@@ -40,16 +40,13 @@ from mreg_api.events import Event
 from mreg_api.events import EventKind
 from mreg_api.events import EventLog
 from mreg_api.events import ObjectRef
-from mreg_api.exceptions import APIError
 from mreg_api.exceptions import CacheMiss
-from mreg_api.exceptions import DeleteError
-from mreg_api.exceptions import GetError
+from mreg_api.exceptions import ConnectionFailedError
 from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.exceptions import PatchError
-from mreg_api.exceptions import PostError
+from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.exceptions import determine_http_error_class
 from mreg_api.managers import AtomManager
 from mreg_api.managers import BacnetIDManager
@@ -155,7 +152,7 @@ def check_response(response: Response) -> None:
         response: The HTTP response object to check.
 
     Raises:
-        APIError: If the response indicates an error.
+        HTTPStatusError: If the response indicates an error.
     """
     if not response.is_success:
         raise determine_http_error_class(response.request.method)(response=response)
@@ -649,6 +646,7 @@ class MregClient:
 
         Raises:
             LoginFailedError: If authentication fails
+            ConnectionFailedError: If connection to the server fails
 
         Returns:
             The authentication token
@@ -664,18 +662,18 @@ class MregClient:
                 timeout=self.timeout,
             )
         except httpx.RequestError as e:
-            raise LoginFailedError(f"Connection failed: {e}") from e
+            raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
 
         if not response.is_success:
             # NOTE: Exception uses parsed API error message if possible
-            raise LoginFailedError(response.text, response)
+            raise LoginFailedError(response=response)
 
         if not (json_str := response.text):
-            raise LoginFailedError("No token received from server")
+            raise LoginFailedError("No token received from server", response=response)
         try:
             token = TokenAuth.model_validate_json(json_str).token
         except ValidationError as e:
-            raise LoginFailedError(f"Failed to parse authentication token: {e}") from e
+            raise LoginFailedError(f"Failed to parse authentication token: {e}", response=response) from e
 
         self.set_token(token)
 
@@ -697,12 +695,11 @@ class MregClient:
         Does not handle connection errors.
 
         Raises:
-            APIError: If the authorization test fails
+            InvalidAuthTokenError: If the authorization test fails
 
         Returns:
             True if authorization is valid, False otherwise
         """
-        ret: Response | None = None
         try:
             ret = self.session.get(
                 urljoin(self.url, Endpoint.Hosts),
@@ -711,7 +708,7 @@ class MregClient:
             )
             ret.raise_for_status()
         except httpx.HTTPStatusError as e:
-            raise InvalidAuthTokenError(f"Authorization test failed: {e}", ret) from e
+            raise InvalidAuthTokenError(f"Authorization test failed: {e}", response=e.response) from e
 
     def request(
         self,
@@ -735,7 +732,8 @@ class MregClient:
             Response object or None if ok404=True and status is 404
 
         Raises:
-            APIError: If request fails
+            HTTPStatusError: If response status code is not 2xx and ok404 is False
+            ConnectionFailedError: If the request could not be sent due to a connection error
 
         """
         # Ensure that we never pass in params when we are paginating,
@@ -770,7 +768,11 @@ class MregClient:
         last_request_url.set(str(request.url))
         last_request_method.set(method)
 
-        result = self.session.send(request)
+        try:
+            result = self.session.send(request)
+        except httpx.RequestError as e:
+            raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
+
         # Log response in response log
         self.requests.add(result, json=json)
 
@@ -847,12 +849,7 @@ class MregClient:
     def _do_get(
         self, path: str, *, params: QueryParams | None = None, ok404: bool = False
     ) -> Response | None:
-        try:
-            return self.request("GET", path, params=params, ok404=ok404)
-        except GetError as e:
-            raise e
-        except APIError as e:
-            raise GetError(response=e.response) from e
+        return self.request("GET", path, params=params, ok404=ok404)
 
     @overload
     def post(
@@ -892,12 +889,7 @@ class MregClient:
         ok404: bool = False,
     ) -> Response | None:
         """Make a POST request."""
-        try:
-            return self.request("POST", path, params=params, ok404=ok404, json=json)
-        except PostError as e:
-            raise e
-        except APIError as e:
-            raise PostError(response=e.response) from e
+        return self.request("POST", path, params=params, ok404=ok404, json=json)
 
     @overload
     def patch(
@@ -939,12 +931,7 @@ class MregClient:
         ok404: bool = False,
     ) -> Response | None:
         """Make a PATCH request."""
-        try:
-            return self.request("PATCH", path, params=params, ok404=ok404, json=json)
-        except PatchError as e:
-            raise e
-        except APIError as e:
-            raise PatchError(response=e.response) from e
+        return self.request("PATCH", path, params=params, ok404=ok404, json=json)
 
     @overload
     def delete(
@@ -986,12 +973,7 @@ class MregClient:
         ok404: bool = False,
     ) -> Response | None:
         """Make a DELETE request."""
-        try:
-            return self.request("DELETE", path, params=params, ok404=ok404, json=json)
-        except DeleteError as e:
-            raise e
-        except APIError as e:
-            raise DeleteError(response=e.response) from e
+        return self.request("DELETE", path, params=params, ok404=ok404, json=json)
 
     def get_list(
         self,
@@ -1128,7 +1110,11 @@ class MregClient:
         """Get the count of items from a list endpoint.
 
         Warning:
-            Returns the length of the results if the endpoint does not implement pagination.
+            Fetches all items from the server and counts them if the
+            endpoint does not implement pagination.
+
+        Raises:
+            UnexpectedResponseError: If the endpoint does not support counting and `strict` is True.
 
         Returns:
             The count of items.
@@ -1139,9 +1125,10 @@ class MregClient:
             return resp.count
         except MregValidationError:
             if strict:
-                raise GetError(
+                raise UnexpectedResponseError(
                     f"Endpoint {path} does not support counting. "  # pyright: ignore[reportImplicitStringConcatenation]
-                    "Pass `strict=False` to fall back on client-side counting."
+                    "Pass `strict=False` to fall back on client-side counting.",
+                    response=response,
                 ) from None
 
             content = validate_list_response(response)

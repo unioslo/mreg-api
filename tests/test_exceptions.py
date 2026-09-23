@@ -12,7 +12,20 @@ from pytest_httpserver import HTTPServer
 from mreg_api import MregClient
 from mreg_api.client import last_request_url
 from mreg_api.exceptions import APIError
+from mreg_api.exceptions import ConnectionFailedError
+from mreg_api.exceptions import EntityAlreadyExists
+from mreg_api.exceptions import EntityConflictError
+from mreg_api.exceptions import EntityError
+from mreg_api.exceptions import EntityLookupError
+from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import EntityOwnershipMismatch
+from mreg_api.exceptions import EntityRelationMissing
+from mreg_api.exceptions import MregApiBaseError
 from mreg_api.exceptions import MregValidationError
+from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import ResponseError
+from mreg_api.exceptions import TransportError
+from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.models import Host
 
 
@@ -125,11 +138,12 @@ class TestAPIErrorFormattedMessage:
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
 
         assert error.formatted_message() == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 400: Bad Request
-name: Required - This field is required\
+400 Bad Request: POST http://localhost/api/v1/hosts/
+1 error:
+  name: This field is required.  (required)\
 """)
 
     def test_formatted_message_multiple_errors(self) -> None:
@@ -144,12 +158,13 @@ name: Required - This field is required\
                 ],
             },
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
 
         assert error.formatted_message() == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 400: Bad Request
-name: Required - This field is required
-contact: Invalid - Enter a valid email\
+400 Bad Request: POST http://localhost/api/v1/hosts/
+2 errors:
+  name: This field is required.  (required)
+  contact: Enter a valid email.  (invalid)\
 """)
 
     def test_formatted_message_error_without_attr(self) -> None:
@@ -161,11 +176,12 @@ contact: Invalid - Enter a valid email\
                 "errors": [{"code": "authentication_failed", "detail": "Invalid credentials.", "attr": None}],
             },
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
 
         assert error.formatted_message() == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 400: Bad Request
-Authentication Failed - Invalid credentials\
+400 Bad Request: POST http://localhost/api/v1/hosts/
+1 error:
+  Invalid credentials.  (authentication_failed)\
 """)
 
     def test_formatted_message_json_mode(self) -> None:
@@ -177,10 +193,10 @@ Authentication Failed - Invalid credentials\
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
 
         assert error.formatted_message(json=True) == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 400: Bad Request
+400 Bad Request: POST http://localhost/api/v1/hosts/
 {
   "type": "validation_error",
   "errors": [
@@ -193,16 +209,49 @@ POST "http://localhost/api/v1/hosts/": 400: Bad Request
 }\
 """)
 
+    def test_formatted_message_json_mode_multiple_errors(self) -> None:
+        """Test formatted_message with json=True returns JSON details for multiple errors."""
+        response = make_mock_response(
+            status_code=400,
+            json_body={
+                "type": "validation_error",
+                "errors": [
+                    {"code": "required", "detail": "This field is required.", "attr": "name"},
+                    {"code": "invalid", "detail": "Enter a valid email.", "attr": "contact"},
+                ],
+            },
+        )
+        error = APIError(response=response)
+
+        assert error.formatted_message(json=True) == snapshot("""\
+400 Bad Request: POST http://localhost/api/v1/hosts/
+{
+  "type": "validation_error",
+  "errors": [
+    {
+      "code": "required",
+      "detail": "This field is required.",
+      "attr": "name"
+    },
+    {
+      "code": "invalid",
+      "detail": "Enter a valid email.",
+      "attr": "contact"
+    }
+  ]
+}\
+""")
+
     def test_formatted_message_fallback_to_response_text(self) -> None:
         """Test formatted_message falls back to response text when not MREG error format."""
         response = make_mock_response(
             status_code=500,
             text_body="Internal Server Error: Something went wrong",
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
 
         assert error.formatted_message() == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 500: Internal Server Error
+500 Internal Server Error: POST http://localhost/api/v1/hosts/
 Internal Server Error: Something went wrong\
 """)
 
@@ -219,7 +268,7 @@ Internal Server Error: Something went wrong\
         error = APIError(response=response)
 
         assert error.formatted_message() == snapshot(f"""\
-GET "http://localhost/api/v1/does/not/exist": 404: Not Found
+404 Not Found: GET http://localhost/api/v1/does/not/exist
 Endpoint not found: 'does/not/exist'
 This may be because your library version ({__version__}) is:
   - Too old: The endpoint has been removed from the server
@@ -237,15 +286,25 @@ This may be because your library version ({__version__}) is:
         error = APIError(response=response)
 
         assert error.formatted_message() == snapshot("""\
-GET "http://localhost/api/v1/hosts/foo": 404: Not Found
+404 Not Found: GET http://localhost/api/v1/hosts/foo
 host not found\
 """)
 
-    def test_formatted_message_fallback_to_exception_args(self) -> None:
-        """Test formatted_message falls back to exception args when no response."""
-        error = APIError("Connection timed out", response=None)
+    def test_formatted_message_explicit_message_wins(self) -> None:
+        """An explicit message (enrichment override) beats the parsed detail."""
+        response = make_mock_response(
+            status_code=409,
+            json_body={
+                "type": "client_error",
+                "errors": [{"code": "conflict", "detail": "unhelpful server message", "attr": None}],
+            },
+        )
+        error = APIError("Host is already a member of the group.", response=response)
 
-        assert error.formatted_message() == snapshot("Connection timed out")
+        assert error.formatted_message() == snapshot("""\
+409 Conflict: POST http://localhost/api/v1/hosts/
+Host is already a member of the group.\
+""")
 
     def test_formatted_message_json_mode_no_structured_errors(self) -> None:
         """Test formatted_message with json=True falls back to plain text when no structured errors."""
@@ -253,12 +312,15 @@ host not found\
             status_code=500,
             text_body="Internal Server Error",
         )
-        error = APIError("Request failed", response=response)
+        error = APIError(response=response)
 
         # json=True but no structured errors, should fall back to plain text details
         assert error.formatted_message(json=True) == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 500: Internal Server Error
-Internal Server Error\
+500 Internal Server Error: POST http://localhost/api/v1/hosts/
+{
+  "type": "unknown",
+  "errors": []
+}\
 """)
 
     def test_detail_property(self) -> None:
@@ -288,9 +350,10 @@ Internal Server Error\
         error = APIError(response=response)
         assert error.detail == "This field is required.; Enter a valid email."
 
-    def test_detail_empty_without_response(self) -> None:
-        """Test that detail is empty when there is no response."""
-        error = APIError("Connection failed", response=None)
+    def test_detail_empty_without_structured_errors(self) -> None:
+        """Detail is empty when the response has no parseable MREG errors."""
+        response = make_mock_response(status_code=500, text_body="boom")
+        error = APIError(response=response)
         assert error.detail == ""
 
     def test_str_is_formatted_message(self) -> None:
@@ -305,6 +368,118 @@ Internal Server Error\
         error = APIError(response=response)
         assert str(error) == error.formatted_message()
         assert str(error) == snapshot("""\
-POST "http://localhost/api/v1/hosts/": 400: Bad Request
-name: Required - This field is required\
+400 Bad Request: POST http://localhost/api/v1/hosts/
+1 error:
+  name: This field is required.  (required)\
 """)
+
+    def test_legacy_error_body_compact(self) -> None:
+        """Legacy `{"error": "<msg>"}` bodies parse into a single error."""
+        response = make_mock_response(
+            status_code=409,
+            json_body={"error": "test-history-role-atom1 already in atoms"},
+        )
+        error = APIError(response=response)
+        assert error.detail == "test-history-role-atom1 already in atoms"
+        assert len(error.errors.errors) == 1
+        assert error.formatted_message() == snapshot("""\
+409 Conflict: POST http://localhost/api/v1/hosts/
+1 error:
+  test-history-role-atom1 already in atoms  (error)\
+""")
+
+    def test_legacy_error_body_ignored_when_not_string(self) -> None:
+        """A non-string `error` value is not treated as the legacy shape."""
+        response = make_mock_response(
+            status_code=400,
+            json_body={"error": ["not", "a", "string"]},
+        )
+        error = APIError(response=response)
+        assert error.errors.errors == []
+
+
+class TestResponseErrors:
+    """Errors under `ResponseError`: they always carry an HTTP response."""
+
+    def test_requires_response(self) -> None:
+        """ResponseError cannot be constructed without a response."""
+        with pytest.raises(TypeError):
+            ResponseError("boom")  # pyright: ignore[reportCallIssue]
+
+    def test_unexpected_response_error_carries_2xx(self) -> None:
+        """UnexpectedResponseError renders its message atop a success status."""
+        response = make_mock_response(
+            status_code=201,
+            method="POST",
+            text_body="",
+        )
+        error = UnexpectedResponseError("Failed to fetch host after creation.", response=response)
+        assert error.status_code == 201
+        assert error.formatted_message() == snapshot("""\
+201 Created: POST http://localhost/api/v1/hosts/
+Failed to fetch host after creation.\
+""")
+
+
+class TestEntityErrors:
+    """The transport-agnostic domain-outcome family under `EntityError`."""
+
+    def test_two_axis_hierarchy(self) -> None:
+        """Lookup and conflict leaves group under their axis and EntityError."""
+        assert issubclass(EntityNotFound, EntityLookupError)
+        assert issubclass(MultipleEntitiesFound, EntityLookupError)
+        assert issubclass(EntityAlreadyExists, EntityConflictError)
+        assert issubclass(EntityRelationMissing, EntityConflictError)
+        assert issubclass(EntityLookupError, EntityError)
+        assert issubclass(EntityConflictError, EntityError)
+        assert issubclass(EntityError, MregApiBaseError)
+        # The two axes are disjoint.
+        assert not issubclass(EntityConflictError, EntityLookupError)
+        assert not issubclass(EntityLookupError, EntityConflictError)
+
+    def test_ownership_mismatch_is_deprecated_alias(self) -> None:
+        """EntityOwnershipMismatch is a deprecated alias of EntityRelationMissing."""
+        assert isinstance(EntityOwnershipMismatch(), EntityRelationMissing)
+        assert EntityOwnershipMismatch.__mro__[1] == EntityRelationMissing
+
+    def test_carries_model_and_identifier(self) -> None:
+        """Entity errors expose model/identifier as data, not just a message."""
+        error = EntityNotFound("Host 'foo' not found.", model=Host, identifier="foo")
+        assert error.model is Host
+        assert error.identifier == "foo"
+        assert str(error) == "Host 'foo' not found."
+
+    def test_context_defaults_to_none(self) -> None:
+        """Message-only construction still works (mreg-cli subclasses rely on this)."""
+        error = EntityNotFound("gone")
+        assert error.model is None
+        assert error.identifier is None
+
+    def test_never_carries_a_response(self) -> None:
+        """Entity errors are transport-agnostic: no response attribute."""
+        assert not hasattr(EntityNotFound("x"), "response")
+
+
+class TestTransportErrors:
+    """`TransportError`: a request was sent but no usable response came back."""
+
+    def test_hierarchy(self) -> None:
+        """ConnectionFailedError is a TransportError, distinct from ResponseError."""
+        assert issubclass(ConnectionFailedError, TransportError)
+        assert issubclass(TransportError, MregApiBaseError)
+        assert not issubclass(TransportError, ResponseError)
+
+    def test_connection_failure_is_wrapped(
+        self, monkeypatch: pytest.MonkeyPatch, httpserver: HTTPServer
+    ) -> None:
+        """A raw httpx connection error on the request path becomes ConnectionFailedError."""
+        client = MregClient(url=httpserver.url_for("/"), domain="example.com")
+
+        def boom(request: httpx.Request, **kwargs: Any) -> httpx.Response:
+            raise httpx.ConnectError("connection refused", request=request)
+
+        monkeypatch.setattr(client.session, "send", boom)
+
+        with pytest.raises(ConnectionFailedError) as exc_info:
+            client.get("/hosts/")
+        assert exc_info.value.request is not None

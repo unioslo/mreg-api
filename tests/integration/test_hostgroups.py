@@ -6,6 +6,7 @@ import pytest
 from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.models import Zone
@@ -302,6 +303,62 @@ def test_update(
     client.hostgroup.update(group, description="after update")
     refreshed = client.hostgroup.refresh(group)
     assert refreshed.description == "after update"
+
+
+def test_add_owner(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    name = f"{test_prefix}hg-add-owner"
+    group = client.hostgroup.create(name=name, description="test_add_owner")
+    resource_tracker.add(lambda: client.hostgroup.delete(name))
+    client.hostgroup.add_owner(group, "example-user-1")
+    refreshed = client.hostgroup.refresh(group)
+    assert "example-user-1" in refreshed.owners
+
+
+def test_remove_owner(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    name = f"{test_prefix}hg-remove-owner"
+    group = client.hostgroup.create(name=name, description="test_remove_owner")
+    resource_tracker.add(lambda: client.hostgroup.delete(name))
+    client.hostgroup.add_owner(group, "example-user-1")
+    refreshed = client.hostgroup.refresh(group)
+    assert "example-user-1" in refreshed.owners
+    client.hostgroup.remove_owner(group, "example-user-1")
+    refreshed = client.hostgroup.refresh(group)
+    assert "example-user-1" not in refreshed.owners
+
+
+def test_remove_owner_nonexistent(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    name = f"{test_prefix}hg-remove-owner-nonexistent"
+    group = client.hostgroup.create(name=name, description="test_remove_owner_nonexistent")
+    resource_tracker.add(lambda: client.hostgroup.delete(name))
+    with pytest.raises(DeleteError) as excinfo:
+        client.hostgroup.remove_owner(group, "exampleuser1")
+    msg = excinfo.exconly()
+    msg = msg.replace(name, "<hostgroup-name>").replace(integration_client.url, "<server-url>")
+
+    assert msg == snapshot(
+        """\
+mreg_api.exceptions.DeleteError: 404 Not Found: DELETE <server-url>/api/v1/hostgroups/<hostgroup-name>/owners/exampleuser1
+Owner 'exampleuser1' is not associated with host group '<hostgroup-name>'.\
+"""
+    )
+
+    error_msg = excinfo.value.error_message.replace(name, "<hostgroup-name>")
+    assert error_msg == snapshot("Not Found - Not found")
 
 
 def test_hostgroup_history(

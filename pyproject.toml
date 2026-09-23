@@ -50,9 +50,10 @@ dev = [
     { include-group = "docs" },
 ]
 docs = [
-    "zensical>=0.0.46",
-    "mkdocstrings-python>=2.0.5",
+    "zensical>=0.0.62",
+    "mkdocstrings-python>=2.0.8",
     "griffe-pydantic>=1.3.1",
+    "mkdocs-macros-plugin>=1.3.7",
 ]
 
 
@@ -108,6 +109,7 @@ extend-select = [
 ignore = [
     # B905 (`zip()` without an explicit `strict=` parameter) is incompatible with older python versions.
     "B905",
+    "D107", # shadows docstring for class in intellisense, especially bad for exceptions.
     # D203 (1 blank line required before class docstring) is incompatible with
     # D211 (No blank lines allowed before class docstring). We ignore D203.
     "D203",

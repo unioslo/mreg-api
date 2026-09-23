@@ -32,7 +32,9 @@ from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InvalidIPAddress
 from mreg_api.exceptions import InvalidIPv4Address
+from mreg_api.exceptions import InvalidIPv4Network
 from mreg_api.exceptions import InvalidIPv6Address
+from mreg_api.exceptions import InvalidIPv6Network
 from mreg_api.exceptions import InvalidNetwork
 from mreg_api.exceptions import IPNetworkError
 from mreg_api.models.abstracts import MregModel
@@ -234,13 +236,13 @@ class NetworkOrIP(BaseModel):
     def as_ipv4_network(self) -> ipaddress.IPv4Network:
         """Return the value as a network."""
         if not self.is_ipv4_network():
-            raise InvalidNetwork(f"{self.ip_or_network} is not an IPv4 network.")
+            raise InvalidIPv4Network(f"{self.ip_or_network} is not an IPv4 network.")
         return cast(ipaddress.IPv4Network, self.ip_or_network)
 
-    def as_ipv6_network(self) -> IP_NetworkT:
+    def as_ipv6_network(self) -> ipaddress.IPv6Network:
         """Return the value as a network."""
         if not self.is_ipv6_network():
-            raise InvalidNetwork(f"{self.ip_or_network} is not an IPv6 network.")
+            raise InvalidIPv6Network(f"{self.ip_or_network} is not an IPv6 network.")
         return cast(ipaddress.IPv6Network, self.ip_or_network)
 
     def is_ipv6(self) -> bool:
@@ -669,7 +671,7 @@ class NetworkPolicy(MregModelWithTimestamps):
         """
         attribute = self.get_attribute(name)
         if not attribute:
-            raise EntityNotFound(f"Attribute {name!r} not found in policy.")
+            raise EntityNotFound(f"Attribute {name!r} not found in policy.", identifier=name)
         return attribute
 
     def get_attribute(self, name: str) -> NetworkPolicyAttributeValue | None:
