@@ -293,11 +293,10 @@ class TooManyResults(MregApiBaseError):
 
 
 class EntityError(MregApiBaseError):
-    """A request succeeded but the entity result or state was not as required.
+    """A request succeeded but the result or state was not as required.
 
-    Never carries an HTTP response: these arise from a successful query that
-    returned the wrong number of rows, or from a failed client-side invariant.
-    The model type and the looked-up identifier are exposed as data instead.
+    Never stems from an HTTP response failure; always indicates a problem
+    with the entity state after successfully completing the request.
     """
 
     def __init__(self, message: str = "", *, model: type | str | None = None, identifier: object = None):
