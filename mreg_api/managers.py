@@ -56,7 +56,6 @@ from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
 from mreg_api.exceptions import PostError
-from mreg_api.exceptions import PreconditionError
 from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.models import CNAME
 from mreg_api.models import MX
@@ -2857,15 +2856,11 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
             force (bool): When True, skip safety checks and overwrite an existing MAC.
 
         Raises:
-            EntityAlreadyExists: If the IP already has a MAC and `force` is False.
+            ForceMissing: If the IP already has a MAC and `force` is False.
         """
         ip = self._resolve(ip)
         if ip.macaddress and not force:
-            raise EntityAlreadyExists(
-                f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.",
-                model=self.model,
-                identifier=ip.ipaddress,
-            )
+            raise ForceMissing(f"IP address {ip.ipaddress} already has MAC address {ip.macaddress}.")
         self.update(ip, macaddress=mac)
 
     def disassociate_mac(self, ip: int | str | IP_AddressT | IPAddress) -> None:
@@ -4096,11 +4091,11 @@ class _ZoneSubManager(NamedResourceManager[ZoneT], ABC):
         # XXX: Not foolproof (e.g. SRVs are not hosts), but added for parity with old Zone.ensure_deletable.
         hosts = self._client.host.list(zone=zone.id)
         if hosts:
-            raise PreconditionError(f"Zone has {len(hosts)} registered entries. Can not delete.")
+            raise ForceMissing(f"Zone has {len(hosts)} registered entries. Can not delete.")
         subzones = self.list_subzones(zone)
         if subzones:
             names = ", ".join(z.name for z in subzones)
-            raise PreconditionError(f"Zone has registered subzones: '{names}'. Can not delete")
+            raise ForceMissing(f"Zone has registered subzones: '{names}'. Can not delete")
 
     # NOTE: force should not propagate to this method.
     # Ideally, we resolve all safety issues in the ZoneManager itself.

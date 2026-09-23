@@ -50,6 +50,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **BREAKING**: Default `str()` rendering of HTTP errors changed to a multi-line format: a status-first header line (`{code} {reason}: {method} {url}`) followed by a pluralized `N error(s):` list of the parsed error(s) as `attr: detail (code)` (or the endpoint-not-found hint / raw response text when there are none).
 - **BREAKING**: `LoginFailedError` is now raised only for rejected credentials (carries the response). Connection failures raise `InternalError`, a missing token raises `UnexpectedResponseError`, and an unparseable token raises `MregValidationError`.
 - **BREAKING**: `ForceMissing` now subclasses `PreconditionError` (was `MregApiBaseError`). `role.delete()` and `atom.delete()` now raise `ForceMissing` (a `PreconditionError`) instead of `DeleteError` when the resource is still in use and `force` is False.
+- `MregClient.ipaddress.associate_mac` now raises `ForceMissing` instead of `EntityAlreadyExists` when the IP address already has an associated MAC address and `force` is False.
 
 ### Removed
 

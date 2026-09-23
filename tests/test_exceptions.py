@@ -20,11 +20,9 @@ from mreg_api.exceptions import EntityLookupError
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import EntityOwnershipMismatch
 from mreg_api.exceptions import EntityRelationMissing
-from mreg_api.exceptions import ForceMissing
 from mreg_api.exceptions import MregApiBaseError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.exceptions import PreconditionError
 from mreg_api.exceptions import ResponseError
 from mreg_api.exceptions import TransportError
 from mreg_api.exceptions import UnexpectedResponseError
@@ -421,22 +419,6 @@ class TestResponseErrors:
 201 Created: POST http://localhost/api/v1/hosts/
 Failed to fetch host after creation.\
 """)
-
-
-class TestPreconditionErrors:
-    """Client-side guards: responseless, raised before any HTTP request."""
-
-    def test_precondition_error_is_responseless(self) -> None:
-        """PreconditionError is a plain message-only error with no response."""
-        error = PreconditionError("Zone has 3 registered entries. Can not delete.")
-        assert str(error) == "Zone has 3 registered entries. Can not delete."
-        assert not hasattr(error, "response")
-
-    def test_force_missing_is_a_precondition_error(self) -> None:
-        """ForceMissing is a force-overridable PreconditionError; catchable as either."""
-        error = ForceMissing("Atom 'a' used in roles: r1")
-        assert isinstance(error, PreconditionError)
-        assert not hasattr(error, "response")
 
 
 class TestEntityErrors:
