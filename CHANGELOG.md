@@ -5,7 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Changed
+
+- `CommunityManager.get()` now always raises `EntityNotFound` if the community cannot be found.
+- `CommunityManager.get_by_id()` now raises `GetError` if the community cannot be found (404).
+
+### Removed
+
+- Error wrappers for M2M get methods. Now uses the server's own error responses.
 
 ## [0.6.0](https://github.com/unioslo/mreg-api/releases/tag/0.6.0) - 2026-09-24
 

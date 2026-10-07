@@ -5,10 +5,12 @@ from ipaddress import IPv6Address
 from typing import TYPE_CHECKING
 
 import pytest
+from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import GetError
 from mreg_api.models.models import Network
 
 if TYPE_CHECKING:
@@ -232,7 +234,7 @@ def test_community_get_by_id(
         name=name,
         description="integration test get_by_id",
     )
-    comm = integration_client.network.community.get_by_name(name, test_network)
+    comm = integration_client.network.community.get_by_id(created.id, test_network)
     assert comm == created
     integration_client.network.community.delete(comm.id, test_network)
 
@@ -251,6 +253,94 @@ def test_community_get_by_object(
     comm = integration_client.network.community.get_by_name(name, test_network)
     assert comm == created
     integration_client.network.community.delete(comm.id, test_network)
+
+
+def test_community_get(
+    integration_client: MregClient,
+    test_prefix: str,
+    test_network: str,
+) -> None:
+    name = f"{test_prefix}commget"
+    created = integration_client.network.community.create(
+        test_network,
+        name=name,
+        description="integration test get",
+    )
+    by_id = integration_client.network.community.get(created.id, test_network)
+    assert by_id == created
+    by_name = integration_client.network.community.get(name, test_network)
+    assert by_name == created
+    integration_client.network.community.delete(created.id, test_network)
+
+
+def test_community_get_nonexistent_by_name_returns_none(
+    integration_client: MregClient,
+    test_network: str,
+) -> None:
+    result = integration_client.network.community.get(
+        "zzz-no-such-community-xyzzy", test_network, required=False
+    )
+    assert result is None
+
+
+def test_community_get_nonexistent_by_name_raises(
+    integration_client: MregClient,
+    test_network: str,
+) -> None:
+    with pytest.raises(EntityNotFound):
+        integration_client.network.community.get("zzz-no-such-community-xyzzy", test_network)
+
+
+def test_community_get_nonexistent_by_id_raises(
+    integration_client: MregClient,
+    test_network: str,
+) -> None:
+    """CommunityManager.get() always returns EntityNotFound, even if the underlyinng `get_by_id` raises `GetError`."""
+    with pytest.raises(EntityNotFound):
+        integration_client.network.community.get(999999, test_network)
+
+
+def test_community_get_nonexistent_by_id_returns_none(
+    integration_client: MregClient,
+    test_network: str,
+) -> None:
+    result = integration_client.network.community.get(999999, test_network, required=False)
+    assert result is None
+
+
+def test_community_get_by_id_nonexistent_raises(
+    integration_client: MregClient,
+    test_network: str,
+) -> None:
+    """CommunityManager.get_by_id raises `GetError` due to 404 error from the server."""
+    with pytest.raises(GetError) as excinfo:
+        integration_client.network.community.get_by_id(999999, test_network)
+
+    msg = excinfo.exconly()
+    msg = (
+        msg.replace(test_network.replace("/", "%2F"), "<network>")
+        .replace(test_network, "<network>")
+        .replace(integration_client.url, "<server-url>")
+    )
+    assert msg == snapshot("""\
+mreg_api.exceptions.GetError: 404 Not Found: GET <server-url>/api/v1/networks/<network>/communities/999999
+1 error:
+  Not found.  (not_found)\
+""")
+
+    error_msg = excinfo.value.error_message
+    error_msg = error_msg.replace(test_network.replace("/", "%2F"), "<network>").replace(
+        test_network, "<network>"
+    )
+    assert error_msg == snapshot("Not Found - Not found")
+
+
+def test_community_get_by_id_nonexistent_not_required_returns_none(
+    integration_client: MregClient,
+    test_network: str,
+) -> None:
+    result = integration_client.network.community.get_by_id(999999, test_network, required=False)
+    assert result is None
 
 
 def test_community_delete_by_id(
