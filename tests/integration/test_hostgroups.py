@@ -9,6 +9,7 @@ from mreg_api.client import MregClient
 from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
+from mreg_api.exceptions import PostError
 from mreg_api.models import Zone
 
 if TYPE_CHECKING:
@@ -241,6 +242,34 @@ def test_add_remove_subgroup(
     assert child.name not in updated_parent.groups
 
 
+def test_add_remove_group_by_id(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    parent_name = f"{test_prefix}hg-id-par"
+    child_name = f"{test_prefix}hg-id-chd"
+
+    parent = client.hostgroup.create(name=parent_name)
+    child = client.hostgroup.create(name=child_name)
+    assert parent is not None
+    assert child is not None
+
+    # Cleanup: child first so parent has no subgroup at deletion time
+    resource_tracker.add(lambda: client.hostgroup.delete(child_name))
+    resource_tracker.add(lambda: client.hostgroup.delete(parent_name))
+
+    # Numeric IDs exercise the ID branch of _resolve_hostgroup_name
+    client.hostgroup.add_group(parent.id, child.id)
+    updated_parent = client.hostgroup.refresh(parent)
+    assert child.name in updated_parent.groups
+
+    client.hostgroup.remove_group(parent.id, child.id)
+    updated_parent = client.hostgroup.refresh(updated_parent)
+    assert child.name not in updated_parent.groups
+
+
 def test_list_parents(
     integration_client: MregClient,
     test_prefix: str,
@@ -289,6 +318,86 @@ def test_add_remove_host(
     client.hostgroup.remove_host(updated, host)
     updated = client.hostgroup.refresh(updated)
     assert host.name not in updated.hosts
+
+
+def test_add_host_conflict(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    main_zone: Zone,
+) -> None:
+    client = integration_client
+    group_name = f"{test_prefix}hg-add-host-conflict"
+    host_name = f"{test_prefix}hh-conflict.{main_zone.name}"
+
+    group = client.hostgroup.create(name=group_name)
+    host = client.host.create(name=host_name)
+    assert group is not None
+    assert host is not None
+
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.hostgroup.delete(group_name))
+    resource_tracker.add(lambda: client.hostgroup.remove_host(group.id, host_name))
+
+    # int hostgroup reference exercises the ID branch of _resolve_hostgroup_name
+    client.hostgroup.add_host(group.id, host)
+    with pytest.raises(PostError) as excinfo:
+        client.hostgroup.add_host(group.id, host)
+
+    msg = excinfo.exconly()
+    msg = (
+        msg.replace(host_name, "<host-name>")
+        .replace(group_name, "<hostgroup-name>")
+        .replace(integration_client.url, "<server-url>")
+    )
+    assert msg == snapshot("""\
+mreg_api.exceptions.PostError: 409 Conflict: POST <server-url>/api/v1/hostgroups/<hostgroup-name>/hosts/
+1 error:
+  <host-name> already in hosts  (conflict)\
+""")
+
+    error_msg = excinfo.value.error_message.replace(host_name, "<host-name>")
+    error_msg = error_msg.replace(group_name, "<hostgroup-name>")
+    assert error_msg == snapshot("Conflict - <host-name> already in hosts")
+
+
+def test_remove_host_not_member(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    main_zone: Zone,
+) -> None:
+    client = integration_client
+    group_name = f"{test_prefix}hg-remove-host-not-member"
+    host_name = f"{test_prefix}hh-not-member.{main_zone.name}"
+
+    group = client.hostgroup.create(name=group_name)
+    host = client.host.create(name=host_name)
+    assert group is not None
+    assert host is not None
+
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.hostgroup.delete(group_name))
+
+    # int hostgroup reference exercises the ID branch of _resolve_hostgroup_name
+    with pytest.raises(DeleteError) as excinfo:
+        client.hostgroup.remove_host(group.id, host)
+
+    msg = excinfo.exconly()
+    msg = (
+        msg.replace(host_name, "<host-name>")
+        .replace(group_name, "<hostgroup-name>")
+        .replace(integration_client.url, "<server-url>")
+    )
+    assert msg == snapshot("""\
+mreg_api.exceptions.DeleteError: 404 Not Found: DELETE <server-url>/api/v1/hostgroups/<hostgroup-name>/hosts/<host-name>
+1 error:
+  '<host-name>' is not a member of '<hostgroup-name>'.  (not_found)\
+""")
+
+    error_msg = excinfo.value.error_message.replace(host_name, "<host-name>")
+    error_msg = error_msg.replace(group_name, "<hostgroup-name>")
+    assert error_msg == snapshot("Not Found - '<host-name>' is not a member of '<hostgroup-name>'")
 
 
 def test_update(
@@ -353,12 +462,39 @@ def test_remove_owner_nonexistent(
     assert msg == snapshot(
         """\
 mreg_api.exceptions.DeleteError: 404 Not Found: DELETE <server-url>/api/v1/hostgroups/<hostgroup-name>/owners/exampleuser1
-Owner 'exampleuser1' is not associated with host group '<hostgroup-name>'.\
+1 error:
+  'exampleuser1' is not an owner of '<hostgroup-name>'.  (not_found)\
 """
     )
 
     error_msg = excinfo.value.error_message.replace(name, "<hostgroup-name>")
-    assert error_msg == snapshot("Not Found - Not found")
+    assert error_msg == snapshot("Not Found - 'exampleuser1' is not an owner of '<hostgroup-name>'")
+
+
+def test_add_owner_conflict(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    name = f"{test_prefix}hg-add-owner-conflict"
+    group = client.hostgroup.create(name=name, description="test_add_owner_conflict")
+    resource_tracker.add(lambda: client.hostgroup.delete(name))
+
+    client.hostgroup.add_owner(group, "example-user-1")
+    with pytest.raises(PostError) as excinfo:
+        client.hostgroup.add_owner(group, "example-user-1")
+
+    msg = excinfo.exconly()
+    msg = msg.replace(name, "<hostgroup-name>").replace(integration_client.url, "<server-url>")
+    assert msg == snapshot("""\
+mreg_api.exceptions.PostError: 409 Conflict: POST <server-url>/api/v1/hostgroups/<hostgroup-name>/owners/
+1 error:
+  example-user-1 already in owners  (conflict)\
+""")
+
+    error_msg = excinfo.value.error_message.replace(name, "<hostgroup-name>")
+    assert error_msg == snapshot("Conflict - example-user-1 already in owners")
 
 
 def test_hostgroup_history(

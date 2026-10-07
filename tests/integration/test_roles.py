@@ -6,9 +6,11 @@ import pytest
 from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
+from mreg_api.exceptions import DeleteError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import ForceMissing
+from mreg_api.exceptions import PostError
 from mreg_api.models import Zone
 
 if TYPE_CHECKING:
@@ -243,6 +245,48 @@ def test_add_remove_atom(
     assert atom.name not in after_remove.atoms
 
 
+def test_add_atom_conflict(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    client = integration_client
+    atom_name = f"{test_prefix}atom-ac"
+    role_name = f"{test_prefix}role-ac"
+
+    client.atom.create(name=atom_name, description="test atom")
+    atom = client.atom.get_by_name(atom_name)
+    role = client.role.create(name=role_name, description="test role")
+    assert atom is not None
+    assert role is not None
+
+    # Cleanup: role first (an atom in use blocks atom deletion), then atom
+    resource_tracker.add(lambda: client.atom.delete(atom_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
+
+    client.role.add_atom(role, atom)
+    # Adding the same atom twice now surfaces the server's 409 as a PostError
+    # (previously translated to EntityAlreadyExists).
+    with pytest.raises(PostError) as excinfo:
+        client.role.add_atom(role, atom)
+
+    msg = excinfo.exconly()
+    msg = (
+        msg.replace(atom_name, "<atom-name>")
+        .replace(role_name, "<role-name>")
+        .replace(integration_client.url, "<server-url>")
+    )
+    assert msg == snapshot("""\
+mreg_api.exceptions.PostError: 409 Conflict: POST <server-url>/api/v1/hostpolicy/roles/<role-name>/atoms/
+1 error:
+  <atom-name> already in atoms  (conflict)\
+""")
+
+    error_msg = excinfo.value.error_message.replace(atom_name, "<atom-name>")
+    error_msg = error_msg.replace(role_name, "<role-name>")
+    assert error_msg == snapshot("Conflict - <atom-name> already in atoms")
+
+
 def test_add_remove_host(
     integration_client: MregClient,
     test_prefix: str,
@@ -269,6 +313,114 @@ def test_add_remove_host(
     client.role.remove_host(role, host)
     fresh = client.role.get_by_name(role_name)
     assert host.name not in fresh.hosts
+
+
+def test_add_host_by_id(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    main_zone: Zone,
+) -> None:
+    client = integration_client
+    host_name = f"{test_prefix}rh-id.{main_zone.name}"
+    role_name = f"{test_prefix}role-rh-id"
+
+    host = client.host.create(name=host_name)
+    role = client.role.create(name=role_name, description="test role")
+    assert host is not None
+    assert role is not None
+
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
+    resource_tracker.add(lambda: client.role.remove_host(role.id, host_name))
+
+    # Name string for the role + numeric ID for the host (ID branch of resolve_host_name)
+    client.role.add_host(role.name, host.id)
+    fresh = client.role.get_by_name(role_name)
+    assert host.name in fresh.hosts
+
+    # Numeric ID for the role + name string for the host
+    client.role.remove_host(role.id, host_name)
+    fresh = client.role.get_by_name(role_name)
+    assert host.name not in fresh.hosts
+
+
+def test_add_host_conflict(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    main_zone: Zone,
+) -> None:
+    client = integration_client
+    host_name = f"{test_prefix}rh-conflict.{main_zone.name}"
+    role_name = f"{test_prefix}role-rh-conflict"
+
+    host = client.host.create(name=host_name)
+    role = client.role.create(name=role_name, description="test role")
+    assert host is not None
+    assert role is not None
+
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
+    resource_tracker.add(lambda: client.role.remove_host(role.id, host_name))
+
+    client.role.add_host(role, host)
+    with pytest.raises(PostError) as excinfo:
+        client.role.add_host(role, host)
+
+    msg = excinfo.exconly()
+    msg = (
+        msg.replace(host_name, "<host-name>")
+        .replace(role_name, "<role-name>")
+        .replace(integration_client.url, "<server-url>")
+    )
+    assert msg == snapshot("""\
+mreg_api.exceptions.PostError: 409 Conflict: POST <server-url>/api/v1/hostpolicy/roles/<role-name>/hosts/
+1 error:
+  <host-name> already in hosts  (conflict)\
+""")
+
+    error_msg = excinfo.value.error_message.replace(host_name, "<host-name>")
+    error_msg = error_msg.replace(role_name, "<role-name>")
+    assert error_msg == snapshot("Conflict - <host-name> already in hosts")
+
+
+def test_remove_host_not_member(
+    integration_client: MregClient,
+    test_prefix: str,
+    resource_tracker: ResourceTracker,
+    main_zone: Zone,
+) -> None:
+    client = integration_client
+    host_name = f"{test_prefix}rh-not-member.{main_zone.name}"
+    role_name = f"{test_prefix}role-rh-not-member"
+
+    host = client.host.create(name=host_name)
+    role = client.role.create(name=role_name, description="test role")
+    assert host is not None
+    assert role is not None
+
+    resource_tracker.add(lambda: client.host.delete(host_name))
+    resource_tracker.add(lambda: client.role.delete(role_name))
+
+    with pytest.raises(DeleteError) as excinfo:
+        client.role.remove_host(role, host)
+
+    msg = excinfo.exconly()
+    msg = (
+        msg.replace(host_name, "<host-name>")
+        .replace(role_name, "<role-name>")
+        .replace(integration_client.url, "<server-url>")
+    )
+    assert msg == snapshot("""\
+mreg_api.exceptions.DeleteError: 404 Not Found: DELETE <server-url>/api/v1/hostpolicy/roles/<role-name>/hosts/<host-name>
+1 error:
+  '<host-name>' is not a member of '<role-name>'.  (not_found)\
+""")
+
+    error_msg = excinfo.value.error_message.replace(host_name, "<host-name>")
+    error_msg = error_msg.replace(role_name, "<role-name>")
+    assert error_msg == snapshot("Not Found - '<host-name>' is not a member of '<role-name>'")
 
 
 def test_add_remove_label(
