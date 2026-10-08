@@ -9,7 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `NetworkManager.update()` now supports the `network_new` argument to change the network address.
+- `NetworkManager.update(network=)` parameter to change the network address of an existing network.
+
+### Changed
+
+- All `create` and `update` methods now support specifying their required arguments positionally. Previously, these parameters were inconsistent and were often keyword-only.
+- **BREAKING**: All `update` methods now use the name `ref` for their first parameter (the object reference). Previously, this was inconsistently
 
 ## [0.6.1](https://github.com/unioslo/mreg-api/releases/tag/0.6.1) - 2026-10-07
 
