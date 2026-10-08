@@ -2486,9 +2486,9 @@ class NetworkManager(WriteResourceManager[Network]):
 
     def update(
         self,
-        network: str | int | Network,
+        ref: str | int | Network,
         *,
-        network_new: str | UNSET = UNSET,
+        network: str | UNSET = UNSET,
         description: str | UNSET = UNSET,
         vlan: int | None | UNSET = UNSET,
         dns_delegated: bool | UNSET = UNSET,
@@ -2504,8 +2504,8 @@ class NetworkManager(WriteResourceManager[Network]):
         Pass `policy=None` or `max_communities=None` to unset; omit to leave unchanged.
 
         Args:
-            network (str | int | Network): Network reference (address, numeric ID, or Network instance).
-            network_new (str | UNSET): New network address in CIDR notation. Omit to leave unchanged.
+            ref (str | int | Network): Network reference (address, numeric ID, or Network instance).
+            network (str | UNSET): New network address in CIDR notation. Omit to leave unchanged.
             description (str | UNSET): New description. Omit to leave unchanged.
             vlan (int | None | UNSET): New VLAN ID. Pass None to unset, omit to leave unchanged.
             dns_delegated (bool | UNSET): Whether DNS is delegated. Omit to leave unchanged.
@@ -2516,10 +2516,10 @@ class NetworkManager(WriteResourceManager[Network]):
             policy (int | None | UNSET): Network policy ID. Pass None to unset, omit to leave unchanged.
             max_communities (int | None | UNSET): Max communities. Pass None to unset, omit to leave unchanged.
         """  # noqa: E501
-        network = self._resolve(network)
+        ref = self._resolve(ref)
         data: dict[str, Any] = {}
-        if network_new is not UNSET:
-            data["network"] = network_new
+        if network is not UNSET:
+            data["network"] = network
         if description is not UNSET:
             data["description"] = description
         if vlan is not UNSET:
@@ -2538,7 +2538,7 @@ class NetworkManager(WriteResourceManager[Network]):
             data["policy"] = policy
         if max_communities is not UNSET:
             data["max_communities"] = max_communities
-        self._patch(network, data)
+        self._patch(ref, data)
 
     def get_first_available_ip(self, network: str | int | Network) -> IP_AddressT:
         """Return the first available IP address in the network.
