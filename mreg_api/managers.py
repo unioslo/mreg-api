@@ -2488,6 +2488,7 @@ class NetworkManager(WriteResourceManager[Network]):
         self,
         network: str | int | Network,
         *,
+        network_new: str | UNSET = UNSET,
         description: str | UNSET = UNSET,
         vlan: int | None | UNSET = UNSET,
         dns_delegated: bool | UNSET = UNSET,
@@ -2504,6 +2505,7 @@ class NetworkManager(WriteResourceManager[Network]):
 
         Args:
             network (str | int | Network): Network reference (address, numeric ID, or Network instance).
+            network_new (str | UNSET): New network address in CIDR notation. Omit to leave unchanged.
             description (str | UNSET): New description. Omit to leave unchanged.
             vlan (int | None | UNSET): New VLAN ID. Pass None to unset, omit to leave unchanged.
             dns_delegated (bool | UNSET): Whether DNS is delegated. Omit to leave unchanged.
@@ -2516,6 +2518,8 @@ class NetworkManager(WriteResourceManager[Network]):
         """  # noqa: E501
         network = self._resolve(network)
         data: dict[str, Any] = {}
+        if network_new is not UNSET:
+            data["network"] = network_new
         if description is not UNSET:
             data["description"] = description
         if vlan is not UNSET:
