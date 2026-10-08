@@ -199,12 +199,12 @@ def test_update_network_range_overlaps_existing(integration_client: MregClient) 
         )
         with pytest.raises(PatchError) as excinfo:
             integration_client.network.update(net1, network="172.16.0.0/23")
-        assert excinfo.value.formatted_message() == snapshot("""\
-409 Conflict: PATCH http://127.0.0.1:8002/api/v1/networks/172.16.0.0/24
+        msg = excinfo.value.formatted_message().replace(integration_client.url, "<URL>")
+        assert msg == snapshot("""\
+409 Conflict: PATCH <URL>/api/v1/networks/172.16.0.0/24
 1 error:
   Network overlaps with: 172.16.1.0/24  (conflict)\
 """)
-
     finally:
         integration_client.network.delete(net1)
         integration_client.network.delete(net2)
