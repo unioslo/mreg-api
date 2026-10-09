@@ -528,3 +528,127 @@ def test_list_subzones_by_name(
         assert any(z.name == sub_name for z in results)
     finally:
         integration_client.zone.delete(sub_name, force=True)
+
+
+def test_forward_submanager_get_by_id(integration_client: MregClient, test_zone: ForwardZone) -> None:
+    """Zone ID lookups work via the forward sub-manager (the direction-agnostic manager cannot dispatch on IDs)."""
+    result = integration_client.zone.forward.get(test_zone.id)
+    assert isinstance(result, ForwardZone)
+    assert result.id == test_zone.id
+    assert result.name == test_zone.name
+
+
+def test_reverse_submanager_get_by_id(
+    integration_client: MregClient,
+    test_reverse_zone: ReverseZone,
+) -> None:
+    """Zone ID lookups work via the reverse sub-manager."""
+    result = integration_client.zone.reverse.get(test_reverse_zone.id)
+    assert isinstance(result, ReverseZone)
+    assert result.id == test_reverse_zone.id
+    assert result.name == test_reverse_zone.name
+
+
+def test_submanager_get_by_name_matches_zone_manager(
+    integration_client: MregClient,
+    test_zone: ForwardZone,
+    test_reverse_zone: ReverseZone,
+) -> None:
+    """ZoneManager get/get_by_name and the sub-managers agree on lookups by name."""
+    via_get = integration_client.zone.get(test_zone.name)
+    via_get_by_name = integration_client.zone.get_by_name(test_zone.name)
+    via_sub = integration_client.zone.forward.get_by_name(test_zone.name)
+    assert via_get == via_get_by_name == via_sub
+
+    via_main = integration_client.zone.get_by_name(test_reverse_zone.name)
+    via_sub = integration_client.zone.reverse.get_by_name(test_reverse_zone.name)
+    assert via_main == via_sub
+
+
+def test_submanager_list_matches_zone_manager(integration_client: MregClient) -> None:
+    """ZoneManager list_forward/list_reverse return the same zones as the sub-managers' list()."""
+    assert integration_client.zone.forward.list() == integration_client.zone.list_forward()
+    assert integration_client.zone.reverse.list() == integration_client.zone.list_reverse()
+
+
+def test_forward_submanager_create(
+    integration_client: MregClient,
+    test_prefix: str,
+    seed_ns: str,
+    main_zone: Zone,
+    resource_tracker: ResourceTracker,
+) -> None:
+    """Zones can be created directly via the forward sub-manager."""
+    zone_name = f"{test_prefix}smf.{main_zone.name}"
+    zone = integration_client.zone.forward.create(
+        name=zone_name,
+        email=f"hostmaster@{zone_name}",
+        primary_ns=[seed_ns],
+        force=True,
+    )
+    resource_tracker.add(lambda: integration_client.zone.forward.delete(zone_name, force=True))
+    assert isinstance(zone, ForwardZone)
+    assert zone.name == zone_name
+
+
+def test_forward_submanager_create_duplicate_raises(
+    integration_client: MregClient,
+    test_prefix: str,
+    seed_ns: str,
+    main_zone: Zone,
+    resource_tracker: ResourceTracker,
+) -> None:
+    """Sub-manager create raises EntityAlreadyExists for duplicate names."""
+    zone_name = f"{test_prefix}smd.{main_zone.name}"
+    zone = integration_client.zone.forward.create(
+        name=zone_name,
+        email=f"hostmaster@{zone_name}",
+        primary_ns=[seed_ns],
+        force=True,
+    )
+    resource_tracker.add(lambda: integration_client.zone.forward.delete(zone_name, force=True))
+    assert isinstance(zone, ForwardZone)
+
+    with pytest.raises(EntityAlreadyExists):
+        integration_client.zone.forward.create(
+            name=zone_name,
+            email=f"hostmaster@{zone_name}",
+            primary_ns=[seed_ns],
+            force=True,
+        )
+
+
+def test_forward_submanager_set_nameservers(
+    integration_client: MregClient, test_zone: ForwardZone, seed_ns: str
+) -> None:
+    """set_nameservers via the sub-manager verifies nameservers before patching."""
+    integration_client.zone.forward.set_nameservers(test_zone, [seed_ns], force=True)
+    refreshed = integration_client.zone.forward.refresh(test_zone)
+    assert seed_ns in [ns.name for ns in refreshed.nameservers]
+
+
+def test_forward_submanager_update_soa_primary_ns(
+    integration_client: MregClient, test_zone: ForwardZone, seed_ns: str
+) -> None:
+    """update_soa via the sub-manager verifies the primary nameserver before patching."""
+    integration_client.zone.forward.update_soa(test_zone, primary_ns=seed_ns, force=True)
+    refreshed = integration_client.zone.forward.refresh(test_zone)
+    assert refreshed.primary_ns == seed_ns
+
+
+def test_reverse_submanager_create(
+    integration_client: MregClient,
+    seed_ns: str,
+    resource_tracker: ResourceTracker,
+) -> None:
+    """Reverse zones can be created directly via the reverse sub-manager."""
+    zone_name = "251.10.in-addr.arpa"
+    zone = integration_client.zone.reverse.create(
+        name=zone_name,
+        email=f"hostmaster@{zone_name}",
+        primary_ns=[seed_ns],
+        force=True,
+    )
+    resource_tracker.add(lambda: integration_client.zone.reverse.delete(zone_name, force=True))
+    assert isinstance(zone, ReverseZone)
+    assert zone.name == zone_name

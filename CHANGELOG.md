@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - `NetworkManager.update(network=)` parameter to change the network address of an existing network.
+- `ZoneManager` now has public `forward` and `reverse` sub-managers for ID-based lookups and standalone use.
+  - Can also be accessed via new `MregClient.forward_zone` and `MregClient.reverse_zone` properties.
 
 ### Changed
 

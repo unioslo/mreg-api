@@ -8,14 +8,13 @@ import pytest
 from inline_snapshot import snapshot
 
 from mreg_api import MregClient
+from mreg_api import managers
 from mreg_api.exceptions import InternalError
 from mreg_api.managers import ResourceManager
 from mreg_api.models.abstracts import MregModel
 
 
 def get_resource_managers() -> Sequence[tuple[str, type[ResourceManager[Any]]]]:
-    from mreg_api import managers
-
     managers_list: list[tuple[str, type[ResourceManager[Any]]]] = []
     for name in dir(managers):
         if name.endswith("Manager"):
@@ -108,6 +107,7 @@ def test_get_resource_managers_snapshot() -> None:
             "AtomManager",
             "BacnetIDManager",
             "CNAMEManager",
+            "ForwardZoneManager",
             "HInfoManager",
             "HostGroupManager",
             "HostManager",
@@ -122,12 +122,11 @@ def test_get_resource_managers_snapshot() -> None:
             "NetworkPolicyManager",
             "PTROverrideManager",
             "PermissionManager",
+            "ReverseZoneManager",
             "RoleManager",
             "SSHFPManager",
             "SrvManager",
             "TXTManager",
-            "_ForwardZoneManager",
-            "_ReverseZoneManager",
         ]
     )
 
@@ -149,6 +148,7 @@ def test_manager_model_name_snapshot(client: MregClient) -> None:
             ("AtomManager", "Atom"),
             ("BacnetIDManager", "BacnetID"),
             ("CNAMEManager", "CNAME"),
+            ("ForwardZoneManager", "ForwardZone"),
             ("HInfoManager", "HInfo"),
             ("HostGroupManager", "HostGroup"),
             ("HostManager", "Host"),
@@ -163,11 +163,10 @@ def test_manager_model_name_snapshot(client: MregClient) -> None:
             ("NetworkPolicyManager", "NetworkPolicy"),
             ("PTROverrideManager", "PTR_override"),
             ("PermissionManager", "Permission"),
+            ("ReverseZoneManager", "ReverseZone"),
             ("RoleManager", "Role"),
             ("SSHFPManager", "SSHFP"),
             ("SrvManager", "Srv"),
             ("TXTManager", "TXT"),
-            ("_ForwardZoneManager", "ForwardZone"),
-            ("_ReverseZoneManager", "ReverseZone"),
         ]
     )

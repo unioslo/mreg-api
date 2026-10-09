@@ -68,6 +68,10 @@ Other managers, such as the read-only meta-endpoint managers exposed via [`MregC
 
 ::: mreg_api.managers.ZoneManager
 
+::: mreg_api.managers.ForwardZoneManager
+
+::: mreg_api.managers.ReverseZoneManager
+
 ::: mreg_api.managers.DelegationManager
 
 ::: mreg_api.managers.NameServerManager
