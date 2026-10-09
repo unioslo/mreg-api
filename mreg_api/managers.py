@@ -3925,64 +3925,100 @@ def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool 
 ZoneT = TypeVar("ZoneT", bound=Zone)
 
 
-class _ZoneSubManager(NamedResourceManager[ZoneT], ABC):
-    """Base class for forward/reverse Zone managers.
+class ZoneSubManager(NamedResourceManager[ZoneT], ABC):
+    """Base class for the forward/reverse zone managers.
 
-    Each concrete subclass binds a zone subclass (and unique endpoint).
-    Accessed via the `ZoneManager` by zone-name or concrete `Zone` subclass type.
+    Each concrete subclass binds a zone subclass (and unique endpoint), and is
+    usable both standalone (via `ZoneManager.forward` / `ZoneManager.reverse`)
+    and through the `ZoneManager` abstraction, which dispatches on zone-name shape.
     """
 
     _path_param_field: ClassVar[str] = "name"
     nameservers_endpoint: ClassVar[Endpoint]
     """The per-type nameservers endpoint (forward/reverse differ)."""
 
+    def verify_nameservers(self, nameservers: list[str], *, force: bool = False) -> list[VerifiedNS]:
+        """Verify nameservers exist in mreg and have glue (raises otherwise).
+
+        Args:
+            nameservers (list[str]): List of nameserver names to verify.
+            force (bool): When True, skip safety checks on nameserver existence.
+
+        Returns:
+            list[VerifiedNS]: The verified nameserver names.
+
+        Raises:
+            InputFailure: If no nameservers are given.
+            ForceMissing: If a nameserver is missing (or lacks glue) and `force` is False.
+        """
+        return _verify_nameservers(self._client, nameservers, force=force)
+
     def create(
         self,
         name: str,
         email: str,
-        primary_ns: list[VerifiedNS],
+        primary_ns: list[str],
+        *,
+        force: bool = False,
     ) -> ZoneT:
-        """Create a zone of this manager's type. Caller verifies nameservers/absence.
+        """Create a new zone.
 
         Args:
             name (str): The zone name.
             email (str): The zone admin email address.
-            primary_ns (list[VerifiedNS]): List of primary nameserver names.
+            primary_ns (list[str]): List of primary nameserver names.
+            force (bool): When True, skip safety checks on nameservers.
 
         Returns:
-            _ZoneT: The created zone.
+            ZoneT: The created zone.
+
+        Raises:
+            InputFailure: If no nameservers are given.
+            ForceMissing: If a nameserver is missing (or lacks glue) and `force` is False.
+            EntityAlreadyExists: If a zone with this name already exists.
         """
+        primary_ns_v = self.verify_nameservers(primary_ns, force=force)
+        self.assert_absent(name)
         return self._create(
-            {"name": name, "email": email, "primary_ns": primary_ns},
+            {"name": name, "email": email, "primary_ns": primary_ns_v},
         )
 
     def update_soa(
         self,
         zone: ZoneT,
         *,
-        primary_ns: VerifiedNS | UNSET = UNSET,
+        primary_ns: str | UNSET = UNSET,
         email: str | UNSET = UNSET,
         serialno: int | UNSET = UNSET,
         refresh: int | UNSET = UNSET,
         retry: int | UNSET = UNSET,
         expire: int | UNSET = UNSET,
         soa_ttl: int | UNSET = UNSET,
+        force: bool = False,
     ) -> None:
         """Update the zone's SOA fields. At least one field must be provided.
 
+        The primary nameserver, when provided, is verified first.
+
         Args:
-            zone (_ZoneT): The zone to update.
-            primary_ns (VerifiedNS | UNSET): New primary nameserver. Omit to leave unchanged.
+            zone (ZoneT): The zone to update.
+            primary_ns (str | UNSET): New primary nameserver. Omit to leave unchanged.
             email (str | UNSET): New zone admin email. Omit to leave unchanged.
             serialno (int | UNSET): New serial number. Omit to leave unchanged.
             refresh (int | UNSET): New refresh interval. Omit to leave unchanged.
             retry (int | UNSET): New retry interval. Omit to leave unchanged.
             expire (int | UNSET): New expire interval. Omit to leave unchanged.
             soa_ttl (int | UNSET): New SOA TTL. Omit to leave unchanged.
+            force (bool): When True, skip safety checks on the primary nameserver.
+
+        Raises:
+            InputFailure: If no fields are provided.
+            ForceMissing: If the primary nameserver is missing (or lacks glue)
+                and `force` is False.
         """
         data: dict[str, Any] = {}
         if primary_ns is not UNSET:
-            data["primary_ns"] = primary_ns
+            data["primary_ns"] = self.verify_nameservers([primary_ns], force=force)[0]
         if email is not UNSET:
             data["email"] = email
         if serialno is not UNSET:
@@ -3995,33 +4031,41 @@ class _ZoneSubManager(NamedResourceManager[ZoneT], ABC):
             data["expire"] = expire
         if isinstance(soa_ttl, int):
             data["soa_ttl"] = _valid_zone_ttl(soa_ttl)
-        if not data:
-            raise InputFailure("No fields to update")
         self._patch(zone, data)
 
     def set_default_ttl(self, zone: ZoneT, ttl: int) -> None:
         """Set the zone's default TTL.
 
         Args:
-            zone (_ZoneT): The zone to update.
+            zone (ZoneT): The zone to update.
             ttl (int): The new default TTL value (300–68400).
         """
         self._patch(zone, {"default_ttl": _valid_zone_ttl(ttl)})
 
-    def set_nameservers(self, zone: ZoneT, nameservers: list[VerifiedNS]) -> None:
+    def set_nameservers(self, zone: ZoneT, nameservers: list[str], *, force: bool = False) -> None:
         """Replace the zone's nameservers (hits the per-type nameservers endpoint).
 
+        Verifies the nameservers first.
+
         Args:
-            zone (_ZoneT): The zone to update.
-            nameservers (list[VerifiedNS]): The new list of nameserver names.
+            zone (ZoneT): The zone to update.
+            nameservers (list[str]): The new list of nameserver names.
+            force (bool): When True, skip safety checks on nameserver existence.
+
+        Raises:
+            InputFailure: If no nameservers are given.
+            ForceMissing: If a nameserver is missing (or lacks glue) and `force` is False.
         """
-        self._client.patch(self.nameservers_endpoint.with_params(zone.name), json={"primary_ns": nameservers})
+        primary_ns_v = self.verify_nameservers(nameservers, force=force)
+        self._client.patch(
+            self.nameservers_endpoint.with_params(zone.name), json={"primary_ns": primary_ns_v}
+        )
 
     def list_subzones(self, zone: ZoneT) -> list[ZoneT]:
         """List subzones of the zone (excluding the zone itself).
 
         Args:
-            zone (_ZoneT): The parent zone to list subzones for.
+            zone (ZoneT): The parent zone to list subzones for.
         """
         zones = self._fetch_list_by_field("name__endswith", f".{zone.name}")
         return [z for z in zones if z.name != zone.name]
@@ -4037,14 +4081,12 @@ class _ZoneSubManager(NamedResourceManager[ZoneT], ABC):
             names = ", ".join(z.name for z in subzones)
             raise ForceMissing(f"Zone has registered subzones: '{names}'. Can not delete")
 
-    # NOTE: force should not propagate to this method.
-    # Ideally, we resolve all safety issues in the ZoneManager itself.
     @override
     def delete(self, obj: int | str | ZoneT, *, force: bool = False) -> None:
         """Delete the zone, guarding against non-empty zones unless `force`.
 
         Args:
-            obj (int | str | _ZoneT): The zone to delete, by numeric ID, name string, or instance.
+            obj (int | str | ZoneT): The zone to delete, by numeric ID, name string, or instance.
             force (bool): When True, skip safety checks and delete even non-empty zones.
         """
         obj = self._resolve(obj)
@@ -4053,8 +4095,8 @@ class _ZoneSubManager(NamedResourceManager[ZoneT], ABC):
         super().delete(obj)
 
 
-class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
-    """Private manager for forward zones."""
+class ForwardZoneManager(ZoneSubManager[ForwardZone]):
+    """Manager for forward zones."""
 
     nameservers_endpoint: ClassVar[Endpoint] = Endpoint.ForwardZonesNameservers
 
@@ -4095,8 +4137,8 @@ class _ForwardZoneManager(_ZoneSubManager[ForwardZone]):
         raise UnexpectedResponseError(f"Unexpected response from server: {blob}", response=resp)
 
 
-class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
-    """Private manager for reverse zones."""
+class ReverseZoneManager(ZoneSubManager[ReverseZone]):
+    """Manager for reverse zones."""
 
     nameservers_endpoint: ClassVar[Endpoint] = Endpoint.ReverseZonesNameservers
 
@@ -4111,51 +4153,43 @@ class _ReverseZoneManager(_ZoneSubManager[ReverseZone]):
         return Endpoint.ReverseZones
 
 
-# FIXME: some major refactoring required of both zones and delegations.
-# Horrible spaghetti that has a bunch of idiosyncrasies not seen anywhere else.
-
-
-# NOTE: If we need to support resolving zones by ID, we must expose the sub managers
-# as public (standalone?) managers. Currently, we can't just make the existing
-# sub managers public, because their methods expect verified nameserver arguments (`VeriifedNS`),
-# which we only produce through a private function (_verify_nameservers).
 class ZoneManager:
-    """Public facade over the forward/reverse zone managers.
+    """Zone management for forward and reverse zones.
 
     Zones split into forward/reverse, but are otherwise very similar in their APIs.
     This manager delegates to the correct forward/reverse manager based on the name
     or object types passed in to methods.
 
     Similar to other managers, methods take names or instances, but crucially NOT IDs,
-    since we cannot distinguish between forward/reverse zones by ID alone.
+    since we cannot distinguish between forward/reverse zones by ID alone. Use the
+    public `forward` / `reverse` sub-managers for ID-based lookups and standalone use.
     """
 
     def __init__(self, client: MregClient) -> None:
-        """Bind the facade and its private sub-managers to the client."""
         self._client: MregClient = client
-        self._forward: _ForwardZoneManager = _ForwardZoneManager(client)
-        self._reverse: _ReverseZoneManager = _ReverseZoneManager(client)
         self.delegations = DelegationManager(self._client)
+        self.forward = ForwardZoneManager(self._client)
+        self.reverse = ReverseZoneManager(self._client)
 
-    def _sub_for_name(self, name: str) -> _ForwardZoneManager | _ReverseZoneManager:
-        return self._reverse if is_reverse_zone_name(name) else self._forward
+    def _sub_for_name(self, name: str) -> ForwardZoneManager | ReverseZoneManager:
+        return self.reverse if is_reverse_zone_name(name) else self.forward
 
     @overload
-    def _sub(self, obj: str) -> _ForwardZoneManager | _ReverseZoneManager: ...
+    def _sub(self, obj: str) -> ForwardZoneManager | ReverseZoneManager: ...
     @overload
-    def _sub(self, obj: ForwardZone) -> _ForwardZoneManager: ...
+    def _sub(self, obj: ForwardZone) -> ForwardZoneManager: ...
     @overload
-    def _sub(self, obj: ReverseZone) -> _ReverseZoneManager: ...
+    def _sub(self, obj: ReverseZone) -> ReverseZoneManager: ...
     @overload
-    def _sub(self, obj: ZoneT) -> _ZoneSubManager[ZoneT]: ...
+    def _sub(self, obj: ZoneT) -> ZoneSubManager[ZoneT]: ...
     def _sub(
         self, obj: str | Zone | ZoneT
-    ) -> _ForwardZoneManager | _ReverseZoneManager | _ZoneSubManager[ZoneT]:
+    ) -> ForwardZoneManager | ReverseZoneManager | ZoneSubManager[ZoneT]:
         if isinstance(obj, str):
-            return self._reverse if is_reverse_zone_name(obj) else self._forward
+            return self.reverse if is_reverse_zone_name(obj) else self.forward
         if isinstance(obj, ForwardZone):
-            return self._forward
-        return self._reverse
+            return self.forward
+        return self.reverse
 
     @overload
     def _resolve_zone(self, ref: ZoneT) -> ZoneT: ...
@@ -4182,9 +4216,9 @@ class ZoneManager:
             obj (ZoneT): The zone to refresh.
         """
         if isinstance(obj, ForwardZone):
-            return self._forward.refresh(obj)
+            return self.forward.refresh(obj)
         else:
-            return self._reverse.refresh(obj)
+            return self.reverse.refresh(obj)
 
     @overload
     def get(self, name: str, *, required: Literal[False]) -> Zone | None: ...
@@ -4230,11 +4264,11 @@ class ZoneManager:
 
     def list_forward(self) -> list[ForwardZone]:
         """List forward zones."""
-        return self._forward.list()
+        return self.forward.list()
 
     def list_reverse(self) -> list[ReverseZone]:
         """List reverse zones."""
-        return self._reverse.list()
+        return self.reverse.list()
 
     def get_from_host(self, host: str | HostName | Host) -> ForwardZoneDelegation | ForwardZone | None:
         """Get the forward zone (or delegation) responsible for a host or hostname.
@@ -4242,7 +4276,7 @@ class ZoneManager:
         Args:
             host (str | HostName | Host): Host reference (name string or Host instance).
         """
-        return self._forward.get_from_host(host)
+        return self.forward.get_from_host(host)
 
     def create(
         self,
@@ -4264,11 +4298,13 @@ class ZoneManager:
 
         Returns:
             Zone: The created zone.
+
+        Raises:
+            InputFailure: If no nameservers are given.
+            ForceMissing: If a nameserver is missing (or lacks glue) and `force` is False.
+            EntityAlreadyExists: If a zone with this name already exists.
         """
-        verified_ns = self.verify_nameservers(primary_ns, force=force)
-        sub = self._sub(name)
-        sub.assert_absent(name)
-        return sub.create(name=name, email=email, primary_ns=verified_ns)
+        return self._sub(name).create(name=name, email=email, primary_ns=primary_ns, force=force)
 
     def update_soa(
         self,
@@ -4281,8 +4317,11 @@ class ZoneManager:
         retry: int | UNSET = UNSET,
         expire: int | UNSET = UNSET,
         soa_ttl: int | UNSET = UNSET,
+        force: bool = False,
     ) -> None:
         """Update the zone's SOA fields.
+
+        The primary nameserver, when provided, is verified first.
 
         Args:
             zone (str | Zone): Zone reference (name string or instance).
@@ -4293,18 +4332,25 @@ class ZoneManager:
             retry (int | UNSET): New retry interval. Omit to leave unchanged.
             expire (int | UNSET): New expire interval. Omit to leave unchanged.
             soa_ttl (int | UNSET): New SOA TTL. Omit to leave unchanged.
+            force (bool): When True, skip safety checks on the primary nameserver.
+
+        Raises:
+            InputFailure: If no fields are provided.
+            ForceMissing: If the primary nameserver is missing (or lacks glue)
+                and `force` is False.
         """
-        kwargs: dict[str, Any] = {
-            "primary_ns": primary_ns,
-            "email": email,
-            "serialno": serialno,
-            "refresh": refresh,
-            "retry": retry,
-            "expire": expire,
-            "soa_ttl": soa_ttl,
-        }
         z = self._resolve_zone(zone)
-        return self._sub(z).update_soa(z, **kwargs)
+        return self._sub(z).update_soa(
+            z,
+            primary_ns=primary_ns,
+            email=email,
+            serialno=serialno,
+            refresh=refresh,
+            retry=retry,
+            expire=expire,
+            soa_ttl=soa_ttl,
+            force=force,
+        )
 
     def set_default_ttl(self, zone: str | Zone, ttl: int) -> None:
         """Set the zone's default TTL.
@@ -4319,15 +4365,19 @@ class ZoneManager:
     def set_nameservers(self, zone: str | Zone, nameservers: list[str], *, force: bool = False) -> None:
         """Replace the zone's nameservers.
 
+        Verifies the nameservers first.
+
         Args:
             zone (str | Zone): Zone reference (name string or instance).
             nameservers (list[str]): The new list of nameserver names.
             force (bool): When True, skip safety checks on nameserver existence.
+
+        Raises:
+            InputFailure: If no nameservers are given.
+            ForceMissing: If a nameserver is missing (or lacks glue) and `force` is False.
         """
         z = self._resolve_zone(zone)
-
-        verified_ns = _verify_nameservers(self._client, nameservers, force=force)
-        return self._sub(z).set_nameservers(z, verified_ns)
+        return self._sub(z).set_nameservers(z, nameservers, force=force)
 
     @overload
     def list_subzones(self, zone: ZoneT) -> Sequence[ZoneT]: ...
@@ -4404,7 +4454,9 @@ class DelegationManager:
             raise InputFailure(f"Delegation {name!r} is not in {zone.name!r}")
 
     def _resolve_zone(self, ref: str | Zone) -> Zone:
-        return self._client.zone._resolve_zone(ref)  # pyright: ignore[reportPrivateUsage]
+        if isinstance(ref, str):
+            return self._client.zone.get_by_name(ref, required=True)
+        return ref
 
     @overload
     def get(

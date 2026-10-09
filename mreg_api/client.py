@@ -56,6 +56,7 @@ from mreg_api.managers import DelegationManager
 from mreg_api.managers import DhcpHostIPv4Manager
 from mreg_api.managers import DhcpHostIPv6ByIPv4Manager
 from mreg_api.managers import DhcpHostIPv6Manager
+from mreg_api.managers import ForwardZoneManager
 from mreg_api.managers import HInfoManager
 from mreg_api.managers import HostGroupManager
 from mreg_api.managers import HostManager
@@ -72,6 +73,7 @@ from mreg_api.managers import NetworkPolicyAttributeManager
 from mreg_api.managers import NetworkPolicyManager
 from mreg_api.managers import PermissionManager
 from mreg_api.managers import PTROverrideManager
+from mreg_api.managers import ReverseZoneManager
 from mreg_api.managers import RoleManager
 from mreg_api.managers import SrvManager
 from mreg_api.managers import SSHFPManager
@@ -389,8 +391,18 @@ class MregClient:
 
     @functools.cached_property
     def zone(self) -> ZoneManager:
-        """Manage forward and reverse zones."""
+        """Manage forward and reverse zones based on their names."""
         return ZoneManager(self)
+
+    @functools.cached_property
+    def forward_zone(self) -> ForwardZoneManager:
+        """Manage forward zones."""
+        return ForwardZoneManager(self)
+
+    @functools.cached_property
+    def reverse_zone(self) -> ReverseZoneManager:
+        """Manage reverse zones."""
+        return ReverseZoneManager(self)
 
     def __init__(
         self,
