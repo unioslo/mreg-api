@@ -191,11 +191,11 @@ def test_update_network_range_overlaps_existing(integration_client: MregClient) 
     try:
         net1 = integration_client.network.create(
             net1,
-            description="integration test unused count net1",
+            description="integration test range overlap resize net1",
         )
         net2 = integration_client.network.create(
             net2,
-            description="integration test unused count net2",
+            description="integration test range overlap resize net2",
         )
         with pytest.raises(PatchError) as excinfo:
             integration_client.network.update(net1, network="172.16.0.0/23")
