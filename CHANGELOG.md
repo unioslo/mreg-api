@@ -5,7 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Added
+
+- `NetworkManager.update(network=)` parameter to change the network address of an existing network.
+
+### Changed
+
+- All `create` and `update` methods now support specifying their required arguments positionally. Previously, these parameters were inconsistent and were often keyword-only.
+- **BREAKING**: All `update` methods now use the name `ref` for their first parameter (the object reference). Previously named after the managed entity:
+  - `HostManager.update()`: `host=` → `ref=`
+  - `HostGroupManager.update()`: `hostgroup=` → `ref=`
+  - `LabelManager.update()`: `label=` → `ref=`
+  - `RoleManager.update()`: `role=` → `ref=`
+  - `AtomManager.update()`: `atom=` → `ref=`
+  - `PermissionManager.update()`: `permission=` → `ref=`
+  - `NetworkPolicyAttributeManager.update()`: `attr=` → `ref=`
+  - `NetworkPolicyManager.update()`: `policy=` → `ref=`
+  - `NetworkManager.update()`: `network=` → `ref=`
+  - `IPAddressManager.update()`: `ip=` → `ref=`
+  - `CNAMEManager.update()`: `cname=` → `ref=`
+  - `HInfoManager.update()`: `hinfo=` → `ref=`
+  - `NAPTRManager.update()`: `naptr=` → `ref=`
+  - `SrvManager.update()`: `srv=` → `ref=`
+  - `PTROverrideManager.update()`: `ptr=` → `ref=`
+  - `SSHFPManager.update()`: `sshfp=` → `ref=`
+  - `LocationManager.update()`: `location=` → `ref=`
+- **BREAKING**: `NetworkManager.update(network=)` parameter now refers to a new network address for the network, not the reference to the existing network.
+- `HostGroupManager.create(description=)` now takes `None` (the default) to omit the description, replacing the `UNSET` sentinel. Passing `description=None` now omits the field instead of sending a null value. This was a bug, as host groups do not support null descriptions.
+
+### Fixed
+
+- Docstrings for the `ttl` parameter in `SrvManager.create()` and `SSHFPManager.create()` described update semantics ("omit to leave unchanged") that do not apply to creation. The default TTL is used when unspecified.
+- `CNAMEManager.update()` docstring now documents the full set of accepted reference types (`int | str | CNAME`).
 
 ## [0.6.1](https://github.com/unioslo/mreg-api/releases/tag/0.6.1) - 2026-10-07
 

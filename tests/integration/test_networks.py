@@ -11,6 +11,7 @@ from mreg_api.client import MregClient
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import GetError
+from mreg_api.exceptions import PatchError
 from mreg_api.models.models import Network
 
 if TYPE_CHECKING:
@@ -182,6 +183,31 @@ def test_get_unused_count(
     result = integration_client.network.get_unused_count(test_network)
     assert isinstance(result, int)
     assert result >= 0
+
+
+def test_update_network_range_overlaps_existing(integration_client: MregClient) -> None:
+    net1 = "172.16.0.0/24"
+    net2 = "172.16.1.0/24"
+    try:
+        net1 = integration_client.network.create(
+            net1,
+            description="integration test range overlap resize net1",
+        )
+        net2 = integration_client.network.create(
+            net2,
+            description="integration test range overlap resize net2",
+        )
+        with pytest.raises(PatchError) as excinfo:
+            integration_client.network.update(net1, network="172.16.0.0/23")
+        msg = excinfo.value.formatted_message().replace(integration_client.url, "<URL>")
+        assert msg == snapshot("""\
+409 Conflict: PATCH <URL>/api/v1/networks/172.16.0.0/24
+1 error:
+  Network overlaps with: 172.16.1.0/24  (conflict)\
+""")
+    finally:
+        integration_client.network.delete(net1)
+        integration_client.network.delete(net2)
 
 
 # ---------------------------------------------------------------------------
