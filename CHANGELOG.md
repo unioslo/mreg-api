@@ -9,45 +9,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `NetworkManager.update(network=)` parameter to change the network address of an existing network.
-- `ZoneManager` now has public `forward` and `reverse` sub-managers for ID-based lookups and standalone use.
-  - Can also be accessed via new `MregClient.forward_zone` and `MregClient.reverse_zone` properties.
+- `MregClient.network.update(network=)` parameter to change the network address of an existing network.
+- `MregClient.zone` now has public `forward` and `reverse` sub-managers for ID-based lookups and standalone use.
+  - Can also be accessed directly via new `MregClient.forward_zone` and `MregClient.reverse_zone` properties.
 
 ### Changed
 
 - All `create` and `update` methods now support specifying their required arguments positionally. Previously, these parameters were inconsistent and were often keyword-only.
 - **BREAKING**: All `update` methods now use the name `ref` for their first parameter (the object reference). Previously named after the managed entity:
-  - `HostManager.update()`: `host=` → `ref=`
-  - `HostGroupManager.update()`: `hostgroup=` → `ref=`
-  - `LabelManager.update()`: `label=` → `ref=`
-  - `RoleManager.update()`: `role=` → `ref=`
-  - `AtomManager.update()`: `atom=` → `ref=`
-  - `PermissionManager.update()`: `permission=` → `ref=`
-  - `NetworkPolicyAttributeManager.update()`: `attr=` → `ref=`
-  - `NetworkPolicyManager.update()`: `policy=` → `ref=`
-  - `NetworkManager.update()`: `network=` → `ref=`
-  - `IPAddressManager.update()`: `ip=` → `ref=`
-  - `CNAMEManager.update()`: `cname=` → `ref=`
-  - `HInfoManager.update()`: `hinfo=` → `ref=`
-  - `NAPTRManager.update()`: `naptr=` → `ref=`
-  - `SrvManager.update()`: `srv=` → `ref=`
-  - `PTROverrideManager.update()`: `ptr=` → `ref=`
-  - `SSHFPManager.update()`: `sshfp=` → `ref=`
-  - `LocationManager.update()`: `location=` → `ref=`
-- **BREAKING**: `NetworkManager.update(network=)` parameter now refers to a new network address for the network, not the reference to the existing network.
-- `HostGroupManager.create(description=)` now takes `None` (the default) to omit the description, replacing the `UNSET` sentinel. Passing `description=None` now omits the field instead of sending a null value. This was a bug, as host groups do not support null descriptions.
+  - `MregClient.host.update()`: `host=` → `ref=`
+  - `MregClient.hostgroup.update()`: `hostgroup=` → `ref=`
+  - `MregClient.label.update()`: `label=` → `ref=`
+  - `MregClient.role.update()`: `role=` → `ref=`
+  - `MregClient.atom.update()`: `atom=` → `ref=`
+  - `MregClient.permission.update()`: `permission=` → `ref=`
+  - `MregClient.network_policy_attribute.update()`: `attr=` → `ref=`
+  - `MregClient.network_policy.update()`: `policy=` → `ref=`
+  - `MregClient.network.update()`: `network=` → `ref=`
+  - `MregClient.ip_address.update()`: `ip=` → `ref=`
+  - `MregClient.cname.update()`: `cname=` → `ref=`
+  - `MregClient.hinfo.update()`: `hinfo=` → `ref=`
+  - `MregClient.naptr.update()`: `naptr=` → `ref=`
+  - `MregClient.srv.update()`: `srv=` → `ref=`
+  - `MregClient.ptr_override.update()`: `ptr=` → `ref=`
+  - `MregClient.sshfp.update()`: `sshfp=` → `ref=`
+  - `MregClient.location.update()`: `location=` → `ref=`
+- **BREAKING**: `MregClient.network.update(network=)` parameter now refers to a new network address for the network, not the reference to the existing network.
+- `MregClient.hostgroup.create(description=)` now takes `None` (the default) to omit the description, replacing the `UNSET` sentinel. Passing `description=None` now omits the field instead of sending a null value. This was a bug, as host groups do not support null descriptions.
+- `MregClient.host.update(comment=)` parameter now takes `None` and defaults to `None`. No changes in behavior when omitted compared to before (`""` was also treated as no comment, thus not included in the payload).
 
 ### Fixed
 
-- Docstrings for the `ttl` parameter in `SrvManager.create()` and `SSHFPManager.create()` described update semantics ("omit to leave unchanged") that do not apply to creation. The default TTL is used when unspecified.
-- `CNAMEManager.update()` docstring now documents the full set of accepted reference types (`int | str | CNAME`).
+- Docstrings for the `ttl` parameter in `MregClient.srv.create()` and `MregClient.sshfp.create()` described update semantics ("omit to leave unchanged") that do not apply to creation. The default TTL is used when unspecified.
+- `MregClient.cname.update()` docstring now documents the full set of accepted reference types (`int | str | CNAME`).
 
 ## [0.6.1](https://github.com/unioslo/mreg-api/releases/tag/0.6.1) - 2026-10-07
 
 ### Changed
 
-- `CommunityManager.get()` now always raises `EntityNotFound` if the community cannot be found.
-- `CommunityManager.get_by_id()` now raises `GetError` if the community cannot be found (404).
+- `MregClient.network.community.get()` now always raises `EntityNotFound` if the community cannot be found.
+- `MregClient.network.community.get_by_id()` now raises `GetError` if the community cannot be found (404).
 
 ### Removed
 

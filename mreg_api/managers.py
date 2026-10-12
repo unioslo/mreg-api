@@ -944,7 +944,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         self,
         name: str | HostName,
         *,
-        comment: str = "",
+        comment: str | None = None,
         contacts: list[str] | None = None,
         ipaddress: IP_AddressT | str | None = None,
         network: IP_NetworkT | str | None = None,
