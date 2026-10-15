@@ -61,7 +61,7 @@ host = client.host.get(123)       # by ID
 host = client.host.get(host)      # refresh a model object
 ```
 
-By default a missing resource (404) raises a [`GetError`][mreg_api.exceptions.GetError]. Pass `required=False` to return `None` on 404 instead:
+By default a missing resource raises [`EntityNotFound`][mreg_api.exceptions.EntityNotFound]. Pass `required=False` to return `None` instead:
 
 ``` python
 host = client.host.get("myhost", required=False)
@@ -84,7 +84,7 @@ n = client.host.count(name__startswith="test-")
 
 ### Creating
 
-`create` takes keyword arguments matching the model's fields. Every create method returns the created object on success. A [`PostError`][mreg_api.exceptions.PostError] is raised if the creation fails.
+`create` takes keyword arguments matching the model's fields. Every create method returns the created object on success. An [`HTTPStatusError`][mreg_api.exceptions.HTTPStatusError] subclass is raised if the server rejects the creation (e.g. [`ConflictError`][mreg_api.exceptions.ConflictError] if it already exists).
 
 ``` python
 host = client.host.create(
@@ -96,7 +96,7 @@ host = client.host.create(
 
 ### Updating
 
-`update` accepts a model object or an identifier (name, ID), plus the fields to change. The available fields vary depending on the resource. A [`PatchError`][mreg_api.exceptions.PatchError] is raised if the update fails.
+`update` accepts a model object or an identifier (name, ID), plus the fields to change. The available fields vary depending on the resource. An [`HTTPStatusError`][mreg_api.exceptions.HTTPStatusError] subclass is raised if the server rejects the update.
 
 ``` python
 client.host.update(
@@ -117,7 +117,7 @@ refreshed = client.host.refresh(host)
 
 ### Deleting
 
-`delete` accepts a model object or an identifier. A [`DeleteError`][mreg_api.exceptions.DeleteError] is raised if the deletion fails.
+`delete` accepts a model object or an identifier. An [`HTTPStatusError`][mreg_api.exceptions.HTTPStatusError] subclass is raised if the server rejects the deletion.
 
 ``` python
 client.host.delete(host)               # by object

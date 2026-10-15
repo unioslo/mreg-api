@@ -13,17 +13,23 @@ from pytest_httpserver import HTTPServer
 from werkzeug import Response
 
 from mreg_api.__about__ import __version__
+from mreg_api.client import Header
 from mreg_api.client import MregClient
 from mreg_api.client import check_response
 from mreg_api.client import strip_none
 from mreg_api.endpoints import Endpoint
 from mreg_api.events import EventKind
-from mreg_api.exceptions import DeleteError
-from mreg_api.exceptions import GetError
+from mreg_api.exceptions import BadRequestError
+from mreg_api.exceptions import ClientError
+from mreg_api.exceptions import ConflictError
+from mreg_api.exceptions import ForbiddenError
+from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
-from mreg_api.exceptions import PatchError
-from mreg_api.exceptions import PostError
+from mreg_api.exceptions import NotFoundError
+from mreg_api.exceptions import ResponseError
+from mreg_api.exceptions import ServerError
+from mreg_api.exceptions import UnauthorizedError
 from mreg_api.managers import HostManager
 from mreg_api.models.models import Host
 from mreg_api.types import HTTPMethod
@@ -77,7 +83,7 @@ def test_client_caching(httpserver: HTTPServer) -> None:
     resp = client.get(str(Endpoint.Hosts), params=None, ok404=False)
 
     # Ensure that trying to access the endpoint now raises an exception (oneshot)
-    with pytest.raises(GetError) as exc_info:
+    with pytest.raises(ServerError) as exc_info:
         client._do_get(str(Endpoint.Hosts), params=None, ok404=False)
     assert "No handler found" in exc_info.value.response.text
     assert exc_info.value.response.status_code == snapshot(500)
@@ -817,6 +823,74 @@ def test_client_manager_composition_usage(client: MregClient, httpserver: HTTPSe
     )
 
 
+def test_client_test_auth_ok(client: MregClient, httpserver: HTTPServer) -> None:
+    """Test successful MregClient.test_auth."""
+    assert isinstance(client.host, HostManager)
+
+    httpserver.expect_oneshot_request(
+        "/api/v1/hosts/", headers={Header.AUTH: "Token abcd1234"}
+    ).respond_with_response(Response(status=200))
+
+    client.set_token("abcd1234")
+    assert client.get_token() == "abcd1234"  # ensure we set it correctly
+
+    client.test_auth()
+
+
+def test_client_test_auth_no_token(client: MregClient, httpserver: HTTPServer) -> None:
+    """Test MregClient.test_auth with no token set."""
+    assert isinstance(client.host, HostManager)
+
+    httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_response(Response(status=401))
+
+    client.unset_token()  # ensure we are starting without a token
+    with pytest.raises(InvalidAuthTokenError):
+        client.test_auth()
+
+
+def test_client_test_auth_invalid_token(client: MregClient, httpserver: HTTPServer) -> None:
+    """Test MregClient.test_auth with an invalid token."""
+    assert isinstance(client.host, HostManager)
+
+    # Always respond with 401
+    httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_response(Response(status=401))
+
+    client.set_token("wrong-token")
+    assert client.get_token() == "wrong-token"  # ensure we set it correctly
+
+    with pytest.raises(InvalidAuthTokenError):
+        client.test_auth()
+
+
+def test_client_test_auth_non_401_error(client: MregClient, httpserver: HTTPServer) -> None:
+    """Test MregClient.test_auth with a non-401 error."""
+    assert isinstance(client.host, HostManager)
+
+    httpserver.expect_oneshot_request("/api/v1/hosts/").respond_with_response(Response(status=500))
+
+    client.set_token("wrong-token")
+    assert client.get_token() == "wrong-token"  # ensure we set it correctly
+
+    with pytest.raises(ResponseError):
+        client.test_auth()
+
+
+def test_client_get_token(client: MregClient) -> None:
+    """Test the get_token method of the MregClient."""
+    # Initially, no token should be set
+    assert client.get_token() is None
+
+    # Set a token and verify it can be retrieved
+    token = "my-token"
+    client.set_token(token)
+    assert client.get_token() == token
+    assert client.session.headers.get(Header.AUTH) == f"Token {token}"  # with "Token " prefix
+
+    # Unset the token and verify it is None again
+    client.unset_token()
+    assert client.get_token() is None
+
+
 def get_mreg_client_managers(client: MregClient) -> list[tuple[str, str, type[Any]]]:
     """Return a list of (attribute_name, class_name, class_type) for all managers in the client."""
     # XXX: This is very similar to tests.test_managers.get_resource_managers :\
@@ -880,24 +954,16 @@ def test_client_manager_composition_has_get_method(client: MregClient) -> None:
         )
 
 
-@pytest.mark.parametrize(
-    "method,expected_exc",
-    [
-        ("GET", GetError),
-        ("POST", PostError),
-        ("PATCH", PatchError),
-        ("DELETE", DeleteError),
-    ],
-)
+@pytest.mark.parametrize("method", ["GET", "POST", "PATCH", "DELETE"])
 def test_request_exception_handling_live(
-    httpserver: HTTPServer, client: MregClient, method: HTTPMethod, expected_exc: type[Exception]
+    httpserver: HTTPServer, client: MregClient, method: HTTPMethod
 ) -> None:
-    """Test that check_response raises the appropriate exception type on non-2xx response.
+    """Test that check_response raises the appropriate exception type on 400 response.
 
     Uses actual HTTP requests to test exception handling.
     """
     httpserver.expect_oneshot_request("/test_check_response").respond_with_response(Response(status=400))
-    with pytest.raises(expected_exc):
+    with pytest.raises(BadRequestError):
         _ = client.request(method, "/test_check_response")
 
 
@@ -925,24 +991,25 @@ def test_check_response_2xx(method: HTTPMethod, status_code: int) -> None:
     check_response(response)
 
 
+@pytest.mark.parametrize("method", ["GET", "POST", "PATCH", "DELETE"])
 @pytest.mark.parametrize(
-    "method, expected_exc",
+    "status_code, expected_exc",
     [
-        ("GET", GetError),
-        ("POST", PostError),
-        ("PATCH", PatchError),
-        ("DELETE", DeleteError),
+        (400, BadRequestError),
+        (401, UnauthorizedError),
+        (403, ForbiddenError),
+        (404, NotFoundError),
+        (409, ConflictError),
+        (418, ClientError),
+        (500, ServerError),
+        (503, ServerError),
     ],
-)
-@pytest.mark.parametrize(
-    "status_code",
-    [400, 403, 404, 409, 500],
 )
 @pytest.mark.parametrize("lowercase_method", [True, False])
 def test_check_response_error(
-    method: str, expected_exc: type[Exception], status_code: int, lowercase_method: bool
+    method: str, status_code: int, expected_exc: type[Exception], lowercase_method: bool
 ) -> None:
-    """Test that check_response raises the correct error on non-2xx response."""
+    """Test that check_response raises the status-based error regardless of HTTP method."""
     # Ensure method casing does not matter for HTTPX!
     if lowercase_method:
         method = method.lower()

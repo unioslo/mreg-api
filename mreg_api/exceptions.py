@@ -13,7 +13,6 @@ from typing_extensions import deprecated
 from typing_extensions import override
 
 from mreg_api.__about__ import __version__
-from mreg_api.types import HTTPMethod
 
 logger = logging.getLogger(__name__)
 
@@ -210,20 +209,40 @@ class HTTPStatusError(ResponseError):
     """Server returned a 4xx or 5xx status code."""
 
 
-class PostError(HTTPStatusError):
-    """Error class for failed creation."""
+class ClientError(HTTPStatusError):
+    """HTTP 4xx client error."""
 
 
-class PatchError(HTTPStatusError):
-    """Error class for failed patching."""
+class ServerError(HTTPStatusError):
+    """HTTP 5xx server error."""
 
 
-class DeleteError(HTTPStatusError):
-    """Error class for failed deletion."""
+class BadRequestError(ClientError):
+    """HTTP 400 Bad Request."""
 
 
-class GetError(HTTPStatusError):
-    """Error class for failed retrieval."""
+class UnauthorizedError(ClientError):
+    """HTTP 401 Unauthorized."""
+
+
+class ForbiddenError(ClientError):
+    """HTTP 403 Forbidden."""
+
+
+class NotFoundError(ClientError):
+    """HTTP 404 Not Found."""
+
+
+class ConflictError(ClientError):
+    """HTTP 409 Conflict."""
+
+
+class LoginFailedError(UnauthorizedError):
+    """Login failed."""
+
+
+class InvalidAuthTokenError(UnauthorizedError):
+    """Invalid authentication token."""
 
 
 class UnexpectedResponseError(ResponseError):
@@ -384,14 +403,6 @@ class InvalidIPv6Network(InvalidNetwork):
     """Entity is not a valid IPv6 network."""
 
 
-class LoginFailedError(ResponseError):
-    """Login failed."""
-
-
-class InvalidAuthTokenError(LoginFailedError):
-    """Invalid authentication token."""
-
-
 class CacheError(MregApiBaseError):
     """Error related to caching."""
 
@@ -539,25 +550,30 @@ def parse_mreg_error(resp: Response) -> MREGErrorResponse | None:
     return None
 
 
-ERROR_MAPPING: dict[HTTPMethod, type[HTTPStatusError]] = {
-    "GET": GetError,
-    "POST": PostError,
-    "PATCH": PatchError,
-    "DELETE": DeleteError,
+# Status codes with a dedicated exception class. Other 4xx/5xx codes
+# fall back to ClientError/ServerError.
+STATUS_ERROR_MAPPING: dict[int, type[HTTPStatusError]] = {
+    400: BadRequestError,
+    401: UnauthorizedError,
+    403: ForbiddenError,
+    404: NotFoundError,
+    409: ConflictError,
 }
 
 
-def determine_http_error_class(method: str) -> type[HTTPStatusError]:
-    """Get the appropriate exception class for a given HTTP method.
+def http_error_class(status_code: int) -> type[HTTPStatusError]:
+    """Get the appropriate exception class for a given HTTP status code.
 
     Args:
-        method: The HTTP method.
+        status_code (int): The HTTP status code.
 
     Returns:
-        The exception class corresponding to the HTTP method.
+        type[HTTPStatusError]: The exception class corresponding to the status code.
     """
-    if t := ERROR_MAPPING.get(method):  # pyright: ignore[reportArgumentType]
+    if t := STATUS_ERROR_MAPPING.get(status_code):
         return t
-    # NOTE: should be unreachable
-    logger.warning("No specific exception class for HTTP method '%s', using generic HTTPStatusError", method)
+    if 400 <= status_code < 500:
+        return ClientError
+    if 500 <= status_code < 600:
+        return ServerError
     return HTTPStatusError

@@ -50,10 +50,11 @@ from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import EntityRelationMissing
 from mreg_api.exceptions import ForceMissing
-from mreg_api.exceptions import GetError
+from mreg_api.exceptions import HTTPStatusError
 from mreg_api.exceptions import InputFailure
 from mreg_api.exceptions import InternalError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import NotFoundError
 from mreg_api.exceptions import UnexpectedResponseError
 from mreg_api.models import CNAME
 from mreg_api.models import MX
@@ -592,7 +593,7 @@ class WriteResourceManager(ResourceManager[T], ABC):
             data (dict[str, Any]): The data to PATCH to the resource endpoint.
             params (QueryParams | None): Optional query parameters to include in the PATCH request.
 
-        Raises `PatchError` (from the client) if the server rejects the patch.
+        Raises `HTTPStatusError` (from the client) if the server rejects the patch.
         """
         _ = self._client.patch(self._endpoint_with_path_param(obj), json=data, params=params)
 
@@ -872,6 +873,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             ptr_fallback (bool): When True (default), fall back to PTR override if no host is found.
 
         Raises:
+            ValueError: If the provided IP address is not valid.
             MultipleEntitiesFound: If more than one host matches the IP address.
             EntityNotFound: If `required` is True and no host is found.
         """
@@ -902,6 +904,7 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
+            ValueError: If the provided MAC address is not valid.
             EntityNotFound: If `required` is True and no host is found.
         """
         addr = MacAddress.parse_or_raise(mac)
@@ -920,6 +923,9 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
         Args:
             ip (str | IP_AddressT): IP address to filter by.
 
+        Raises:
+            ValueError: If the provided IP address is not valid.
+
         Returns:
             list[Host]: List of hosts matching the IP address.
         """
@@ -936,6 +942,12 @@ class HostManager(NamedResourceManager[Host], HistoryManager[Host]):
 
         Args:
             mac (str | MacAddress): The MAC address to filter by.
+
+        Raises:
+            ValueError: If the provided MAC address is not valid.
+
+        Returns:
+            list[Host]: List of hosts matching the MAC address.
         """
         addr = MacAddress.parse_or_raise(mac)
         return self._fetch_list_by_field("ipaddresses__macaddress", str(addr))
@@ -2238,7 +2250,7 @@ class CommunityManager:
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
-            GetError: If `required` is True and the community is not found.
+            NotFoundError: If `required` is True and the community is not found.
         """
         nw_addr = self._resolve_network_address(network)
         try:
@@ -2246,7 +2258,7 @@ class CommunityManager:
             return self._client.get_typed(
                 Endpoint.NetworkCommunity.with_params(nw_addr, community_id), Community
             )
-        except GetError:
+        except NotFoundError:
             if required:
                 raise
         return None
@@ -2277,7 +2289,7 @@ class CommunityManager:
                 return self.get_by_id(community, network, required=required)
             else:
                 return self.get_by_name(community, network, required=required)
-        except (EntityNotFound, GetError) as e:
+        except (EntityNotFound, NotFoundError) as e:
             if required:
                 raise EntityNotFound(
                     f"Community {community!r} not found in network {network!r}.",
@@ -2432,8 +2444,12 @@ class NetworkManager(WriteResourceManager[Network]):
             required (bool): When True (default), raise EntityNotFound if not found.
 
         Raises:
+            ValueError: If the provided IP address is not valid.
             EntityNotFound: If `required` is True and no network is found.
-        """
+
+        Returns:
+            Network | None: The network containing the IP address, or None if not found and `required` is False.
+        """  # noqa: E501
         addr = str(NetworkOrIP.parse_or_raise(str(ip), mode="ip"))
         resp = self._client.get(Endpoint.NetworksByIP.with_id(addr), ok404=True)
         if not resp:
@@ -2655,6 +2671,10 @@ class NetworkManager(WriteResourceManager[Network]):
             network (str | int | Network): Network reference (address, numeric ID, or Network instance).
             start (str): The start IP address of the excluded range.
             end (str): The end IP address of the excluded range.
+
+        Raises:
+            ValueError: If the start or end IPs are not valid IP addresses.
+            InputFailure: If the start and end IP addresses are not of the same version.
         """
         network = self._resolve(network)
         start_ip = NetworkOrIP.parse_or_raise(start, mode="ip")
@@ -2846,6 +2866,12 @@ class IPAddressManager(WriteResourceManager[IPAddress]):
 
         Args:
             mac (str | MacAddress): The MAC address to filter by.
+
+        Raises:
+            ValueError: If the provided MAC address is not valid.
+
+        Returns:
+            list[IPAddress]: List of IP addresses with the given MAC address.
         """
         addr = MacAddress.parse_or_raise(mac)
         return self._fetch_list_by_field("macaddress", str(addr))
@@ -4483,11 +4509,7 @@ class DelegationManager:
         cls = self._model_for(zone)
         try:
             return self._get(self._endpoint_with_name(zone, name), cls)
-        except GetError as e:
-            # get_typed raises GetError on a 404; only a missing delegation is a
-            # "not found" — let any other transport error propagate unchanged.
-            if e.status_code != 404:
-                raise
+        except NotFoundError as e:
             if required:
                 raise EntityNotFound(
                     f"Could not find delegation {name!r} in zone {zone.name!r}", model=cls, identifier=name
@@ -4906,7 +4928,7 @@ class LDAPHealthManager(GetManager[LDAPHealth]):
         try:
             self._client.get(Endpoint.HealthLDAP)
             return LDAPHealth(status="OK")
-        except GetError as e:
+        except HTTPStatusError as e:
             # LDAP being down causes a 503 error, which we should
             # interpret as a valid response, not an error.
             if e.status_code == 503:

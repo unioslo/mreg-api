@@ -19,7 +19,7 @@ from typing import Any
 import pytest
 
 from mreg_api.client import MregClient
-from mreg_api.exceptions import PostError
+from mreg_api.exceptions import HTTPStatusError
 from mreg_api.models import Zone
 
 
@@ -219,8 +219,7 @@ def seed_test_network(
                 network=test_network,
                 description="Integration test seed network",
             )
-            if net is not None:
-                resource_tracker.add(lambda: client.network.delete(net))
-        except PostError:
+            resource_tracker.add(lambda: client.network.delete(net))
+        except HTTPStatusError:
             pass  # overlaps with existing subnets from a previous run; acceptable
     yield
