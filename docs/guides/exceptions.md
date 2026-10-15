@@ -33,32 +33,38 @@ except MregApiBaseError as exc:
 
 ## Catching HTTP status errors
 
-HTTP operations against the server raise a subclass of [`HTTPStatusError`][mreg_api.exceptions.HTTPStatusError] depending on the HTTP method used.
+HTTP operations against the server raise a subclass of [`HTTPStatusError`][mreg_api.exceptions.HTTPStatusError] based on the response status code, regardless of the HTTP method used:
 
-These are:
+-   [`ClientError`][mreg_api.exceptions.ClientError] for 4xx responses, with dedicated subclasses for common status codes:
+    - [`BadRequestError`][mreg_api.exceptions.BadRequestError] for 400 responses (e.g. invalid field values)
+    - [`UnauthorizedError`][mreg_api.exceptions.UnauthorizedError] for 401 responses (e.g. a missing, invalid, or expired token)
+    - [`ForbiddenError`][mreg_api.exceptions.ForbiddenError] for 403 responses
+    - [`NotFoundError`][mreg_api.exceptions.NotFoundError] for 404 responses
+    - [`ConflictError`][mreg_api.exceptions.ConflictError] for 409 responses
+-   [`ServerError`][mreg_api.exceptions.ServerError] for 5xx responses
 
-- [`GetError`][mreg_api.exceptions.GetError] for GET requests
-- [`PostError`][mreg_api.exceptions.PostError] for POST requests
-- [`PatchError`][mreg_api.exceptions.PatchError] for PATCH requests
-- [`DeleteError`][mreg_api.exceptions.DeleteError] for DELETE requests
+Other status codes raise the nearest parent class; use `exc.status_code` to inspect the exact code, and `exc.request.method` if you need the HTTP method.
 
-For example, to catch a failed GET request specifically, one can do:
+Authentication errors subclass `UnauthorizedError`: `login()` raises [`LoginFailedError`][mreg_api.exceptions.LoginFailedError] on rejected credentials, and `test_auth()` raises [`InvalidAuthTokenError`][mreg_api.exceptions.InvalidAuthTokenError] on a rejected token.
+
+For example:
 
 ``` python
 from mreg_api import MregClient
-from mreg_api.exceptions import HTTPStatusError, GetError
+from mreg_api.exceptions import ClientError, ConflictError, ServerError
 
 client = MregClient(url="https://mreg.example.com")
 
 try:
-    host = client.host.get("some-host-that-maybe-exists.example.com")
-    client.host.update(host, name="newname")
-    client.host.delete(host)
-except GetError as exc:
-    # Only failed GET requests.
+    client.host.update("myhost.example.com", name="taken.example.com")
+except ConflictError as exc:
+    # 409: the new name is already in use.
     ...
-except HTTPStatusError as exc:
-    # Any other 4xx/5xx response.
+except ClientError as exc:
+    # Any other 4xx response.
+    ...
+except ServerError as exc:
+    # 5xx response.
     ...
 ```
 

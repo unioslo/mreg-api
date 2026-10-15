@@ -8,10 +8,10 @@ import pytest
 from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
+from mreg_api.exceptions import ConflictError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.exceptions import GetError
-from mreg_api.exceptions import PatchError
+from mreg_api.exceptions import NotFoundError
 from mreg_api.models.models import Network
 
 if TYPE_CHECKING:
@@ -197,7 +197,7 @@ def test_update_network_range_overlaps_existing(integration_client: MregClient) 
             net2,
             description="integration test range overlap resize net2",
         )
-        with pytest.raises(PatchError) as excinfo:
+        with pytest.raises(ConflictError) as excinfo:
             integration_client.network.update(net1, network="172.16.0.0/23")
         msg = excinfo.value.formatted_message().replace(integration_client.url, "<URL>")
         assert msg == snapshot("""\
@@ -321,7 +321,7 @@ def test_community_get_nonexistent_by_id_raises(
     integration_client: MregClient,
     test_network: str,
 ) -> None:
-    """CommunityManager.get() always returns EntityNotFound, even if the underlyinng `get_by_id` raises `GetError`."""
+    """CommunityManager.get() always returns EntityNotFound, even if the underlyinng `get_by_id` raises `NotFoundError`."""
     with pytest.raises(EntityNotFound):
         integration_client.network.community.get(999999, test_network)
 
@@ -338,8 +338,8 @@ def test_community_get_by_id_nonexistent_raises(
     integration_client: MregClient,
     test_network: str,
 ) -> None:
-    """CommunityManager.get_by_id raises `GetError` due to 404 error from the server."""
-    with pytest.raises(GetError) as excinfo:
+    """CommunityManager.get_by_id raises `NotFoundError` due to 404 error from the server."""
+    with pytest.raises(NotFoundError) as excinfo:
         integration_client.network.community.get_by_id(999999, test_network)
 
     msg = excinfo.exconly()
@@ -349,7 +349,7 @@ def test_community_get_by_id_nonexistent_raises(
         .replace(integration_client.url, "<server-url>")
     )
     assert msg == snapshot("""\
-mreg_api.exceptions.GetError: 404 Not Found: GET <server-url>/api/v1/networks/<network>/communities/999999
+mreg_api.exceptions.NotFoundError: 404 Not Found: GET <server-url>/api/v1/networks/<network>/communities/999999
 1 error:
   Not found.  (not_found)\
 """)

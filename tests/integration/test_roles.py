@@ -6,11 +6,11 @@ import pytest
 from inline_snapshot import snapshot
 
 from mreg_api.client import MregClient
-from mreg_api.exceptions import DeleteError
+from mreg_api.exceptions import ConflictError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
 from mreg_api.exceptions import ForceMissing
-from mreg_api.exceptions import PostError
+from mreg_api.exceptions import NotFoundError
 from mreg_api.models import Zone
 
 if TYPE_CHECKING:
@@ -265,9 +265,9 @@ def test_add_atom_conflict(
     resource_tracker.add(lambda: client.role.delete(role_name))
 
     client.role.add_atom(role, atom)
-    # Adding the same atom twice now surfaces the server's 409 as a PostError
+    # Adding the same atom twice now surfaces the server's 409 as a ConflictError
     # (previously translated to EntityAlreadyExists).
-    with pytest.raises(PostError) as excinfo:
+    with pytest.raises(ConflictError) as excinfo:
         client.role.add_atom(role, atom)
 
     msg = excinfo.exconly()
@@ -277,7 +277,7 @@ def test_add_atom_conflict(
         .replace(integration_client.url, "<server-url>")
     )
     assert msg == snapshot("""\
-mreg_api.exceptions.PostError: 409 Conflict: POST <server-url>/api/v1/hostpolicy/roles/<role-name>/atoms/
+mreg_api.exceptions.ConflictError: 409 Conflict: POST <server-url>/api/v1/hostpolicy/roles/<role-name>/atoms/
 1 error:
   <atom-name> already in atoms  (conflict)\
 """)
@@ -365,7 +365,7 @@ def test_add_host_conflict(
     resource_tracker.add(lambda: client.role.remove_host(role.id, host_name))
 
     client.role.add_host(role, host)
-    with pytest.raises(PostError) as excinfo:
+    with pytest.raises(ConflictError) as excinfo:
         client.role.add_host(role, host)
 
     msg = excinfo.exconly()
@@ -375,7 +375,7 @@ def test_add_host_conflict(
         .replace(integration_client.url, "<server-url>")
     )
     assert msg == snapshot("""\
-mreg_api.exceptions.PostError: 409 Conflict: POST <server-url>/api/v1/hostpolicy/roles/<role-name>/hosts/
+mreg_api.exceptions.ConflictError: 409 Conflict: POST <server-url>/api/v1/hostpolicy/roles/<role-name>/hosts/
 1 error:
   <host-name> already in hosts  (conflict)\
 """)
@@ -403,7 +403,7 @@ def test_remove_host_not_member(
     resource_tracker.add(lambda: client.host.delete(host_name))
     resource_tracker.add(lambda: client.role.delete(role_name))
 
-    with pytest.raises(DeleteError) as excinfo:
+    with pytest.raises(NotFoundError) as excinfo:
         client.role.remove_host(role, host)
 
     msg = excinfo.exconly()
@@ -413,7 +413,7 @@ def test_remove_host_not_member(
         .replace(integration_client.url, "<server-url>")
     )
     assert msg == snapshot("""\
-mreg_api.exceptions.DeleteError: 404 Not Found: DELETE <server-url>/api/v1/hostpolicy/roles/<role-name>/hosts/<host-name>
+mreg_api.exceptions.NotFoundError: 404 Not Found: DELETE <server-url>/api/v1/hostpolicy/roles/<role-name>/hosts/<host-name>
 1 error:
   '<host-name>' is not a member of '<role-name>'.  (not_found)\
 """)

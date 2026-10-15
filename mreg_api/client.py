@@ -46,8 +46,9 @@ from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import LoginFailedError
 from mreg_api.exceptions import MregValidationError
 from mreg_api.exceptions import MultipleEntitiesFound
+from mreg_api.exceptions import ResponseError
 from mreg_api.exceptions import UnexpectedResponseError
-from mreg_api.exceptions import determine_http_error_class
+from mreg_api.exceptions import http_error_class
 from mreg_api.managers import AtomManager
 from mreg_api.managers import BacnetIDManager
 from mreg_api.managers import CNAMEManager
@@ -157,7 +158,7 @@ def check_response(response: Response) -> None:
         HTTPStatusError: If the response indicates an error.
     """
     if not response.is_success:
-        raise determine_http_error_class(response.request.method)(response=response)
+        raise http_error_class(response.status_code)(response=response)
 
 
 class PaginatedResponse(BaseModel):
@@ -448,7 +449,6 @@ class MregClient:
         self.cache: MregApiCache[Response] = self._create_cache(_cache_config)
 
         # State setup/reset
-        self._token: str | None = None
         self.requests: RequestLog = RequestLog(maxsize=request_log_size)
         self.events: EventLog = EventLog(max_size=event_log_size)
 
@@ -594,21 +594,22 @@ class MregClient:
 
         """
         self.session.headers.update({Header.AUTH: f"Token {token}"})
-        self._token = token
 
     def get_token(self) -> str | None:
-        """Get the current authorization token if set.
+        """Get the current authorization token if set. Strips the "Token " prefix.
 
         Returns:
-            Token string or None if not authenticated
+            Token string or None if not set.
 
         """
-        return self._token
+        token = self.session.headers.get(Header.AUTH, None)
+        if token:
+            return str(token).partition(" ")[2]  # "Token abcd1234"
+        return None
 
     def unset_token(self) -> None:
         """Unset the current authorization token."""
         self.session.headers.pop(Header.AUTH, None)
-        self._token = None
 
     def set_correlation_id(self, suffix: str) -> str:
         """Set correlation ID for request tracking.
@@ -702,15 +703,13 @@ class MregClient:
             logger.warning("Failed to log out: %s", e)
 
     def test_auth(self) -> None:
-        """Test if the current authorization token is valid.
+        """Test if the client is authorized with the current token.
 
         Does not handle connection errors.
 
         Raises:
-            InvalidAuthTokenError: If the authorization test fails
-
-        Returns:
-            True if authorization is valid, False otherwise
+            InvalidAuthTokenError: If the authorization test fails (HTTP 401)
+            ResponseError: If the authorization test fails for any reason other than HTTP 401.
         """
         try:
             ret = self.session.get(
@@ -720,7 +719,9 @@ class MregClient:
             )
             ret.raise_for_status()
         except httpx.HTTPStatusError as e:
-            raise InvalidAuthTokenError(f"Authorization test failed: {e}", response=e.response) from e
+            if e.response.status_code == 401:
+                raise InvalidAuthTokenError(f"Authorization test failed: {e}", response=e.response) from e
+            raise ResponseError(f"Authorization test failed: {e}", response=e.response) from e
 
     def request(
         self,

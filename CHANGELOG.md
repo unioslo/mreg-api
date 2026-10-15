@@ -9,6 +9,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Status-based HTTP error classes, all subclassing `exceptions.HTTPStatusError`:
+  - `exceptions.ClientError` (4xx) with subclasses `BadRequestError` (400), `UnauthorizedError` (401), `ForbiddenError` (403), `NotFoundError` (404) and `ConflictError` (409).
+  - `exceptions.ServerError` (5xx).
+- `exceptions.http_error_class(status_code)` to look up the error class for a status code.
+
+### Changed
+
+- **BREAKING**: HTTP errors are now classified by status code instead of HTTP method. Failed requests raise a status-based subclass of `HTTPStatusError` (see Added). The HTTP method is still available via `exc.request.method`.
+- **BREAKING**: `MregClient.network.community.get_by_id(required=False)` now only returns `None` on 404. Other errors (e.g. 403, 5xx) are raised. `required=True` raises `NotFoundError` instead of `GetError` on 404.
+- **BREAKING**: `exceptions.LoginFailedError` and `exceptions.InvalidAuthTokenError` now subclass `exceptions.UnauthorizedError`. `InvalidAuthTokenError` previously subclassed `LoginFailedError`.
+
+### Removed
+
+- **BREAKING**: Method-based HTTP errors `exceptions.GetError`, `PostError`, `PatchError` and `DeleteError`, along with `exceptions.ERROR_MAPPING` and `exceptions.determine_http_error_class()`. Catch the status code-based classes instead (e.g. `NotFoundError`, `ConflictError` for specific statuses, `ClientError` for any 4xx response, `ServerError` for any 5xx response, or `HTTPStatusError` for any failed request).
+
+## [0.7.0](https://github.com/unioslo/mreg-api/releases/tag/0.7.0) - 2026-10-13
+
+### Added
+
 - `MregClient.network.update(network=)` parameter to change the network address of an existing network.
 - `MregClient.zone` now has public `forward` and `reverse` sub-managers for ID-based lookups and standalone use.
   - Can also be accessed directly via new `MregClient.forward_zone` and `MregClient.reverse_zone` properties.
