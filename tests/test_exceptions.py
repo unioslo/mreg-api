@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 from typing import Any
 
-import httpx
+import httpx2
 import pytest
 from inline_snapshot import snapshot
 from pydantic import ValidationError as PydanticValidationError
@@ -35,16 +35,16 @@ def make_mock_response(
     text_body: str | None = None,
     method: str = "POST",
     url: str = "http://localhost/api/v1/hosts/",
-) -> httpx.Response:
+) -> httpx2.Response:
     """Create a mock httpx Response for testing."""
-    request = httpx.Request(method, url)
+    request = httpx2.Request(method, url)
     if json_body is not None:
         content = json.dumps(json_body).encode()
         headers = {"content-type": "application/json"}
     else:
         content = (text_body or "").encode()
         headers = {"content-type": "text/plain"}
-    return httpx.Response(
+    return httpx2.Response(
         status_code=status_code,
         content=content,
         headers=headers,
@@ -475,8 +475,8 @@ class TestTransportErrors:
         """A raw httpx connection error on the request path becomes ConnectionFailedError."""
         client = MregClient(url=httpserver.url_for("/"), domain="example.com")
 
-        def boom(request: httpx.Request, **kwargs: Any) -> httpx.Response:
-            raise httpx.ConnectError("connection refused", request=request)
+        def boom(request: httpx2.Request, **kwargs: Any) -> httpx2.Response:
+            raise httpx2.ConnectError("connection refused", request=request)
 
         monkeypatch.setattr(client.session, "send", boom)
 

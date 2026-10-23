@@ -7,8 +7,8 @@ from collections.abc import Callable
 from collections.abc import Iterator
 from typing import NamedTuple
 
-from httpx import Request
-from httpx import Response
+from httpx2 import Request
+from httpx2 import Response
 
 from mreg_api.types import Json
 from mreg_api.types import JsonMapping
@@ -31,7 +31,7 @@ class RequestRecord(NamedTuple):
     @property
     def path(self) -> str:
         """Get the request path (URL without base)."""
-        # TODO: Make this less hacky! Can we get the path + query directly from httpx?
+        # TODO: Make this less hacky! Can we get the path + query directly from httpx2?
         parts = [f"{self.response.request.url.scheme}://", self.response.request.url.host]
 
         if (port_s := f":{self.response.request.url.port}") in self.url:

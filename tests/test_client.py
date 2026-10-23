@@ -6,8 +6,8 @@ from typing import Any
 from typing import get_args
 
 import pytest
-from httpx import Request as HttpxRequest
-from httpx import Response as HttpxResponse
+from httpx2 import Request as HttpxRequest
+from httpx2 import Response as HttpxResponse
 from inline_snapshot import snapshot
 from pytest_httpserver import HTTPServer
 from werkzeug import Response
