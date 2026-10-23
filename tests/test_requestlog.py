@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-import httpx
+import httpx2
 import pytest
 
 from mreg_api.requestlog import RequestLog
@@ -26,8 +26,8 @@ def test_request_log_add_default_maxsize() -> None:
     log = RequestLog()
     assert log.maxsize is None
 
-    response1 = httpx.Response(200, request=httpx.Request("GET", "https://example.com"))
-    response2 = httpx.Response(404, request=httpx.Request("POST", "https://example.com"))
+    response1 = httpx2.Response(200, request=httpx2.Request("GET", "https://example.com"))
+    response2 = httpx2.Response(404, request=httpx2.Request("POST", "https://example.com"))
     log.add(response1)
     log.add(response2)
     assert len(log) == 2
@@ -35,8 +35,8 @@ def test_request_log_add_default_maxsize() -> None:
 
 def test_request_log_add_overflow() -> None:
     log = RequestLog(maxsize=2)
-    response1 = httpx.Response(200, request=httpx.Request("GET", "https://example.com"))
-    response2 = httpx.Response(404, request=httpx.Request("POST", "https://example.com"))
+    response1 = httpx2.Response(200, request=httpx2.Request("GET", "https://example.com"))
+    response2 = httpx2.Response(404, request=httpx2.Request("POST", "https://example.com"))
     log.add(response1)
     log.add(response2)
 
@@ -45,7 +45,7 @@ def test_request_log_add_overflow() -> None:
     assert log.get()[1].status == 404
 
     # Adding a third record removes the oldest one
-    response3 = httpx.Response(500, request=httpx.Request("PUT", "https://example.com"))
+    response3 = httpx2.Response(500, request=httpx2.Request("PUT", "https://example.com"))
     log.add(response3)
     assert len(log) == 2
     assert log.get()[0].status == 404
