@@ -718,6 +718,8 @@ class MregClient:
                 timeout=self.timeout,
             )
             ret.raise_for_status()
+        except httpx2.RequestError as e:
+            raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
         except httpx2.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise InvalidAuthTokenError(f"Authorization test failed: {e}", response=e.response) from e

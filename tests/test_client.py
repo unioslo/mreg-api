@@ -22,6 +22,7 @@ from mreg_api.events import EventKind
 from mreg_api.exceptions import BadRequestError
 from mreg_api.exceptions import ClientError
 from mreg_api.exceptions import ConflictError
+from mreg_api.exceptions import ConnectionFailedError
 from mreg_api.exceptions import ForbiddenError
 from mreg_api.exceptions import InvalidAuthTokenError
 from mreg_api.exceptions import MregValidationError
@@ -872,6 +873,19 @@ def test_client_test_auth_non_401_error(client: MregClient, httpserver: HTTPServ
     assert client.get_token() == "wrong-token"  # ensure we set it correctly
 
     with pytest.raises(ResponseError):
+        client.test_auth()
+
+
+def test_client_test_auth_connection_failed(client: MregClient) -> None:
+    """Test MregClient.test_auth with a connection failure."""
+    assert isinstance(client.host, HostManager)
+
+    client.set_token("some-token")  # just set a token to ensure we send something
+
+    client.url = "http://not-reachable"  # unreachable destination
+    client.timeout = 0.1  # time out ASAP
+
+    with pytest.raises(ConnectionFailedError):
         client.test_auth()
 
 
