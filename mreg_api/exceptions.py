@@ -5,8 +5,8 @@ from __future__ import annotations
 import logging
 from functools import cached_property
 
-from httpx import Request
-from httpx import Response
+from httpx2 import Request
+from httpx2 import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing_extensions import deprecated

@@ -23,8 +23,8 @@ from typing import overload
 from urllib.parse import urljoin
 from uuid import uuid4
 
-import httpx
-from httpx import Response
+import httpx2
+from httpx2 import Response
 from pydantic import BaseModel
 from pydantic import TypeAdapter
 from pydantic import ValidationError
@@ -431,7 +431,7 @@ class MregClient:
 
         if not user_agent:
             user_agent = f"mreg-api-{__version__}"
-        self.session: httpx.Client = httpx.Client(
+        self.session: httpx2.Client = httpx2.Client(
             headers={"User-Agent": user_agent},
             follow_redirects=follow_redirects,
             timeout=timeout,
@@ -669,12 +669,12 @@ class MregClient:
         logger.info("Authenticating %s @ %s", username, token_url)
 
         try:
-            response = httpx.post(
+            response = httpx2.post(
                 token_url,
                 data={"username": username, "password": password},
                 timeout=self.timeout,
             )
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
 
         if not response.is_success:
@@ -699,7 +699,7 @@ class MregClient:
         path = urljoin(self.url, Endpoint.TokenLogout)
         try:
             self.session.post(path, timeout=self.timeout)
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             logger.warning("Failed to log out: %s", e)
 
     def test_auth(self) -> None:
@@ -718,7 +718,7 @@ class MregClient:
                 timeout=self.timeout,
             )
             ret.raise_for_status()
-        except httpx.HTTPStatusError as e:
+        except httpx2.HTTPStatusError as e:
             if e.response.status_code == 401:
                 raise InvalidAuthTokenError(f"Authorization test failed: {e}", response=e.response) from e
             raise ResponseError(f"Authorization test failed: {e}", response=e.response) from e
@@ -783,7 +783,7 @@ class MregClient:
 
         try:
             result = self.session.send(request)
-        except httpx.RequestError as e:
+        except httpx2.RequestError as e:
             raise ConnectionFailedError(f"Connection failed: {e}", request=e.request) from e
 
         # Log response in response log
@@ -1151,13 +1151,13 @@ class MregClient:
             )
             return len(content)
 
-    def _get_list_non_paginated(self, response: httpx.Response, path: str, limit: int | None) -> list[Json]:
+    def _get_list_non_paginated(self, response: httpx2.Response, path: str, limit: int | None) -> list[Json]:
         """Collect results from a non-paginated endpoint (returns everything at once)."""
         results = validate_list_response(response)
         return self._truncate(results, len(results), path, limit)
 
     def _get_list_paginated(
-        self, response: httpx.Response, path: str, ok404: bool, limit: int | None
+        self, response: httpx2.Response, path: str, ok404: bool, limit: int | None
     ) -> list[Json]:
         """Collect results from a paginated endpoint, following `next` links.
 

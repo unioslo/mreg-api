@@ -36,7 +36,7 @@ from typing import Literal
 from typing import TypeVar
 from typing import overload
 
-from httpx import Response
+from httpx2 import Response
 from pydantic import BaseModel
 from pydantic import ValidationError
 from typing_extensions import deprecated
