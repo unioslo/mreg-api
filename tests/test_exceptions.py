@@ -11,7 +11,6 @@ from pytest_httpserver import HTTPServer
 
 from mreg_api import MregClient
 from mreg_api.client import last_request_url
-from mreg_api.exceptions import APIError
 from mreg_api.exceptions import ConnectionFailedError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityConflictError
@@ -126,8 +125,8 @@ def test_validation_error_no_request() -> None:
     assert "Failed to validate Host" in err_str
 
 
-class TestAPIErrorFormattedMessage:
-    """Tests for APIError.formatted_message with MREG error responses."""
+class TestResponseErrorFormattedMessage:
+    """Tests for ResponseError.formatted_message with MREG error responses."""
 
     def test_formatted_message_single_error(self) -> None:
         """Test formatted_message with a single MREG error."""
@@ -138,7 +137,7 @@ class TestAPIErrorFormattedMessage:
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message() == snapshot("""\
 400 Bad Request: POST http://localhost/api/v1/hosts/
@@ -158,7 +157,7 @@ class TestAPIErrorFormattedMessage:
                 ],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message() == snapshot("""\
 400 Bad Request: POST http://localhost/api/v1/hosts/
@@ -176,7 +175,7 @@ class TestAPIErrorFormattedMessage:
                 "errors": [{"code": "authentication_failed", "detail": "Invalid credentials.", "attr": None}],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message() == snapshot("""\
 400 Bad Request: POST http://localhost/api/v1/hosts/
@@ -193,7 +192,7 @@ class TestAPIErrorFormattedMessage:
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message(json=True) == snapshot("""\
 400 Bad Request: POST http://localhost/api/v1/hosts/
@@ -221,7 +220,7 @@ class TestAPIErrorFormattedMessage:
                 ],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message(json=True) == snapshot("""\
 400 Bad Request: POST http://localhost/api/v1/hosts/
@@ -248,7 +247,7 @@ class TestAPIErrorFormattedMessage:
             status_code=500,
             text_body="Internal Server Error: Something went wrong",
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message() == snapshot("""\
 500 Internal Server Error: POST http://localhost/api/v1/hosts/
@@ -265,7 +264,7 @@ Internal Server Error: Something went wrong\
             url="http://localhost/api/v1/does/not/exist",
             text_body="The requested resource was not found on this server.",
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message() == snapshot(f"""\
 404 Not Found: GET http://localhost/api/v1/does/not/exist
@@ -283,7 +282,7 @@ This may be because your library version ({__version__}) is:
             url="http://localhost/api/v1/hosts/foo",
             text_body="host not found",
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         assert error.formatted_message() == snapshot("""\
 404 Not Found: GET http://localhost/api/v1/hosts/foo
@@ -299,7 +298,7 @@ host not found\
                 "errors": [{"code": "conflict", "detail": "unhelpful server message", "attr": None}],
             },
         )
-        error = APIError("Host is already a member of the group.", response=response)
+        error = ResponseError("Host is already a member of the group.", response=response)
 
         assert error.formatted_message() == snapshot("""\
 409 Conflict: POST http://localhost/api/v1/hosts/
@@ -312,7 +311,7 @@ Host is already a member of the group.\
             status_code=500,
             text_body="Internal Server Error",
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
 
         # json=True but no structured errors, should fall back to plain text details
         assert error.formatted_message(json=True) == snapshot("""\
@@ -332,7 +331,7 @@ Host is already a member of the group.\
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
         assert error.detail == "This field is required."
 
     def test_detail_joins_multiple_errors(self) -> None:
@@ -347,13 +346,13 @@ Host is already a member of the group.\
                 ],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
         assert error.detail == "This field is required.; Enter a valid email."
 
     def test_detail_empty_without_structured_errors(self) -> None:
         """Detail is empty when the response has no parseable MREG errors."""
         response = make_mock_response(status_code=500, text_body="boom")
-        error = APIError(response=response)
+        error = ResponseError(response=response)
         assert error.detail == ""
 
     def test_str_is_formatted_message(self) -> None:
@@ -365,7 +364,7 @@ Host is already a member of the group.\
                 "errors": [{"code": "required", "detail": "This field is required.", "attr": "name"}],
             },
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
         assert str(error) == error.formatted_message()
         assert str(error) == snapshot("""\
 400 Bad Request: POST http://localhost/api/v1/hosts/
@@ -379,7 +378,7 @@ Host is already a member of the group.\
             status_code=409,
             json_body={"error": "test-history-role-atom1 already in atoms"},
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
         assert error.detail == "test-history-role-atom1 already in atoms"
         assert len(error.errors.errors) == 1
         assert error.formatted_message() == snapshot("""\
@@ -394,7 +393,7 @@ Host is already a member of the group.\
             status_code=400,
             json_body={"error": ["not", "a", "string"]},
         )
-        error = APIError(response=response)
+        error = ResponseError(response=response)
         assert error.errors.errors == []
 
 
@@ -437,6 +436,7 @@ class TestEntityErrors:
         assert not issubclass(EntityConflictError, EntityLookupError)
         assert not issubclass(EntityLookupError, EntityConflictError)
 
+    @pytest.mark.filterwarnings("ignore::DeprecationWarning")
     def test_ownership_mismatch_is_deprecated_alias(self) -> None:
         """EntityOwnershipMismatch is a deprecated alias of EntityRelationMissing."""
         assert isinstance(EntityOwnershipMismatch(), EntityRelationMissing)
