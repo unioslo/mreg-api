@@ -5,11 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## Unreleased
+<!-- ## Unreleased -->
+
+## [0.8.2](https://github.com/unioslo/mreg-api/releases/tag/0.8.2) - 2026-10-26
 
 ### Changed
 
-- **BREAKING:** Now uses httpx2 instead of httpx due to the lack of maintenance of the latter, as well as to remove the reliance on certifi as a certificate source.
+- **BREAKING:** Now uses httpx2 instead of httpx due to the lack of maintenance of httpx, as well as to remove the reliance on certifi as a certificate source.
 
 ## [0.8.1](https://github.com/unioslo/mreg-api/releases/tag/0.8.1) - 2026-10-22
 
