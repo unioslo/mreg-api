@@ -3894,17 +3894,6 @@ class LocationManager(WriteResourceManager[Location]):
         return obj
 
 
-_ZONE_TTL_MIN = 300
-_ZONE_TTL_MAX = 68400
-
-
-def _valid_zone_ttl(ttl: int) -> int:
-    """Validate a zone TTL value (300–68400), mirroring the old model bounds."""
-    if ttl < _ZONE_TTL_MIN or ttl > _ZONE_TTL_MAX:
-        raise InputFailure(f"Invalid TTL value: {ttl} ({_ZONE_TTL_MIN}->{_ZONE_TTL_MAX})")
-    return ttl
-
-
 def _verify_nameservers(client: MregClient, nameservers: list[str], force: bool = False) -> list[VerifiedNS]:
     """Verify nameservers exist in mreg and have an A-record / glue.
 
@@ -4066,8 +4055,8 @@ class ZoneSubManager(NamedResourceManager[ZoneT], ABC):
             data["retry"] = retry
         if expire is not UNSET:
             data["expire"] = expire
-        if isinstance(soa_ttl, int):
-            data["soa_ttl"] = _valid_zone_ttl(soa_ttl)
+        if soa_ttl is not UNSET:
+            data["soa_ttl"] = soa_ttl
         self._patch(zone, data)
 
     def set_default_ttl(self, zone: ZoneT, ttl: int) -> None:
@@ -4077,7 +4066,7 @@ class ZoneSubManager(NamedResourceManager[ZoneT], ABC):
             zone (ZoneT): The zone to update.
             ttl (int): The new default TTL value (300–68400).
         """
-        self._patch(zone, {"default_ttl": _valid_zone_ttl(ttl)})
+        self._patch(zone, {"default_ttl": ttl})
 
     def set_nameservers(self, zone: ZoneT, nameservers: list[str], *, force: bool = False) -> None:
         """Replace the zone's nameservers (hits the per-type nameservers endpoint).
