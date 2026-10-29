@@ -9,13 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `Community.network_cidr` field. Requires an mreg server with [unioslo/mreg#635](https://github.com/unioslo/mreg/pull/635).
-- `CommunityManager.first()` and `CommunityManager.refresh()`.
-- `CommunityManager.list()` accepts `limit` and query filter keyword arguments.
+- `Community.network_cidr` field.
+- `MregClient.community.first()` and `MregClient.community.refresh()`.
+- `MregClient.community.list()` accepts `limit` and query filter keyword arguments.
 
 ### Changed
 
-- **BREAKING:** `CommunityManager` has a new interface. Methods that look up or create communities still take a `network` argument. Methods that operate on an existing community take a `Community` object and no network, reading it from `Community.network_cidr` instead. IDs and names are no longer accepted by these methods.
+- **BREAKING:** `MregClient.community` has a new interface. Methods that look up or create communities still take a `network` argument. Methods that operate on an existing community take a `Community` object and no network, reading it from `Community.network_cidr` instead. IDs and names are no longer accepted by these methods.
 
   | Before                                         | After                                      |
   | ---------------------------------------------- | ------------------------------------------ |
@@ -34,7 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
-- **BREAKING:** `CommunityManager.get_by_name()` and `CommunityManager.get_by_id()`. Use `CommunityManager.get()`.
+- **BREAKING:** `MregClient.community.get_by_name()` and `MregClient.community.get_by_id()`. Use `MregClient.community.get()`.
 
 ## [0.8.3](https://github.com/unioslo/mreg-api/releases/tag/0.8.3) - 2026-10-26
 
