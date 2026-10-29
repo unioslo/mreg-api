@@ -634,6 +634,7 @@ class Community(MregModelWithTimestamps):
     name: str
     description: str
     network: int
+    network_cidr: str
     hosts: list[str] = []
     global_name: str | None = None
 

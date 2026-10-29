@@ -31,6 +31,8 @@ def get_resource_managers() -> Sequence[tuple[str, type[ResourceManager[Any]]]]:
                 # Specialized /dhcphosts endpoints (ipv4, ipv6, ipv6byipv4)
                 # do not have a path field, so skip them for this test.
                 or "Dhcp" in name
+                # Bound to a network at construction, so cannot be built from a client alone.
+                or manager_class is managers._NetworkCommunityManager
             ):
                 continue
             if isinstance(manager_class, type):

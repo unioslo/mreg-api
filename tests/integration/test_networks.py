@@ -11,7 +11,6 @@ from mreg_api.client import MregClient
 from mreg_api.exceptions import ConflictError
 from mreg_api.exceptions import EntityAlreadyExists
 from mreg_api.exceptions import EntityNotFound
-from mreg_api.exceptions import NotFoundError
 from mreg_api.models.models import Network
 
 if TYPE_CHECKING:
@@ -220,65 +219,27 @@ def test_community_create(
     test_prefix: str,
     test_network: str,
 ) -> None:
-    name = f"{test_prefix}comm"
-    result = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test community create",
-    )
-    integration_client.network.community.delete(result.id, test_network)
-
-
-def test_community_get_by_name(
-    integration_client: MregClient,
-    test_prefix: str,
-    test_network: str,
-) -> None:
-    name = f"{test_prefix}commgbn"
-    integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test get_by_name",
-    )
-    comm = integration_client.network.community.get_by_name(name, test_network, required=False)
+    communities = integration_client.network.community
+    comm = communities.create(f"{test_prefix}comm", "integration test create", network=test_network)
     try:
-        assert comm is not None
-        assert comm.name == name
+        assert comm.network_cidr == test_network
     finally:
-        if comm is not None:
-            integration_client.network.community.delete(comm.id, test_network)
+        communities.delete(comm)
 
 
-def test_community_get_by_id(
+def test_community_create_normalizes_name(
     integration_client: MregClient,
     test_prefix: str,
     test_network: str,
 ) -> None:
-    name = f"{test_prefix}commgbi"
-    created = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test get_by_id",
-    )
-    comm = integration_client.network.community.get_by_id(created.id, test_network)
-    assert comm == created
-    integration_client.network.community.delete(comm.id, test_network)
-
-
-def test_community_get_by_object(
-    integration_client: MregClient,
-    test_prefix: str,
-    test_network: str,
-) -> None:
-    name = f"{test_prefix}commgbo"
-    created = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test get by object",
-    )
-    comm = integration_client.network.community.get_by_name(name, test_network)
-    assert comm == created
-    integration_client.network.community.delete(comm.id, test_network)
+    """Ensure server normalizes community names to lowercase on creation and retrieval."""
+    communities = integration_client.network.community
+    comm = communities.create(f"{test_prefix}COMMUPPER", "upper", network=test_network)
+    try:
+        assert comm.name == f"{test_prefix}commupper".lower()
+        assert communities.get(f"{test_prefix}CommUpper", network=test_network) == comm
+    finally:
+        communities.delete(comm)
 
 
 def test_community_get(
@@ -286,129 +247,63 @@ def test_community_get(
     test_prefix: str,
     test_network: str,
 ) -> None:
+    communities = integration_client.network.community
     name = f"{test_prefix}commget"
-    created = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test get",
-    )
-    by_id = integration_client.network.community.get(created.id, test_network)
-    assert by_id == created
-    by_name = integration_client.network.community.get(name, test_network)
-    assert by_name == created
-    integration_client.network.community.delete(created.id, test_network)
+    created = communities.create(name, "integration test get", network=test_network)
+    try:
+        assert communities.get(created.id, network=test_network) == created
+        assert communities.get(name, network=test_network) == created
+    finally:
+        communities.delete(created)
 
 
-def test_community_get_nonexistent_by_name_returns_none(
+@pytest.mark.parametrize("ref", ["zzz-no-such-community-xyzzy", 999999])
+def test_community_get_nonexistent_raises(
     integration_client: MregClient,
     test_network: str,
-) -> None:
-    result = integration_client.network.community.get(
-        "zzz-no-such-community-xyzzy", test_network, required=False
-    )
-    assert result is None
-
-
-def test_community_get_nonexistent_by_name_raises(
-    integration_client: MregClient,
-    test_network: str,
+    ref: str | int,
 ) -> None:
     with pytest.raises(EntityNotFound):
-        integration_client.network.community.get("zzz-no-such-community-xyzzy", test_network)
+        integration_client.network.community.get(ref, network=test_network)
 
 
-def test_community_get_nonexistent_by_id_raises(
+@pytest.mark.parametrize("ref", ["zzz-no-such-community-xyzzy", 999999])
+def test_community_get_nonexistent_returns_none(
     integration_client: MregClient,
     test_network: str,
+    ref: str | int,
 ) -> None:
-    """CommunityManager.get() always returns EntityNotFound, even if the underlyinng `get_by_id` raises `NotFoundError`."""
-    with pytest.raises(EntityNotFound):
-        integration_client.network.community.get(999999, test_network)
+    assert integration_client.network.community.get(ref, network=test_network, required=False) is None
 
 
-def test_community_get_nonexistent_by_id_returns_none(
-    integration_client: MregClient,
-    test_network: str,
-) -> None:
-    result = integration_client.network.community.get(999999, test_network, required=False)
-    assert result is None
-
-
-def test_community_get_by_id_nonexistent_raises(
-    integration_client: MregClient,
-    test_network: str,
-) -> None:
-    """CommunityManager.get_by_id raises `NotFoundError` due to 404 error from the server."""
-    with pytest.raises(NotFoundError) as excinfo:
-        integration_client.network.community.get_by_id(999999, test_network)
-
-    msg = excinfo.exconly()
-    msg = (
-        msg.replace(test_network.replace("/", "%2F"), "<network>")
-        .replace(test_network, "<network>")
-        .replace(integration_client.url, "<server-url>")
-    )
-    assert msg == snapshot("""\
-mreg_api.exceptions.NotFoundError: 404 Not Found: GET <server-url>/api/v1/networks/<network>/communities/999999
-1 error:
-  Not found.  (not_found)\
-""")
-
-    error_msg = excinfo.value.error_message
-    error_msg = error_msg.replace(test_network.replace("/", "%2F"), "<network>").replace(
-        test_network, "<network>"
-    )
-    assert error_msg == snapshot("Not Found - Not found")
-
-
-def test_community_get_by_id_nonexistent_not_required_returns_none(
-    integration_client: MregClient,
-    test_network: str,
-) -> None:
-    result = integration_client.network.community.get_by_id(999999, test_network, required=False)
-    assert result is None
-
-
-def test_community_delete_by_id(
+def test_community_list_and_first(
     integration_client: MregClient,
     test_prefix: str,
     test_network: str,
 ) -> None:
-    name = f"{test_prefix}commdid"
-    comm = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test delete by id",
-    )
-    integration_client.network.community.delete(comm.id, test_network)
-    assert integration_client.network.community.get_by_name(name, test_network, required=False) is None
+    communities = integration_client.network.community
+    name = f"{test_prefix}commlist"
+    comm = communities.create(name, "integration test list", network=test_network)
+    try:
+        assert comm in communities.list(network=test_network)
+        assert communities.first(network=test_network, name=name) == comm
+    finally:
+        communities.delete(comm)
 
 
-def test_community_delete_by_name(
+def test_community_object_operations(
     integration_client: MregClient,
     test_prefix: str,
     test_network: str,
 ) -> None:
-    name = f"{test_prefix}commdname"
-    comm = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test delete by name",
-    )
-    integration_client.network.community.delete(comm.name, test_network)
-    assert integration_client.network.community.get_by_name(name, test_network, required=False) is None
-
-
-def test_community_delete_by_object(
-    integration_client: MregClient,
-    test_prefix: str,
-    test_network: str,
-) -> None:
-    name = f"{test_prefix}commdobj"
-    comm = integration_client.network.community.create(
-        test_network,
-        name=name,
-        description="integration test delete by object",
-    )
-    integration_client.network.community.delete(comm, test_network)
-    assert integration_client.network.community.get_by_name(name, test_network, required=False) is None
+    """Operations on a Community object take the network from `network_cidr`."""
+    communities = integration_client.network.community
+    comm = communities.create(f"{test_prefix}commobj", "before", network=test_network)
+    try:
+        assert communities.get_hosts(comm) == []
+        updated = communities.update(comm, description="after")
+        assert updated.description == "after"
+        assert communities.refresh(comm).description == "after"
+    finally:
+        communities.delete(comm)
+    assert communities.get(comm.id, network=test_network, required=False) is None
