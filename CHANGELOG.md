@@ -5,7 +5,36 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-<!-- ## Unreleased -->
+## Unreleased
+
+### Added
+
+- `Community.network_cidr` field.
+- `MregClient.community.first()` and `MregClient.community.refresh()`.
+- `MregClient.community.list()` accepts `limit` and query filter keyword arguments.
+
+### Changed
+
+- **BREAKING:** `MregClient.community` has a new interface. Methods that look up or create communities still take a `network` argument. Methods that operate on an existing community take a `Community` object and no network, reading it from `Community.network_cidr` instead. IDs and names are no longer accepted by these methods.
+
+  | Before                                         | After                                      |
+  | ---------------------------------------------- | ------------------------------------------ |
+  | `create(network, name, description)`           | `create(name, description, network)`       |
+  | `get_by_name(name, network)`                   | `get(name, network)`                       |
+  | `get_by_id(community_id, network)`             | `get(community_id, network)`               |
+  | `update(community, network, name=..., ...)`    | `update(community, name=..., ...)`         |
+  | `delete(community, network)`                   | `delete(community)`                        |
+  | `get_hosts(community, network)`                | `get_hosts(community)`                     |
+  | `add_host(community, network, host, ...)`      | `add_host(community, host, ...)`           |
+  | `remove_host(community, network, host, ...)`   | `remove_host(community, host, ...)`        |
+
+- **BREAKING:** Looking up a nonexistent community by ID now raises `EntityNotFound`, like other managers. Previously `get_by_id()` raised `NotFoundError`.
+- **BREAKING:** Community names are normalized to lowercase in lookups, matching the server. Previously `get_by_name("LAB")` did not match a community named `lab` when the network was given as a `Network` object.
+- `CommunityManager.update()` returns the community as refetched from the server.
+
+### Removed
+
+- **BREAKING:** `MregClient.community.get_by_name()` and `MregClient.community.get_by_id()`. Use `MregClient.community.get()`.
 
 ## [0.8.3](https://github.com/unioslo/mreg-api/releases/tag/0.8.3) - 2026-10-26
 

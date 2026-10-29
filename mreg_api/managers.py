@@ -35,6 +35,8 @@ from typing import Generic
 from typing import Literal
 from typing import TypeVar
 from typing import overload
+from urllib.parse import quote
+from urllib.parse import urljoin
 
 from httpx2 import Response
 from pydantic import BaseModel
@@ -226,6 +228,11 @@ def resolve_host(host: int | str | Host, client: MregClient) -> Host:
         return HostManager(client).get_by_name(host, required=True)
 
 
+def _detail_url(endpoint: str, ident: str | int) -> str:
+    """Build the detail URL for a resource: `{endpoint}{ident}`. Mirrors `Endpoint.with_id`."""
+    return urljoin(str(endpoint), quote(str(ident)))
+
+
 class ResourceManager(Generic[T], ABC):
     """Basic manager for performing read operations on an API resource type."""
 
@@ -267,8 +274,12 @@ class ResourceManager(Generic[T], ABC):
 
     @property
     @abstractmethod
-    def endpoint(self) -> Endpoint:
-        """Return the API endpoint for this manager's resource type."""
+    def endpoint(self) -> str:
+        """Return the API endpoint for this manager's resource type.
+
+        Usually an `Endpoint` member, but managers bound to a parent resource
+        (e.g. `NetworkCommunityManager`) return a formatted endpoint string.
+        """
         ...
 
     @property
@@ -398,7 +409,7 @@ class ResourceManager(Generic[T], ABC):
 
     def _endpoint_with_path_param(self, obj: T) -> str:
         """Build the detail URL for `obj` from its path parameter value."""
-        return self.endpoint.with_id(self._path_param_value(obj))
+        return _detail_url(self.endpoint, self._path_param_value(obj))
 
     def _fetch_by_path(self, value: str | int) -> T | None:
         """Fetch one object via its detail URL: `GET /endpoint/{value}`.
@@ -406,7 +417,7 @@ class ResourceManager(Generic[T], ABC):
         `value` must be the path parameter (e.g. hostname, network, id, etc.).
         """
         value = self._normalize_path_param(value)
-        resp = self._client.get(self.endpoint.with_id(value), ok404=True)
+        resp = self._client.get(_detail_url(self.endpoint, value), ok404=True)
         if not resp:
             return None
         return self._validate_json(resp.text)
@@ -2117,151 +2128,133 @@ class NetworkPolicyManager(NamedResourceManager[NetworkPolicy]):
         return NetworkPolicyAttributeManager(self._client)
 
 
-# NOTE: WHY does this not inherit from the regular ResourceManager?
-class CommunityManager:
-    """Operations on network communities.
+class _NetworkCommunityManager(NamedResourceManager[Community]):
+    """Operations on the communities of a single network.
 
-    Communities are always scoped to a network — every method takes a network
-    reference (address string or `Network` instance).
+    Internal manager class that is bound to a network and handles community operations,
+    while the CommunityManager "facade" provides the public API.
+
+    Without this separation, we could not inherit from ResourceManager,
+    as each community lookup is bound to a specific network, which we handle
+    via the network-bound `endpoint` override in this manager.
+
+    Creating this manager via the public interface allows us to bind the network
+    context via the overridden endpoint methods.
     """
+
+    _path_param_field: ClassVar[str] = "id"
+    name_lowercase: ClassVar[bool] = True  # LowerCaseCharField on the server
+
+    def __init__(self, client: MregClient, network: str) -> None:
+        """Bind the manager to the client and a network address (CIDR)."""
+        self._client: MregClient = client
+        self._network: str = network
+
+    @property
+    @override
+    def model(self) -> type[Community]:
+        return Community
+
+    @property
+    @override
+    def endpoint(self) -> str:
+        return Endpoint.NetworkCommunities.with_params(self._network)
+
+    @override
+    def _endpoint_with_path_param(self, obj: Community) -> str:
+        # Use the object's own network, not the bound one
+        return Endpoint.NetworkCommunity.with_params(obj.network_cidr, obj.id)
+
+    @override
+    def refresh(self, obj: Community) -> Community:
+        return self._client.get_typed(self._endpoint_with_path_param(obj), Community)
+
+    def create(self, name: str, description: str) -> Community:
+        """Create a community in the bound network."""
+        return self._create({"name": name, "description": description})
+
+    def update(
+        self,
+        community: Community,
+        *,
+        name: str | UNSET = UNSET,
+        description: str | UNSET = UNSET,
+    ) -> Community:
+        """Update a community's mutable fields and return the refreshed community."""
+        data: dict[str, Any] = {}
+        if name is not UNSET:
+            data["name"] = name
+        if description is not UNSET:
+            data["description"] = description
+        self._patch(community, data)
+        return self.refresh(community)
+
+    def list_hosts(self, community: Community) -> list[Host]:
+        """List all hosts in a community."""
+        return self._client.get_typed(
+            Endpoint.NetworkCommunityHosts.with_params(community.network_cidr, community.id), list[Host]
+        )
+
+    def add_host(
+        self,
+        community: Community,
+        host: int | str | Host,
+        *,
+        ipaddress: IP_AddressT | str | None = None,
+    ) -> bool:
+        """Add a host to a community."""
+        data: dict[str, Any] = {"id": resolve_host_id(host, self._client)}
+        if ipaddress is not None:
+            data["ipaddress"] = str(ipaddress)
+        resp = self._client.post(
+            Endpoint.NetworkCommunityHosts.with_params(community.network_cidr, community.id), json=data
+        )
+        return resp.is_success if resp else False
+
+    def remove_host(
+        self,
+        community: Community,
+        host: int | str | Host,
+        *,
+        ipaddress: IP_AddressT | str | None = None,
+    ) -> None:
+        """Remove a host from a community."""
+        host_id = resolve_host_id(host, self._client)
+        data: dict[str, Any] = {}
+        if ipaddress is not None:
+            data["ipaddress"] = str(ipaddress)
+        _ = self._client.delete(
+            Endpoint.NetworkCommunityHost.with_params(community.network_cidr, community.id, host_id),
+            json=data,
+        )
+
+
+# NOTE: The CommunityManager provides a high-level interface for network communities,
+# while the _NetworkCommunityManager handles operations scoped to a specific network.
+# This allows us to re-use ResourceManager semantics, validation, and error handling
+# for community operations in _NetworkCommunityManager, while we implement a
+# more network-agnostic interface in CommunityManager.
+class CommunityManager:
+    """Operations on network communities."""
 
     def __init__(self, client: MregClient) -> None:
         """Bind the manager to the client."""
-        self._client = client
-        self._network_manager: NetworkManager = client.network
+        self._client: MregClient = client
 
     @property
     def model_name(self) -> str:
         """The name of the manager's model type."""
         return model_name(Community)
 
-    def _resolve_network_address(self, network: str | int | Network) -> str:
-        if isinstance(network, str):
-            return network
-        elif isinstance(network, Network):
-            return network.network
+    def _sub(self, network: str | int | Network) -> _NetworkCommunityManager:
+        """Return a manager bound to `network`."""
+        if isinstance(network, Network):
+            address = network.network
+        elif isinstance(network, int):
+            address = self._client.network.get(network).network
         else:
-            return self._network_manager.get(network, required=True).network
-
-    def _resolve_community_id(self, community: str | int | Community, network: str | int | Network) -> int:
-        # Already an int or Community object - return ID
-        if isinstance(community, int):
-            return community
-        elif isinstance(community, Community):
-            return community.id
-
-        # Community is a name: fetch it by name within the given network
-        network_addr = self._resolve_network_address(network)
-        com = self.get_by_name(community, network_addr, required=True)
-        return com.id
-
-    def list(self, network: str | int | Network) -> list[Community]:
-        """List all communities for a network.
-
-        Args:
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-        """
-        addr = self._resolve_network_address(network)
-        return self._client.get_typed(Endpoint.NetworkCommunities.with_params(addr), list[Community])
-
-    def update(
-        self,
-        community: int | str | Community,
-        network: str | int | Network,
-        *,
-        name: str | UNSET = UNSET,
-        description: str | UNSET = UNSET,
-    ) -> Community:
-        """Update a community's mutable fields.
-
-        Args:
-            community (int | str | Community): Community ID, name or object.
-                Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-            name (str | UNSET): New name. Omit to leave unchanged.
-            description (str | UNSET): New description. Omit to leave unchanged.
-        """
-        addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(community, network)
-        data: dict[str, Any] = {}
-        if name is not UNSET:
-            data["name"] = name
-        if description is not UNSET:
-            data["description"] = description
-        resp = self._client.patch(Endpoint.NetworkCommunity.with_params(addr, community_id), json=data)
-        return Community.model_validate_json(resp.text)
-
-    @overload
-    def get_by_name(
-        self, name: str, network: str | int | Network, *, required: Literal[False]
-    ) -> Community | None: ...
-    @overload
-    def get_by_name(
-        self, name: str, network: str | int | Network, *, required: Literal[True] = ...
-    ) -> Community: ...
-    def get_by_name(
-        self, name: str, network: str | int | Network, *, required: bool = True
-    ) -> Community | None:
-        """Get a community by name within a network.
-
-        Args:
-            name (str): The community name to look up.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-                Attempts to perform a direct lookup if a string is provided.
-            required (bool): When True (default), raise EntityNotFound if not found.
-
-        Raises:
-            EntityNotFound: If `required` is True and the community is not found.
-        """
-        # If network is a string, try to perform lookup directly
-        if isinstance(network, str):
-            resp = self._client.get_list_unique(
-                Endpoint.NetworkCommunities.with_params(network), params={"name": name}
-            )
-            if resp is not None:
-                return Community.model_validate(resp)
-            if required:
-                raise EntityNotFound(
-                    f"Community {name!r} not found in network {network!r}.", model=Community, identifier=name
-                )
-            return None
-
-        community = next((c for c in self.list(network) if c.name == name), None)
-        if required and community is None:
-            raise EntityNotFound(f"Community {name!r} not found.", model=Community, identifier=name)
-        return community
-
-    @overload
-    def get_by_id(
-        self, community_id: int, network: str | int | Network, *, required: Literal[False]
-    ) -> Community | None: ...
-    @overload
-    def get_by_id(
-        self, community_id: int, network: str | int | Network, *, required: Literal[True] = ...
-    ) -> Community: ...
-    def get_by_id(
-        self, community_id: int, network: str | int | Network, *, required: bool = True
-    ) -> Community | None:
-        """Get a community by ID within a network.
-
-        Args:
-            community_id (int): The community ID to look up.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-            required (bool): When True (default), raise EntityNotFound if not found.
-
-        Raises:
-            NotFoundError: If `required` is True and the community is not found.
-        """
-        nw_addr = self._resolve_network_address(network)
-        try:
-            # Attempt to directly fetch the community
-            return self._client.get_typed(
-                Endpoint.NetworkCommunity.with_params(nw_addr, community_id), Community
-            )
-        except NotFoundError:
-            if required:
-                raise
-        return None
+            address = network
+        return _NetworkCommunityManager(self._client, address)
 
     @overload
     def get(
@@ -2274,7 +2267,7 @@ class CommunityManager:
     def get(
         self, community: int | str, network: str | int | Network, *, required: bool = True
     ) -> Community | None:
-        """Get a community by ID or name within a network.
+        """Get a community by ID or name.
 
         Args:
             community (int | str): Community ID or name.
@@ -2284,76 +2277,114 @@ class CommunityManager:
         Raises:
             EntityNotFound: If `required` is True and the community is not found.
         """
-        try:
-            if isinstance(community, int):
-                return self.get_by_id(community, network, required=required)
-            else:
-                return self.get_by_name(community, network, required=required)
-        except (EntityNotFound, NotFoundError) as e:
-            if required:
-                raise EntityNotFound(
-                    f"Community {community!r} not found in network {network!r}.",
-                    model=Community,
-                    identifier=community,
-                ) from e
-        return None
+        return self._sub(network).get(community, required=required)
 
-    # NOTE: this API should change! `network` is the last param in other methods,
-    # but here it comes first.
-    def create(
+    def list(
         self,
         network: str | int | Network,
-        name: str,
-        description: str,
-    ) -> Community:
-        """Create a community in a network.
+        *,
+        limit: int | None = None,
+        **query: str | int | float | bool | None,
+    ) -> list[Community]:
+        """List communities in a network, optionally filtered by query parameters.
 
         Args:
             network (str | int | Network): Network reference (address, ID, or Network instance).
+            limit (int | None): Maximum number of results to return, None means no limit.
+            **query: Optional filter parameters forwarded to the list endpoint.
+        """
+        return self._sub(network).list(limit=limit, **query)
+
+    @overload
+    def first(
+        self,
+        network: str | int | Network,
+        *,
+        required: Literal[False],
+        **query: str | int | float | bool | None,
+    ) -> Community | None: ...
+    @overload
+    def first(
+        self,
+        network: str | int | Network,
+        *,
+        required: Literal[True] = ...,
+        **query: str | int | float | bool | None,
+    ) -> Community: ...
+    def first(
+        self,
+        network: str | int | Network,
+        *,
+        required: bool = True,
+        **query: str | int | float | bool | None,
+    ) -> Community | None:
+        """Return the first community in a network matching the query.
+
+        Args:
+            network (str | int | Network): Network reference (address, ID, or Network instance).
+            required (bool): When True (default), raise EntityNotFound if none is found.
+            **query: Optional filter parameters forwarded to the list endpoint.
+
+        Raises:
+            EntityNotFound: If `required` is True and no community is found.
+        """
+        return self._sub(network).first(required=required, **query)
+
+    def create(self, name: str, description: str, network: str | int | Network) -> Community:
+        """Create a community in a network.
+
+        Args:
             name (str): Name of the community.
             description (str): Description of the community.
+            network (str | int | Network): Network reference (address, ID, or Network instance).
 
         Returns:
             Community: The created community.
         """
-        addr = self._resolve_network_address(network)
-        resp = self._client.post(
-            Endpoint.NetworkCommunities.with_params(addr),
-            json={"name": name, "description": description},
-        )
-        return validate_response(Community, resp)
+        return self._sub(network).create(name, description)
 
-    def delete(self, community: int | str | Community, network: str | int | Network) -> None:
-        """Delete a community from a network.
+    def refresh(self, community: Community) -> Community:
+        """Fetch a fresh copy of a community from the server."""
+        return self._sub(community.network_cidr).refresh(community)
+
+    def update(
+        self,
+        community: Community,
+        *,
+        name: str | UNSET = UNSET,
+        description: str | UNSET = UNSET,
+    ) -> Community:
+        """Update a community's mutable fields.
 
         Args:
-            community (int | str | Community): Community ID, name or object.
-                Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-        """
-        addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(community, network)
-        self._client.delete(Endpoint.NetworkCommunity.with_params(addr, community_id))
+            community (Community): The community to update.
+            name (str | UNSET): New name. Omit to leave unchanged.
+            description (str | UNSET): New description. Omit to leave unchanged.
 
-    def get_hosts(self, community: int | str | Community, network: str | int | Network) -> list[Host]:
+        Returns:
+            Community: The updated community.
+        """
+        return self._sub(community.network_cidr).update(community, name=name, description=description)
+
+    def delete(self, community: Community) -> None:
+        """Delete a community.
+
+        Args:
+            community (Community): The community to delete.
+        """
+        self._sub(community.network_cidr).delete(community)
+
+    def get_hosts(self, community: Community) -> list[Host]:
         """List all hosts in a community.
 
         Args:
-            community (int | str | Community): Community ID, name or object.
-                Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
+            community (Community): The community to list hosts for.
         """
-        addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(community, network)
-        return self._client.get_typed(
-            Endpoint.NetworkCommunityHosts.with_params(addr, community_id), list[Host]
-        )
+        return self._sub(community.network_cidr).list_hosts(community)
 
-    # NOTE: Why add host by ID here?
     def add_host(
         self,
-        community: int | str | Community,
-        network: str | int | Network,
+        community: Community,
         host: int | str | Host,
         *,
         ipaddress: IP_AddressT | str | None = None,
@@ -2361,28 +2392,16 @@ class CommunityManager:
         """Add a host to a community.
 
         Args:
-            community (int | str | Community): Community ID, name or object.
-                Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-            host (int | str | Host): Host reference (ID or Host instance).
+            community (Community): The community to add the host to.
+            host (int | str | Host): Host reference (ID, name or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to associate with the host
                 in this community. Required if host has multiple IP addresses in the network.
         """
-        addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(community, network)
-        host_id = resolve_host_id(host, self._client)
+        return self._sub(community.network_cidr).add_host(community, host, ipaddress=ipaddress)
 
-        data: dict[str, Any] = {"id": host_id}
-        if ipaddress is not None:
-            data["ipaddress"] = str(ipaddress)
-        resp = self._client.post(Endpoint.NetworkCommunityHosts.with_params(addr, community_id), json=data)
-        return resp.is_success if resp else False
-
-    # NOTE: Why add host by ID here?
     def remove_host(
         self,
-        community: int | str | Community,
-        network: str | int | Network,
+        community: Community,
         host: int | str | Host,
         *,
         ipaddress: IP_AddressT | str | None = None,
@@ -2390,20 +2409,12 @@ class CommunityManager:
         """Remove a host from a community.
 
         Args:
-            community (int | str | Community): Community ID, name or object.
-                Using a name performs an extra lookup to resolve the ID.
-            network (str | int | Network): Network reference (address, ID, or Network instance).
-            host (int | str | Host): Host reference (ID or Host instance).
+            community (Community): The community to remove the host from.
+            host (int | str | Host): Host reference (ID, name or Host instance).
             ipaddress (IP_AddressT | str | None): Optional IP address to disassociate from the host
                 in this community. Required if the host has multiple IP addresses in the community.
         """
-        addr = self._resolve_network_address(network)
-        community_id = self._resolve_community_id(community, network)
-        host_id = resolve_host_id(host, self._client)
-        data: dict[str, Any] = {}
-        if ipaddress is not None:
-            data["ipaddress"] = str(ipaddress)
-        self._client.delete(Endpoint.NetworkCommunityHost.with_params(addr, community_id, host_id), json=data)
+        self._sub(community.network_cidr).remove_host(community, host, ipaddress=ipaddress)
 
 
 class NetworkManager(WriteResourceManager[Network]):
@@ -2894,7 +2905,7 @@ class CNAMEManager(NamedResourceManager[CNAME]):
 
     @override
     def _normalize_name(self, name: str) -> str:
-        # NOTE: this does not respect name casing defined by `name_lowercase`!
+        # FIXME(?): this does not respect name casing defined by `name_lowercase`!
         return self._client.fqdn(name)
 
     @override

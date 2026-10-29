@@ -125,6 +125,31 @@ client.host.delete("newhost.example.com")  # by name
 client.host.delete(123)                    # by ID
 ```
 
+### Network communities, a different interface
+
+Network communities are tied to existing networks. To that end, all operations on communities require an existing network community object, meaning the [`MregClient.community`][mreg_api.managers.CommunityManager] (alt: [`MregClient.network.community`][mreg_api.managers.CommunityManager]) methods do not accept name (`str`) or ID (`int`) arguments - only `Community` objects.
+
+In practice, this looks like:
+
+``` python
+# Create a community
+community = client.community.create("lab1", "Lab network community", network="192.168.1.0/24")
+
+# Fetch an existing community requires a network argument
+community = client.community.get("lab1", "192.168.1.0/24")  # by name
+community = client.community.get(123, "192.168.1.0/24")  # by ID
+
+# Searching/listing also requires a network argument
+community = client.community.first("192.168.1.0/24", description="Lab network community")
+communities = client.community.list("192.168.1.0/24", description="Lab network community")
+
+# Modification of existing community resources do not require a network argument
+client.community.update(community, description="Updated description")
+client.community.add_host(community, "host1.example.com")
+client.community.remove_host(community, "host1.example.com")
+client.community.delete(community)
+```
+
 ## All managers
 
 Every attribute below is a manager on the client. Follow the link for its full method
@@ -138,7 +163,7 @@ reference.
 | `MregClient.network`                                                           | Networks                  | [`NetworkManager`](../reference/managers.md#mreg_api.managers.NetworkManager)                               |
 | `MregClient.networkpolicy`<br />`MregClient.network.policy`                    | Network policies          | [`NetworkPolicyManager`](../reference/managers.md#mreg_api.managers.NetworkPolicyManager)                   |
 | `MregClient.networkpolicyattribute`<br />`MregClient.network.policy.attribute` | Network policy attributes | [`NetworkPolicyAttributeManager`](../reference/managers.md#mreg_api.managers.NetworkPolicyAttributeManager) |
-| `MregClient.community`<br />`MregClient.network.community`                     | Network communities       | [`NetworkCommunityManager`](../reference/managers.md#mreg_api.managers.CommunityManager)                    |
+| `MregClient.community`<br />`MregClient.network.community`                     | Network communities       | [`CommunityManager`](../reference/managers.md#mreg_api.managers.CommunityManager)                           |
 | `MregClient.cname`                                                             | CNAME records             | [`CNAMEManager`](../reference/managers.md#mreg_api.managers.CNAMEManager)                                   |
 | `MregClient.mx`                                                                | MX records                | [`MXManager`](../reference/managers.md#mreg_api.managers.MXManager)                                         |
 | `MregClient.txt`                                                               | TXT records               | [`TXTManager`](../reference/managers.md#mreg_api.managers.TXTManager)                                       |
