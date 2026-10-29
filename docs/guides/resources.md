@@ -125,9 +125,9 @@ client.host.delete("newhost.example.com")  # by name
 client.host.delete(123)                    # by ID
 ```
 
-## Network communities, a different interface
+### Network communities, a different interface
 
-Network communities are tied to existing networks. To that end, all operations on communities require an existing network community object, meaning the [`MregClient.community`][mreg_api.managers.CommunityManager.get] (alt: `MregClient.network.community`) methods do not accept name (`str`) or ID (`int`) arguments - only `Community` objects.
+Network communities are tied to existing networks. To that end, all operations on communities require an existing network community object, meaning the [`MregClient.community`][mreg_api.managers.CommunityManager] (alt: [`MregClient.network.community`][mreg_api.managers.CommunityManager]) methods do not accept name (`str`) or ID (`int`) arguments - only `Community` objects.
 
 In practice, this looks like:
 
