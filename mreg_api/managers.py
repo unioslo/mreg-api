@@ -2179,7 +2179,7 @@ class _NetworkCommunityManager(NamedResourceManager[Community]):
         *,
         name: str | UNSET = UNSET,
         description: str | UNSET = UNSET,
-    ) -> Community:
+    ) -> None:
         """Update a community's mutable fields and return the refreshed community."""
         data: dict[str, Any] = {}
         if name is not UNSET:
@@ -2187,7 +2187,6 @@ class _NetworkCommunityManager(NamedResourceManager[Community]):
         if description is not UNSET:
             data["description"] = description
         self._patch(community, data)
-        return self.refresh(community)
 
     def list_hosts(self, community: Community) -> list[Host]:
         """List all hosts in a community."""
@@ -2353,18 +2352,15 @@ class CommunityManager:
         *,
         name: str | UNSET = UNSET,
         description: str | UNSET = UNSET,
-    ) -> Community:
+    ) -> None:
         """Update a community's mutable fields.
 
         Args:
             community (Community): The community to update.
             name (str | UNSET): New name. Omit to leave unchanged.
             description (str | UNSET): New description. Omit to leave unchanged.
-
-        Returns:
-            Community: The updated community.
         """
-        return self._sub(community.network_cidr).update(community, name=name, description=description)
+        self._sub(community.network_cidr).update(community, name=name, description=description)
 
     def delete(self, community: Community) -> None:
         """Delete a community.

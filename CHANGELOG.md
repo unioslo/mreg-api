@@ -28,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   | `add_host(community, network, host, ...)`      | `add_host(community, host, ...)`           |
   | `remove_host(community, network, host, ...)`   | `remove_host(community, host, ...)`        |
 
+- **BREAKING:**: `CommunityManager.update()` no longer returns the updated community. Call `MregClient.community.refresh(community)` to get the updated community.
 - **BREAKING:** Looking up a nonexistent community by ID now raises `EntityNotFound`, like other managers. Previously `get_by_id()` raised `NotFoundError`.
 - **BREAKING:** Community names are normalized to lowercase in lookups, matching the server. Previously `get_by_name("LAB")` did not match a community named `lab` when the network was given as a `Network` object.
 - `CommunityManager.update()` returns the community as refetched from the server.
