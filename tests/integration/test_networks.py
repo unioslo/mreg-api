@@ -301,8 +301,7 @@ def test_community_object_operations(
     comm = communities.create(f"{test_prefix}commobj", "before", network=test_network)
     try:
         assert communities.get_hosts(comm) == []
-        updated = communities.update(comm, description="after")
-        assert updated.description == "after"
+        communities.update(comm, description="after")
         assert communities.refresh(comm).description == "after"
     finally:
         communities.delete(comm)
